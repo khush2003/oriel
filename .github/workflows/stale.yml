@@ -13,7 +13,7 @@ jobs:
   stale:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/stale@v9
+      - uses: actions/stale@v11
         with:
           # Only issues waiting on the reporter go stale; accepted work never does.
           only-issue-labels: "status: needs info"
