@@ -1,0 +1,9 @@
+# Every change needs a maintainer's review; these paths are the sensitive ones.
+*                         @khush2003
+/core/                    @khush2003
+/app/src/main/java/app/oriel/data/   @khush2003
+/app/build.gradle.kts     @khush2003
+/.github/                 @khush2003
+/scripts/                 @khush2003
+/docs/SCOPE.md            @khush2003
+/PRIVACY.md               @khush2003

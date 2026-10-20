@@ -1,0 +1,20 @@
+"area: player":
+  - changed-files: [{ any-glob-to-any-file: ["app/src/main/java/app/oriel/ui/player/**", "app/src/main/java/app/oriel/playback/**"] }]
+"area: shorts":
+  - changed-files: [{ any-glob-to-any-file: ["app/src/main/java/app/oriel/ui/screens/ShortsScreen.kt"] }]
+"area: feeds":
+  - changed-files: [{ any-glob-to-any-file: ["app/src/main/java/app/oriel/ui/screens/HomeScreen.kt", "app/src/main/java/app/oriel/ui/screens/Feed*.kt"] }]
+"area: search":
+  - changed-files: [{ any-glob-to-any-file: ["app/src/main/java/app/oriel/ui/screens/SearchScreen.kt", "core/src/main/kotlin/app/oriel/core/SearchParams.kt"] }]
+"area: channel":
+  - changed-files: [{ any-glob-to-any-file: ["app/src/main/java/app/oriel/ui/screens/ChannelScreen.kt"] }]
+"area: library":
+  - changed-files: [{ any-glob-to-any-file: ["app/src/main/java/app/oriel/ui/screens/LibraryScreens.kt", "app/src/main/java/app/oriel/ui/screens/PlaylistScreen.kt", "app/src/main/java/app/oriel/ui/screens/YouScreen.kt"] }]
+"area: settings":
+  - changed-files: [{ any-glob-to-any-file: ["app/src/main/java/app/oriel/ui/screens/SettingsScreen.kt", "app/src/main/java/app/oriel/data/**"] }]
+"area: core":
+  - changed-files: [{ any-glob-to-any-file: ["core/**"] }]
+"area: ci":
+  - changed-files: [{ any-glob-to-any-file: [".github/**", "scripts/**", "gradle/**", "*.gradle.kts"] }]
+"type: docs":
+  - changed-files: [{ all-globs-to-all-files: ["**/*.md", "docs/**", "LICENSES/**"] }]

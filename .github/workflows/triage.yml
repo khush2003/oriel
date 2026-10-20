@@ -1,0 +1,47 @@
+name: Triage
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited]
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  # Runs from the base branch and never checks out PR code, so it's safe on pull_request_target.
+  label-pr:
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/labeler@v5
+        with:
+          sync-labels: false
+      - name: Flag AI-assisted PRs and missing template
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.pull_request.body || ''
+            const pr = context.payload.pull_request.number
+            const labels = []
+            if (/-\s*\[x\]\s*An AI tool helped/i.test(body)) labels.push('ai-assisted')
+            if (labels.length) await github.rest.issues.addLabels({ ...context.repo, issue_number: pr, labels })
+            if (context.payload.action === 'opened' && !/## Checklist/.test(body)) {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: pr,
+                body: 'This PR is missing the pull request template. Please edit the description to fill it in (see CONTRIBUTING.md); PRs without it are closed.' })
+            }
+
+  label-issue:
+    if: github.event_name == 'issues'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue
+            if (!issue.labels.some(l => l.name.startsWith('status:'))) {
+              await github.rest.issues.addLabels({ ...context.repo, issue_number: issue.number, labels: ['status: needs triage'] })
+            }

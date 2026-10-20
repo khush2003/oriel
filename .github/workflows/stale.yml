@@ -1,0 +1,29 @@
+name: Stale
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v9
+        with:
+          # Only issues waiting on the reporter go stale; accepted work never does.
+          only-issue-labels: "status: needs info"
+          days-before-issue-stale: 14
+          days-before-issue-close: 7
+          stale-issue-label: stale
+          stale-issue-message: "No reply for two weeks. This closes in 7 days unless the requested details are added."
+          close-issue-message: "Closed for lack of information. Comment with the details and it can be reopened."
+          days-before-pr-stale: 30
+          days-before-pr-close: 14
+          stale-pr-label: stale
+          stale-pr-message: "No activity for a month. This closes in two weeks unless it's updated."
+          exempt-pr-labels: "status: blocked"

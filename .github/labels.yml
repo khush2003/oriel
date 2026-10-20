@@ -1,0 +1,38 @@
+# Source of truth for labels; the labels workflow syncs this file. See docs/TRIAGE.md.
+- { name: "type: bug",            color: "d73a4a", description: "Something is broken" }
+- { name: "type: playback",       color: "e4572e", description: "A video won't load, stalls or plays wrong" }
+- { name: "type: feature",        color: "a2eeef", description: "New behaviour or a change to it" }
+- { name: "type: design",         color: "c5def5", description: "Look, feel, motion, accessibility" }
+- { name: "type: docs",           color: "0075ca", description: "Documentation only" }
+- { name: "type: chore",          color: "ededed", description: "Build, CI, dependencies, refactors" }
+- { name: "area: player",         color: "5319e7", description: "Watch page, mini player, PiP, fullscreen" }
+- { name: "area: shorts",         color: "5319e7", description: "Shorts" }
+- { name: "area: feeds",          color: "5319e7", description: "Home, subscriptions, trending" }
+- { name: "area: search",         color: "5319e7", description: "Search and filters" }
+- { name: "area: channel",        color: "5319e7", description: "Channel pages" }
+- { name: "area: library",        color: "5319e7", description: "History, playlists, You tab" }
+- { name: "area: settings",       color: "5319e7", description: "Settings and sign-in" }
+- { name: "area: core",           color: "5319e7", description: "Parsing, streams, the core module" }
+- { name: "area: ci",             color: "5319e7", description: "Workflows, scripts, release" }
+- { name: "status: needs triage", color: "fbca04", description: "Not looked at yet" }
+- { name: "status: needs info",   color: "fef2c0", description: "Waiting on the reporter" }
+- { name: "status: accepted",     color: "0e8a16", description: "Wanted; open for a PR" }
+- { name: "status: in progress",  color: "1d76db", description: "Someone is working on it" }
+- { name: "status: blocked",      color: "b60205", description: "Can't move until something else does" }
+- { name: "status: upstream",     color: "bfd4f2", description: "YouTube or a dependency must change" }
+- { name: "priority: critical",   color: "b60205", description: "Crash on launch, nothing plays, privacy or security" }
+- { name: "priority: high",       color: "d93f0b", description: "Next release" }
+- { name: "priority: normal",     color: "fbca04", description: "Soon" }
+- { name: "priority: low",        color: "c2e0c6", description: "Someday" }
+- { name: "wontfix: out of scope", color: "000000", description: "On the never-list in docs/SCOPE.md" }
+- { name: "wontfix: by design",   color: "444444", description: "Works as intended" }
+- { name: "duplicate",            color: "cfd3d7", description: "Already reported" }
+- { name: "invalid",              color: "e4e669", description: "Not a real issue" }
+- { name: "good first issue",     color: "7057ff", description: "Small, scoped, good for newcomers" }
+- { name: "help wanted",          color: "008672", description: "Outside contributions welcome" }
+- { name: "ai-assisted",          color: "f9d0c4", description: "An AI tool helped write this PR" }
+- { name: "needs screenshots",    color: "fef2c0", description: "Visual change without screenshots" }
+- { name: "needs tests",          color: "fef2c0", description: "Behaviour change without tests" }
+- { name: "breaking",             color: "b60205", description: "Changes stored data or settings" }
+- { name: "dependencies",         color: "0366d6", description: "Dependency updates" }
+- { name: "stale",                color: "ededed", description: "No activity; closing soon" }
