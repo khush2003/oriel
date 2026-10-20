@@ -14,6 +14,8 @@ jobs:
     environment: release
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - uses: gradle/actions/wrapper-validation@v4
       - name: Tag matches versionName
         run: |
@@ -24,8 +26,7 @@ jobs:
       - name: versionCode is higher than the last release's
         run: |
           code=$(sed -nE 's/^\s*versionCode = ([0-9]+).*/\1/p' app/build.gradle.kts)
-          git fetch --tags --quiet
-          last=$(git tag --list 'v*' --sort=-creatordate | grep -vx "$GITHUB_REF_NAME" | head -1)
+          last=$(git tag --list 'v*' --sort=-creatordate | { grep -vx "$GITHUB_REF_NAME" || true; } | head -1)
           if [ -n "$last" ]; then
             prev=$(git show "$last:app/build.gradle.kts" | sed -nE 's/^\s*versionCode = ([0-9]+).*/\1/p')
             [ "$code" -gt "$prev" ] || { echo "versionCode $code isn't higher than $last's $prev"; exit 1; }
