@@ -1,0 +1,64 @@
+name: Bug report
+description: Something in the app is broken, looks wrong, or crashes.
+labels: ["type: bug", "status: needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. If a video won't play, use the **Playback problem** form instead.
+        Never paste cookies, account details or full stream URLs here.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open …
+        2. Tap …
+        3. See …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Oriel version
+      description: Settings › About.
+      placeholder: 0.9.01-alpha
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Phone and Android version
+      placeholder: Pixel 8, Android 16
+    validations:
+      required: true
+  - type: dropdown
+    id: account
+    attributes:
+      label: Signed in?
+      options:
+        - "No"
+        - "Yes"
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: Problem report or screenshots
+      description: Settings › About › Share problem report holds recent errors without URLs or cookies. Screen recordings help with gesture and animation bugs.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I'm on the latest release.
+          required: true
+        - label: I searched existing issues and this isn't a duplicate.
+          required: true

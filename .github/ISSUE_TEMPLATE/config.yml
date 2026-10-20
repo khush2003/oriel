@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security problem
+    url: https://github.com/khush2003/yt/security/advisories/new
+    about: Report it privately. Never in a public issue.
+  - name: Question or idea to talk through
+    url: https://github.com/khush2003/yt/discussions
+    about: Ask in Discussions. Issues are for bugs and accepted features.
+  - name: What Oriel will never do
+    url: https://github.com/khush2003/yt/blob/main/docs/SCOPE.md
+    about: Downloads, getting around YouTube's protections, Premium features, ad tricks. Read this before asking for a feature.

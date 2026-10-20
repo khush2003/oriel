@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  push:
+    tags: ["v0.9.*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: gradle/actions/wrapper-validation@v4
+      - name: Tag matches versionName
+        run: |
+          version=$(sed -nE 's/^\s*versionName = "([^"]+)".*/\1/p' app/build.gradle.kts)
+          [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "Tag $GITHUB_REF_NAME doesn't match versionName $version"; exit 1; }
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+      - run: scripts/check-guardrails.sh
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: |
+            21
+            17
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-37 build-tools;36.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-disabled: true
+      - name: Keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          [ -n "$KEYSTORE_BASE64" ] || { echo "KEYSTORE_BASE64 is not set; refusing to publish a debug-signed release"; exit 1; }
+          echo "$KEYSTORE_BASE64" | base64 -d > release.jks
+          printf 'storeFile=release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > keystore.properties
+      - name: Test
+        run: ./gradlew --no-daemon :core:test :app:testDebugUnitTest
+      - name: Build
+        env:
+          APTABASE_KEY: ${{ secrets.APTABASE_KEY }}
+        run: ./gradlew --no-daemon :app:assembleRelease
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          apk="Oriel-$VERSION.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$apk"
+          sum=$(sha256sum "$apk" | cut -d' ' -f1)
+          gh release create "$GITHUB_REF_NAME" "$apk" --draft --prerelease \
+            --title "Oriel $VERSION" --notes "SHA-256: \`$sum\`"
+      - name: Remove the keystore
+        if: always()
+        run: rm -f release.jks keystore.properties

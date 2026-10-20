@@ -1,0 +1,58 @@
+name: Playback problem
+description: A video, Short or live stream won't load, stalls, or plays at the wrong quality.
+labels: ["type: playback", "status: needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Most playback failures come from YouTube refusing the request: bot checks on your network, region
+        locks, age gates or music rights. Oriel doesn't work around those (see docs/SCOPE.md), but a clear
+        report tells us whether it's that or a bug of ours.
+  - type: input
+    id: link
+    attributes:
+      label: Video link
+      placeholder: https://youtu.be/…
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens
+      description: The message on screen, if any, and what you tried (retry, another quality, signing in).
+    validations:
+      required: true
+  - type: dropdown
+    id: web
+    attributes:
+      label: Does it play on youtube.com from the same network?
+      options:
+        - "Yes"
+        - "No"
+        - "It asks me to sign in or confirm I'm not a bot"
+        - "Didn't check"
+    validations:
+      required: true
+  - type: dropdown
+    id: others
+    attributes:
+      label: Do other videos play in Oriel?
+      options:
+        - "Yes, only this one fails"
+        - "No, nothing plays"
+        - "Some do, some don't"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Oriel version, phone and Android version
+      placeholder: 0.9.01-alpha, Pixel 8, Android 16
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: Problem report
+      description: Settings › About › Share problem report. It contains the error without URLs or cookies.
+      render: text

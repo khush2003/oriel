@@ -1,0 +1,34 @@
+name: Feature request
+description: Suggest something new or a change to how something works.
+labels: ["type: feature", "status: needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please read [docs/SCOPE.md](https://github.com/khush2003/yt/blob/main/docs/SCOPE.md) first.
+        Requests for downloads, Premium features, or anything that gets around YouTube's protections
+        are closed as out of scope.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you're trying to do and what gets in the way. Describe the need, not only a solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you'd like
+      description: How it would work and look. Sketches or screenshots from other apps are welcome.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I read docs/SCOPE.md and this isn't on the never-list.
+          required: true
+        - label: I searched existing issues and this isn't a duplicate.
+          required: true
+        - label: I'd like to build this myself.
