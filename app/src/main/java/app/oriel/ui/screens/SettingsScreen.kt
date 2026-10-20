@@ -232,9 +232,12 @@ fun SettingsScreen() {
         item(key = "about") {
             SettingsGroup(
                 header = "About",
-                footer = "Oriel is free software under the GNU GPL v3. Its interface is adapted from BitChord (GPL-3.0). Oriel isn't affiliated with or endorsed by YouTube or Google; using it may not comply with YouTube's Terms of Service.",
+                footer = "$COPYRIGHT. Free software under the GNU GPL v3 with attribution terms (see NOTICE in the source). Its interface is adapted from BitChord (GPL-3.0). Oriel isn't affiliated with or endorsed by YouTube or Google; using it may not comply with YouTube's Terms of Service.",
             ) {
                 SettingsRow("Version", OrielIcons.Settings, value = BuildConfig.VERSION_NAME)
+                RowDivider()
+                // Credit required by NOTICE (GPL-3.0 section 7(b)); forks must keep it.
+                SettingsRow("Made by khush2003", OrielIcons.Person, subtitle = SOURCE_URL.removePrefix("https://"), chevron = true, onClick = { app.openExternally(SOURCE_URL) })
                 RowDivider()
                 // Crashes and playback errors, kept on the phone until shared; see CrashLog.
                 SettingsRow(
@@ -327,7 +330,11 @@ private fun LongPickerSheet(p: Picker<Any?>, onDismiss: () -> Unit) {
 
 private val CATEGORY_PICKER = Picker<Any?>("Skip these", emptyList(), null, { "" }) {}
 
+private const val COPYRIGHT = "Oriel © 2026 khush2003"
+private const val SOURCE_URL = "https://github.com/khush2003/oriel"
+
 private val LICENCES = listOf(
+    COPYRIGHT to "GNU GPL v3.0 only, with attribution terms (NOTICE)",
     "BitChord (interface design and components)" to "GNU GPL v3.0",
     "Kyant0 backdrop (liquid glass), © 2025 Kyant0" to "Apache License 2.0",
     "InnerTubeX (stream resolution)" to "GNU GPL v3.0",

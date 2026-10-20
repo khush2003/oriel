@@ -62,7 +62,15 @@ if [ -n "$big" ]; then fail "No files over 1 MB"; echo "$big" | sed 's/^/    /';
 version=$(sed -nE 's/^\s*versionName = "([^"]+)".*/\1/p' app/build.gradle.kts)
 if [[ "$version" =~ ^0\.9\.[0-9]{2}-alpha$ ]]; then pass "Version $version follows 0.9.NN-alpha"; else fail "Version '$version' doesn't follow 0.9.NN-alpha (docs/RELEASING.md)"; fi
 
-for f in LICENSE THIRD_PARTY.md PRIVACY.md docs/SCOPE.md; do
+if grep -q 'Made by khush2003' app/src/main/java/app/oriel/ui/screens/SettingsScreen.kt \
+  && grep -q 'Oriel © 2026 khush2003' app/src/main/java/app/oriel/ui/screens/SettingsScreen.kt \
+  && grep -q 'Copyright (C) 2026 khush2003' NOTICE; then
+  pass "Author credit and copyright are intact (NOTICE, section 7(b))"
+else
+  fail "Author credit and copyright are intact (NOTICE, section 7(b))"
+fi
+
+for f in LICENSE NOTICE TRADEMARKS.md THIRD_PARTY.md PRIVACY.md docs/SCOPE.md; do
   [ -f "$f" ] || fail "$f exists"
 done
 

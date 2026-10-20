@@ -1,6 +1,6 @@
 # Third-party code, fonts and data
 
-Oriel is licensed under the GNU GPL v3.0 (see `LICENSE`). It includes or adapts the following,
+Oriel © 2026 khush2003 is licensed under the GNU GPL v3.0 only, with the additional terms in `NOTICE` (see `LICENSE`). It includes or adapts the following,
 each under its own licence; full texts are in `LICENSES/` or linked.
 
 ## Code copied or adapted into this repository

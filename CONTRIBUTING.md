@@ -78,6 +78,14 @@ every release. Only maintainers bump versions, in a release PR. See [`docs/RELEA
 
 How issues and PRs are labelled and moved along: [`docs/TRIAGE.md`](docs/TRIAGE.md).
 
+## Licensing your contribution
+
+By submitting a contribution you agree that it's licensed under the same terms as Oriel: the
+GNU GPL v3.0 only, with the additional terms in `NOTICE`. You keep the copyright in your work;
+add yourself to a file's header if you wrote a substantial part of it. Don't remove or change
+existing copyright or attribution notices, including the "Made by khush2003" credit on the
+About screen. PRs that do are closed.
+
 ## Conduct
 
 Everyone here follows the [Code of Conduct](CODE_OF_CONDUCT.md). Security problems go through

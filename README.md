@@ -6,7 +6,7 @@ A YouTube client for Android, written in Kotlin with Jetpack Compose and Media3.
 
 Oriel works signed out. Signing in is optional and brings in your own home feed, subscriptions, playlists, likes and history.
 
-Oriel is an independent project. It is not affiliated with, endorsed by or connected to YouTube or Google.
+Made by [khush2003](https://github.com/khush2003). Oriel is an independent project. It is not affiliated with, endorsed by or connected to YouTube or Google.
 
 ## Features
 
@@ -200,6 +200,8 @@ Contributions are welcome. Start with [`CONTRIBUTING.md`](CONTRIBUTING.md), then
 
 ## Licence
 
-GPL-3.0; see `LICENSE`. Oriel uses InnerTubeX (GPL-3.0) and adapts code from BitChord (GPL-3.0), so the whole app is GPL-3.0. If you distribute it, you must offer the source under the same terms. The liquid-glass backdrop is Kyant's library (Apache-2.0), and those files keep its header. The Settings → About → Licences screen lists every dependency, and `THIRD_PARTY.md` lists every source, font and data set with its licence; licence texts are in `LICENSES/`. What the app stores and sends is in `PRIVACY.md`.
+Oriel © 2026 [khush2003](https://github.com/khush2003). It's free software under the GNU GPL v3.0 only (`LICENSE`), with additional attribution terms under the GPL's section 7 (`NOTICE`). In short, you can use, study, change and share Oriel, including commercially, as long as you keep the source open under the same terms, keep the credit to khush2003 (in the app's About screen and in your README or store listing), and give a modified version its own name, icon and app ID. The name and logo aren't covered by the licence; see `TRADEMARKS.md`.
+
+Oriel uses InnerTubeX (GPL-3.0) and adapts code from BitChord (GPL-3.0); those parts stay under their authors' terms. The liquid-glass backdrop is Kyant's library (Apache-2.0), and those files keep its header. The Settings → About → Licences screen lists every dependency, and `THIRD_PARTY.md` lists every source, font and data set with its licence; licence texts are in `LICENSES/`. What the app stores and sends is in `PRIVACY.md`.
 
 YouTube's Terms of Service don't permit access through unofficial clients. Oriel talks to the same internal APIs as YouTube's own apps and website, and it doesn't show ads. Use it at your own risk: an account you sign in with could be restricted. Oriel doesn't download videos, unlock Premium features or get around YouTube's bot checks; [`docs/SCOPE.md`](docs/SCOPE.md) lists what it will never do. SponsorBlock and Return YouTube Dislike are third-party services: they receive the IDs of the videos you watch, but no account details, and both can be turned off in Settings.
