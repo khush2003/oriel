@@ -29,7 +29,7 @@ body:
     attributes:
       label: Oriel version
       description: Settings › About.
-      placeholder: 0.9.01-alpha
+      placeholder: 1.0.0
     validations:
       required: true
   - type: input
@@ -52,7 +52,7 @@ body:
     id: report
     attributes:
       label: Problem report or screenshots
-      description: Settings › About › Share problem report holds recent errors without URLs or cookies. Screen recordings help with gesture and animation bugs.
+      description: Settings › About › Report a problem fills this in for you, with recent crashes and errors and without URLs, cookies or account details. Screen recordings help with gesture and animation bugs.
   - type: checkboxes
     id: checks
     attributes:

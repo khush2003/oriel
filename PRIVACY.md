@@ -10,6 +10,12 @@ everything it sends, and to whom.
   Android backups. Pausing or clearing history is in Settings › Privacy & storage.
 - If you sign in: your YouTube session cookie, in the app's private storage. It's never logged,
   and it's sent only to YouTube's own servers.
+- Problem reports: the last five crashes and the last forty errors (playback errors and failed
+  page loads), in the app's private storage, until newer ones replace them or you clear them in
+  Settings › About › Report a problem. URL queries, cookies, auth headers, email addresses and
+  long tokens are removed before they're written. They leave the phone only if you send a report
+  yourself, as a GitHub issue you submit in your browser or through the share sheet, and you see
+  the full text first.
 
 ## Sent to YouTube (Google)
 
@@ -40,12 +46,13 @@ analytics service that doesn't store IP addresses or use device identifiers:
 | Video played | whether it was a Short, part of a queue, or shuffled |
 | Shorts opened | none |
 | Search made | whether it was by voice |
+| Crash | sent on the next launch after a crash: whether it was a crash, a freeze (ANR) or a native crash, and the exception's class name (like `IllegalStateException`) |
 
 Each event also carries the app version, Android version, device model, language, and a random
 session ID that changes after an hour without use.
 
 It **never** includes what you watch or search for, video or channel IDs, your account,
-or anything else that could identify you.
+stack traces, error messages or problem reports, or anything else that could identify you.
 
 ## Contact
 

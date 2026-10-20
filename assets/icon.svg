@@ -1,14 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108">
-  <!-- Oriel's mark: an arched window lit from inside. Mirrors the launcher icon in app/src/main/res/drawable. -->
+  <!-- Oriel's mark: three nested arcs opening to the right around a dot. Mirrors the launcher icon in app/src/main/res/drawable. -->
   <defs>
     <radialGradient id="bg" cx="40" cy="36" r="90" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#1E1630"/><stop offset="1" stop-color="#0B0B0F"/>
     </radialGradient>
-    <linearGradient id="glass" x1="54" y1="30" x2="54" y2="74" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#FFD27A"/><stop offset="1" stop-color="#FF5E7E"/>
-    </linearGradient>
+    <linearGradient id="a1" x1="28" y1="28" x2="80" y2="80" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FF7A59"/><stop offset="1" stop-color="#B14DFF"/></linearGradient>
+    <linearGradient id="a2" x1="35" y1="35" x2="73" y2="73" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FF5A7A"/><stop offset="1" stop-color="#8B5CF6"/></linearGradient>
+    <linearGradient id="a3" x1="42" y1="42" x2="66" y2="66" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#FF4F6D"/><stop offset="1" stop-color="#7C5CFF"/></linearGradient>
   </defs>
   <rect width="108" height="108" rx="24" fill="url(#bg)"/>
-  <path d="M38,54.5 V46 A16,16 0 0,1 52.5,30.07 V54.5 Z M55.5,54.5 V30.07 A16,16 0 0,1 70,46 V54.5 Z M38,57.5 H52.5 V74 H38 Z M55.5,57.5 H70 V74 H55.5 Z" fill="url(#glass)"/>
-  <path d="M34,78.5 H74" stroke="#FF8A6E" stroke-width="3" stroke-linecap="round"/>
+  <g fill="none" stroke-width="5" stroke-linecap="round">
+    <path d="M72.38,35.62 A26,26 0 1,0 72.38,72.38" stroke="url(#a1)"/>
+    <path d="M67.43,40.57 A19,19 0 1,0 67.43,67.43" stroke="url(#a2)"/>
+    <path d="M62.49,45.51 A12,12 0 1,0 62.49,62.49" stroke="url(#a3)"/>
+  </g>
+  <circle cx="54" cy="54" r="3.5" fill="#FFFFFF"/>
 </svg>

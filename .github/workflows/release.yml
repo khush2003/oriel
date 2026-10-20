@@ -2,7 +2,7 @@ name: Release
 
 on:
   push:
-    tags: ["v0.9.*"]
+    tags: ["v*"]
 
 permissions:
   contents: write
@@ -20,6 +20,16 @@ jobs:
           version=$(sed -nE 's/^\s*versionName = "([^"]+)".*/\1/p' app/build.gradle.kts)
           [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "Tag $GITHUB_REF_NAME doesn't match versionName $version"; exit 1; }
           echo "VERSION=$version" >> "$GITHUB_ENV"
+          case "$version" in *-*) echo "PRERELEASE=--prerelease" >> "$GITHUB_ENV" ;; *) echo "PRERELEASE=" >> "$GITHUB_ENV" ;; esac
+      - name: versionCode is higher than the last release's
+        run: |
+          code=$(sed -nE 's/^\s*versionCode = ([0-9]+).*/\1/p' app/build.gradle.kts)
+          git fetch --tags --quiet
+          last=$(git tag --list 'v*' --sort=-creatordate | grep -vx "$GITHUB_REF_NAME" | head -1)
+          if [ -n "$last" ]; then
+            prev=$(git show "$last:app/build.gradle.kts" | sed -nE 's/^\s*versionCode = ([0-9]+).*/\1/p')
+            [ "$code" -gt "$prev" ] || { echo "versionCode $code isn't higher than $last's $prev"; exit 1; }
+          fi
       - run: scripts/check-guardrails.sh
       - uses: actions/setup-java@v5
         with:
@@ -64,7 +74,7 @@ jobs:
           \`\`\`
           $(cat dist/SHA256SUMS.txt)
           \`\`\`"
-          gh release create "$GITHUB_REF_NAME" dist/*.apk dist/SHA256SUMS.txt --draft --prerelease \
+          gh release create "$GITHUB_REF_NAME" dist/*.apk dist/SHA256SUMS.txt --draft $PRERELEASE \
             --title "Oriel $VERSION" --notes "$notes"
       - name: Remove the keystore
         if: always()

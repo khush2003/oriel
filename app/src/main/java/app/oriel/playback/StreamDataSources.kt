@@ -1,5 +1,6 @@
 package app.oriel.playback
 
+import app.oriel.util.CrashLog
 import androidx.annotation.OptIn
 import androidx.core.net.toUri
 import androidx.media3.common.util.UnstableApi
@@ -92,6 +93,7 @@ class StreamDataSources(private val graph: AppGraph) {
         // Not reaching YouTube says nothing about the video: it's retried like a dropped
         // connection, where a resolve failure would skip to the next video.
         if (e.reason == StreamResolveException.Reason.NETWORK) throw ResolveNetworkIOException(e)
+        CrashLog.nonFatal(graph.context, "Resolving ${request.videoId}", e)
         throw StreamResolveIOException(e)
     }
 

@@ -143,7 +143,8 @@ class SearchModel(private val graph: AppGraph, initial: String?) : ViewModel() {
         job = viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { graph.yt.search(q, params) } }
             result.onSuccess { page -> _state.update { it.copy(page = page, allFilters = if (params == null && page.filters.isNotEmpty()) page.filters else it.allFilters, loading = false, chips = if (params == null) page.feed.chips else it.chips, selectedChip = if (params == null) null else it.selectedChip) } }
-                .onFailure { e -> if (e !is kotlinx.coroutines.CancellationException) _state.update { it.copy(loading = false, error = friendlyError(e)) } }
+                // Never the query itself: a report may be posted publicly.
+                .onFailure { e -> graph.notePageFailure("Searching", e); if (e !is kotlinx.coroutines.CancellationException) _state.update { it.copy(loading = false, error = friendlyError(e)) } }
         }
     }
 

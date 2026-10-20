@@ -1,5 +1,7 @@
 package app.oriel.ui.screens
 
+import app.oriel.util.CrashLog
+import app.oriel.util.ReportKind
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import app.oriel.core.model.ShortSound
@@ -300,7 +302,11 @@ private class ShortsPlayback(context: android.content.Context, private val graph
                 if (id in ranked) { preload.remove(item); preload.add(progressive, ranked.getValue(id)) }
                 val at = player.currentPosition
                 player.setMediaItem(progressive, at)
-            } else if (n > 6) { failed.value = id; return@launch }
+            } else if (n > 6) {
+                failed.value = id
+                CrashLog.note(graph.context, "Short $id ${error.errorCodeName} ← " + generateSequence(error.cause) { it.cause }.joinToString(" ← ") { "${it::class.simpleName}: ${it.message?.take(160)}" })
+                return@launch
+            }
             else delay(600L * n)
             if (player.currentMediaItem?.mediaId != id) return@launch
             player.prepare()
@@ -553,6 +559,7 @@ private fun ShortPage(app: AppState, id: String, info: ShortInfo?, playback: Sho
             MessageState(
                 "Couldn't play this short.", Modifier.align(Alignment.Center).padding(horizontal = 32.dp),
                 action = "Try again", onAction = { playback.retry(); paused = false },
+                secondary = "Report", onSecondary = { app.reportProblem(ReportKind.PLAYBACK, id) },
             )
         }
         if (fast) {

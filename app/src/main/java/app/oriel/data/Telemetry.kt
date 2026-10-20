@@ -24,7 +24,8 @@ import java.util.UUID
  * `APTABASE_KEY` environment variable): a fork or a build from source reports nowhere.
  *
  * What's sent: the event's name (the app opened, a video played, a feature used), a few coarse
- * props (signed in or not, a quality like "1080p"), and what Aptabase attaches itself: app
+ * props (signed in or not, a quality like "1080p"; for a crash, its kind and exception class,
+ * never a trace or message), and what Aptabase attaches itself: app
  * version, Android version, device model, locale, and a random session id that changes every
  * hour of quiet. Never what was watched or searched, nor anything about the account.
  *

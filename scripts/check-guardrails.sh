@@ -60,7 +60,10 @@ big=$(git ls-files -z | xargs -0 -r du -k 2>/dev/null | awk '$1 > 1024 { print $
 if [ -n "$big" ]; then fail "No files over 1 MB"; echo "$big" | sed 's/^/    /'; else pass "No files over 1 MB"; fi
 
 version=$(sed -nE 's/^\s*versionName = "([^"]+)".*/\1/p' app/build.gradle.kts)
-if [[ "$version" =~ ^0\.9\.[0-9]{2}-alpha$ ]]; then pass "Version $version follows 0.9.NN-alpha"; else fail "Version '$version' doesn't follow 0.9.NN-alpha (docs/RELEASING.md)"; fi
+# Strict SemVer 2.0.0 with no leading zeros; pre-releases only as -beta.N or -rc.N (docs/RELEASING.md).
+n='(0|[1-9][0-9]*)'
+semver="^$n\\.$n\\.$n(-(beta|rc)\\.[1-9][0-9]*)?$"
+if [[ "$version" =~ $semver ]]; then pass "Version $version is strict SemVer (docs/RELEASING.md)"; else fail "Version '$version' isn't strict SemVer: MAJOR.MINOR.PATCH, optionally -beta.N or -rc.N (docs/RELEASING.md)"; fi
 
 if grep -q 'Made by khush2003' app/src/main/java/app/oriel/ui/screens/SettingsScreen.kt \
   && grep -q 'Oriel © 2026 khush2003' app/src/main/java/app/oriel/ui/screens/SettingsScreen.kt \

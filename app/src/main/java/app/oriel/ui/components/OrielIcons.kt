@@ -14,6 +14,7 @@ import androidx.compose.material.icons.outlined.Subscriptions
 import androidx.compose.material.icons.rounded.AccountCircle
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Bolt
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.PlayCircleOutline
@@ -162,6 +163,7 @@ object OrielIcons {
     val Heart = Icons.Rounded.Favorite
     val Mic = Icons.Rounded.Mic
     val Insights = Icons.Rounded.Insights
+    val Report = Icons.Rounded.BugReport
     val Sound = Icons.Rounded.MusicNote
     val Fill = Icons.Rounded.NorthWest
     val Person = Icons.Rounded.Person

@@ -130,7 +130,10 @@ class ChannelModel(private val graph: AppGraph, private val id: String, params: 
             val r = withContext(Dispatchers.IO) { runCatching { graph.yt.channel(id, params) } }
             r.onSuccess { p ->
                 _state.update { it.copy(page = p, tabs = p.tabs.filter { t -> t.params != null || t.title == p.selectedTab }, selectedTab = p.selectedTab, feed = p.feed, loading = false, sortChips = p.feed.chips, selectedSort = null) }
-            }.onFailure { e -> if (e !is kotlinx.coroutines.CancellationException) _state.update { it.copy(loading = false, error = friendlyError(e)) } }
+            }.onFailure { e ->
+                graph.notePageFailure("Loading a channel", e)
+                if (e !is kotlinx.coroutines.CancellationException) _state.update { it.copy(loading = false, error = friendlyError(e)) }
+            }
         }
     }
 

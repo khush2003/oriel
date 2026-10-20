@@ -90,7 +90,7 @@ class PlaylistModel(private val graph: AppGraph, private val id: String) : ViewM
         viewModelScope.launch {
             val r = withContext(Dispatchers.IO) { runCatching { graph.yt.playlist(id, fresh) } }
             r.onSuccess { p -> _state.value = PlaylistState(page = p, loading = false) }
-                .onFailure { e -> _state.update { it.copy(loading = false, refreshing = false, error = friendlyError(e)) } }
+                .onFailure { e -> graph.notePageFailure("Loading a playlist", e); _state.update { it.copy(loading = false, refreshing = false, error = friendlyError(e)) } }
         }
     }
 

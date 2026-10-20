@@ -415,7 +415,7 @@ fun <T> SegmentedControl(
 
 /** Empty and error states: centred bodyLarge, with an optional button. */
 @Composable
-fun MessageState(text: String, modifier: Modifier = Modifier, icon: ImageVector? = null, action: String? = null, onAction: (() -> Unit)? = null) {
+fun MessageState(text: String, modifier: Modifier = Modifier, icon: ImageVector? = null, action: String? = null, onAction: (() -> Unit)? = null, secondary: String? = null, onSecondary: (() -> Unit)? = null) {
     Column(modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 48.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         if (icon != null) {
             Icon(icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(40.dp))
@@ -424,7 +424,10 @@ fun MessageState(text: String, modifier: Modifier = Modifier, icon: ImageVector?
         Text(text, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
         if (action != null && onAction != null) {
             Spacer(Modifier.height(16.dp))
-            ActionPill(action, null, onAction, filled = true, height = 44.dp)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ActionPill(action, null, onAction, filled = true, height = 44.dp)
+                if (secondary != null && onSecondary != null) ActionPill(secondary, null, onSecondary, height = 44.dp)
+            }
         }
     }
 }

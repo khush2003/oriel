@@ -1,5 +1,6 @@
 package app.oriel.ui.player
 
+import app.oriel.ui.screens.notePageFailure
 import androidx.compose.runtime.Stable
 import app.oriel.AppGraph
 import app.oriel.core.CaptionTrack
@@ -138,6 +139,7 @@ class WatchModel(private val graph: AppGraph, private val connection: PlayerConn
                 if (p.playlist == null) this@WatchModel.playlistId = null
                 _state.update { it.copy(page = p, loading = false, related = p.related, relatedContinuation = p.relatedContinuation, video = mergeVideo(video, p)) }
             }.onFailure { e ->
+                graph.notePageFailure("Loading a watch page", e)
                 _state.update { it.copy(loading = false, error = friendlyError(e)) }
             }
             if (graph.settings.current.returnDislike && !video.isShort) {

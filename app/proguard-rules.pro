@@ -1,6 +1,8 @@
 # Nothing is renamed: InnerTubeX, QuickJS (via JNI) and kotlinx.serialization reach for
 # classes by name. R8 still optimizes Compose, Media3 and coroutines, which is where time goes.
 -dontobfuscate
+# Line numbers in stack traces, for crash reports (see CrashLog).
+-keepattributes SourceFile,LineNumberTable
 
 -keep class com.metrolist.innertubex.** { *; }
 -keep class com.dokar.quickjs.** { *; }

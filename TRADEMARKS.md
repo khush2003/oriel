@@ -13,7 +13,7 @@ They identify the official app made by khush2003, so people know what they're in
 ## You may not, without written permission
 
 - Publish a modified version, or any app, under the name "Oriel" or a confusingly similar
-  name, or with the Oriel icon (the arched window) or something resembling it.
+  name, or with the Oriel icon (three nested arcs around a dot) or something resembling it.
 - Use the application ID `app.oriel`, or sign builds in a way that suggests they're official.
 - Suggest that khush2003 made, endorses or supports your version.
 - Use the name or logo in a store listing, domain name or social account that could be

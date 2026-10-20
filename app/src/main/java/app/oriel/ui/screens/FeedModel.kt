@@ -128,6 +128,7 @@ class FeedModel(
                 if (replace == null) cacheKey?.let { key -> withContext(Dispatchers.IO) { graph.pages.write(key, Feed.serializer(), feed) } }
             }.onFailure { e ->
                 if (e is CancellationException) throw e
+                graph.notePageFailure("Loading ${cacheKey?.substringBefore('-') ?: "a feed"}", e)
                 _state.update { it.copy(loading = false, refreshing = false, error = friendlyError(e)) }
             }
         }
@@ -175,6 +176,18 @@ class FeedModel(
         const val MINUTE = 60_000L
         const val AFTER_WATCH_MS = MINUTE
     }
+}
+
+/**
+ * A page that failed for a reason other than the network (a parse error, YouTube answering
+ * oddly), kept in the problem report's trail; the same failure again only counts up.
+ */
+fun AppGraph.notePageFailure(where: String, e: Throwable) {
+    if (e is CancellationException) return
+    val causes = generateSequence(e) { it.cause }.take(16).toList()
+    val network = causes.any { it is java.io.IOException || it::class.simpleName == "HttpRequestTimeoutException" }
+    if (network && causes.none { it is app.oriel.core.YTException }) return
+    app.oriel.util.CrashLog.nonFatal(context, where, e)
 }
 
 fun friendlyError(e: Throwable): String {

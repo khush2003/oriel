@@ -15,6 +15,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -98,6 +99,7 @@ import app.oriel.ui.haptics.Haptic
 import app.oriel.ui.haptics.rememberHaptics
 import app.oriel.ui.theme.LiveRed
 import app.oriel.util.Format
+import app.oriel.util.ReportKind
 import app.oriel.util.Thumbnails
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -450,7 +452,11 @@ fun VideoControls(
                             )
                         } else Spacer(Modifier.height(12.dp))
                     }
-                    if (error != null) ErrorOverlay(error!!, Modifier.align(Alignment.Center), onRetry = { connection.retry() })
+                    if (error != null) ErrorOverlay(
+                        error!!, Modifier.align(Alignment.Center),
+                        onRetry = { haptics.play(Haptic.Tap); connection.retry() },
+                        onReport = { haptics.play(Haptic.Tap); app.reportProblem(ReportKind.PLAYBACK, watch.video?.id ?: connection.current.value?.id) },
+                    )
                 }
             }
         }
@@ -594,11 +600,24 @@ private fun SeekIndicator(side: Int, seconds: Int, pulse: () -> Float, at: () ->
 }
 
 @Composable
-private fun ErrorOverlay(message: String, modifier: Modifier, onRetry: () -> Unit) {
+private fun ErrorOverlay(message: String, modifier: Modifier, onRetry: () -> Unit, onReport: () -> Unit) {
     Column(modifier.widthIn(max = 320.dp).padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Text(message, style = MaterialTheme.typography.bodyMedium, color = Color.White, textAlign = TextAlign.Center, maxLines = 3)
         Spacer(Modifier.height(10.dp))
-        Text("Retry", style = MaterialTheme.typography.titleSmall, color = Color.White, modifier = Modifier.videoGlass(RoundedCornerShape(50)).clickable(onClick = onRetry).padding(horizontal = 16.dp, vertical = 8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            ErrorButton("Retry", onRetry)
+            ErrorButton("Report", onReport)
+        }
+    }
+}
+
+/** A glass pill on the picture; 44dp tall to touch, as every target is. */
+@Composable
+private fun ErrorButton(text: String, onClick: () -> Unit) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    Box(Modifier.heightIn(min = 44.dp).graphicsLayer { alpha = if (pressed) 0.6f else 1f }.clickable(interaction, indication = null, onClick = onClick), contentAlignment = Alignment.Center) {
+        Text(text, style = MaterialTheme.typography.titleSmall, color = Color.White, modifier = Modifier.videoGlass(RoundedCornerShape(50)).padding(horizontal = 16.dp, vertical = 8.dp))
     }
 }
 

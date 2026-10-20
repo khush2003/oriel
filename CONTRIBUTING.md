@@ -8,8 +8,8 @@ please read this page before you write code. It's short.
 1. **Read [`docs/SCOPE.md`](docs/SCOPE.md).** Some features (downloads, getting around YouTube's
    protections, Google branding, ads or paid tiers, tracking) are permanently out of scope.
    PRs adding them are closed without review.
-2. **Open or find an issue first** for anything bigger than a small bug fix, and wait for a
-   maintainer to label it `status: accepted`. This saves you from building something that can't be
+2. **Open or find an issue first** for anything bigger than a small bug fix, and wait for
+   the maintainer to label it `status: accepted`. This saves you from building something that can't be
    merged. Small fixes (typos, a crash with an obvious cause, a broken layout) can go straight to a PR.
 3. **One change per PR.** A bug fix, a feature, or a refactor, not all three. Large PRs are asked
    to split.
@@ -60,8 +60,8 @@ scripts/check-guardrails.sh                   # scope, privacy and repo hygiene 
 - Fill in the PR template completely: what changed, why, how you tested it, screenshots, and the
   scope checklist. PRs with the template deleted are closed.
 - Keep PRs as drafts until CI is green and you've tested on a phone.
-- A maintainer reviews within about a week. Address review by pushing new commits (don't
-  force-push during review); the maintainer squashes on merge.
+- The maintainer, @khush2003, reviews within about a week and is the only one who merges.
+  Address review by pushing new commits (don't force-push during review); PRs are squashed on merge.
 
 ## AI-assisted contributions
 
@@ -71,8 +71,8 @@ an AI tool helped.
 
 ## Versioning
 
-Versions are `0.9.NN-alpha` (`0.9.01-alpha`, `0.9.02-alpha`, …); `versionCode` goes up by one with
-every release. Only maintainers bump versions, in a release PR. See [`docs/RELEASING.md`](docs/RELEASING.md).
+Oriel uses Semantic Versioning: features bump MINOR (`1.1.0`), fixes bump PATCH (`1.1.1`), and
+big releases may get a beta first (`1.2.0-beta.1`). `versionCode` goes up by one with every release. Only the maintainer bumps versions, in a release PR. See [`docs/RELEASING.md`](docs/RELEASING.md).
 
 ## Labels and triage
 

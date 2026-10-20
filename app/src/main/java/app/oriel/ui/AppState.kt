@@ -38,6 +38,7 @@ import app.oriel.ui.navigation.YouRoute
 import app.oriel.ui.navigation.tabRoot
 import app.oriel.ui.player.WatchModel
 import app.oriel.ui.theme.PlayerSpring
+import app.oriel.util.ReportKind
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -77,6 +78,9 @@ class PlayerSheetState(private val scope: CoroutineScope) {
 data class AlertSpec(val title: String, val message: String? = null, val actions: List<AlertAction>)
 data class AlertAction(val label: String, val emphasized: Boolean = false, val destructive: Boolean = false, val onClick: () -> Unit = {})
 
+/** The "Report a problem" sheet, opened with what's already known: the kind, the video, the person's words. */
+data class ReportRequest(val kind: ReportKind = ReportKind.BROKEN, val videoLink: String? = null, val description: String = "")
+
 /**
  * App-wide UI state and the verbs every screen uses: open a video, a
  * channel, a playlist; show an item's menu; share; subscribe. Screens read
@@ -102,6 +106,12 @@ class AppState(
     var saveTarget by mutableStateOf<Video?>(null)
     var alert by mutableStateOf<AlertSpec?>(null)
     var shareTarget by mutableStateOf<Item?>(null)
+    var report by mutableStateOf<ReportRequest?>(null)
+
+    /** Opens "Report a problem"; a [videoId] fills in the video's link. */
+    fun reportProblem(kind: ReportKind = ReportKind.BROKEN, videoId: String? = null) {
+        report = ReportRequest(kind, videoId?.let { "https://youtu.be/$it" })
+    }
 
     private val _notice = MutableStateFlow<Notice?>(null)
     val notice = _notice.asStateFlow()

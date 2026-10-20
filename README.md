@@ -176,7 +176,19 @@ Release builds are signed with the debug key unless you add a `keystore.properti
 
 ## Problem reports
 
-Oriel keeps its last five crashes and the last forty playback errors on the phone. **Settings › About › Share problem report** sends them as text through the share sheet. Before they're written, URL queries are cut out, which removes the device's IP and the signed stream parameters. Request headers are never recorded, so the sign-in cookie can't appear in a report. Nothing leaves the phone unless you share it.
+Oriel keeps a few notes about what went wrong, on the phone only, in its private storage (excluded from backups):
+
+- **The last five crashes**, each with its stack trace, the page that was open, and the app version. Ordinary crashes are written as they happen. On Android 11 and newer, "app not responding" freezes (ANRs) and native crashes are read back from Android's own record on the next launch; for an ANR, the main thread's stack is kept.
+- **The last forty errors**: playback errors you saw, and errors caught along the way (a stream that couldn't be resolved, a page that failed for a reason other than your connection). A repeat counts up instead of adding a line.
+
+They stay until newer ones push them out or you clear them. Before anything is written, it's scrubbed: URL queries are cut (they carry your IP and signed stream parameters), and cookies, auth headers, email addresses and long tokens (visitor data, continuations) are removed. Video IDs stay, because a playback report needs them. Your account and your searches are never in it; the only sign of what you watch is the ID of a video that failed to play, or the link you add yourself.
+
+**Settings › About › Report a problem** (also **Report** on a playback error, and the prompt after a crash) shows you the whole report before it goes anywhere. You pick what happened, describe it, and choose whether to include the diagnostics. Then either:
+
+- **Open a GitHub issue**: your browser opens a new issue on this repository with the form filled in. Nothing is posted until you submit it there. If the report is too long for a link, the full text is copied to your clipboard for you to paste.
+- **Share**: the share sheet, to send it by email or any other app.
+
+Nothing leaves the phone unless you send a report yourself. The one exception is if you've opted into anonymous usage counts (see [`PRIVACY.md`](PRIVACY.md)): then, on the next launch, a crash is counted as its kind (crash, ANR or native) and the exception's class name, with no stack trace, message or report text.
 
 ## What isn't supported, and what it would take
 
@@ -196,7 +208,7 @@ Oriel keeps its last five crashes and the last forty playback errors on the phon
 
 ## Contributing
 
-Contributions are welcome. Start with [`CONTRIBUTING.md`](CONTRIBUTING.md), then [`docs/SCOPE.md`](docs/SCOPE.md) (what Oriel will and won't do) and [`docs/DESIGN.md`](docs/DESIGN.md) (how it should look and feel). AI-assisted work follows [`AGENTS.md`](AGENTS.md). Issues and PRs are triaged as described in [`docs/TRIAGE.md`](docs/TRIAGE.md). Security problems go through [`SECURITY.md`](SECURITY.md).
+Where Oriel is headed: [`docs/ROADMAP.md`](docs/ROADMAP.md). Contributions are welcome. Start with [`CONTRIBUTING.md`](CONTRIBUTING.md), then [`docs/SCOPE.md`](docs/SCOPE.md) (what Oriel will and won't do) and [`docs/DESIGN.md`](docs/DESIGN.md) (how it should look and feel). AI-assisted work follows [`AGENTS.md`](AGENTS.md). Issues and PRs are triaged as described in [`docs/TRIAGE.md`](docs/TRIAGE.md). Security problems go through [`SECURITY.md`](SECURITY.md).
 
 ## Licence
 

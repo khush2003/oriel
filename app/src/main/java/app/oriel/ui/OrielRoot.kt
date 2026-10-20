@@ -93,6 +93,13 @@ import app.oriel.ui.screens.YouScreen
 import app.oriel.ui.theme.DarkIsland
 import app.oriel.ui.theme.LocalReduceAnimation
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import androidx.compose.runtime.snapshotFlow
+import app.oriel.ui.screens.ReportSheet
+import app.oriel.util.CrashLog
+import app.oriel.util.ReportKind
 
 private val TABS = listOf(
     BottomTab("Home", OrielIcons.Home, OrielIcons.HomeSelected),
@@ -133,21 +140,42 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
     LaunchedEffect(app) { app.graph.actions.notices.collectLatest { app.notice(it) } }
     // Usage counts are opt-in: asked once, a little after the first launch settles, and only in
     // builds that can report. Either answer is kept; Settings › Privacy changes it later.
+    // Then, never at the same time, a crash since last time is offered for reporting, once.
     LaunchedEffect(app) {
         val graph = app.graph
-        if (!graph.telemetry.available || graph.settings.current.telemetry != null) return@LaunchedEffect
-        kotlinx.coroutines.delay(4_000)
+        if (graph.telemetry.available && graph.settings.current.telemetry == null) {
+            kotlinx.coroutines.delay(4_000)
+            app.alert = AlertSpec(
+                "Help improve Oriel?",
+                "Share anonymous usage counts: app opens, which features get used, crashes, and the app and Android version. Never what you watch or search, and nothing tied to you or your account. You can change this in Settings.",
+                listOf(
+                    AlertAction("Don't Share") { graph.settings.update { it.copy(telemetry = false) } },
+                    AlertAction("Share", emphasized = true) {
+                        graph.settings.update { it.copy(telemetry = true) }
+                        graph.telemetry.track("app_open", mapOf("signedIn" to graph.account.signedIn.value, "firstRun" to true))
+                    },
+                ),
+            )
+        }
+        graph.crashesChecked.await()
+        val crash = withContext(Dispatchers.IO) { CrashLog.unasked(graph.context) } ?: return@LaunchedEffect
+        kotlinx.coroutines.delay(1_500)
+        snapshotFlow { app.alert == null && app.report == null }.first { it }
+        // Remembered before it's shown: if showing it went wrong too, it isn't asked again and again.
+        withContext(Dispatchers.IO) { CrashLog.markAsked(graph.context, crash.time) }
         app.alert = AlertSpec(
-            "Help improve Oriel?",
-            "Share anonymous usage counts: app opens, which features get used, and the app and Android version. Never what you watch or search, and nothing tied to you or your account. You can change this in Settings.",
+            "Oriel closed unexpectedly",
+            "A note of what went wrong is kept on this phone. Sending it helps get it fixed; you'll see everything in it first.",
             listOf(
-                AlertAction("Don't Share") { graph.settings.update { it.copy(telemetry = false) } },
-                AlertAction("Share", emphasized = true) {
-                    graph.settings.update { it.copy(telemetry = true) }
-                    graph.telemetry.track("app_open", mapOf("signedIn" to graph.account.signedIn.value, "firstRun" to true))
-                },
+                AlertAction("Not now"),
+                AlertAction("Report…", emphasized = true) { app.reportProblem(ReportKind.CRASH) },
             ),
         )
+    }
+    // Where a crash happens, for its report: the page on top, and whether the watch page covers it.
+    val page = top?.route?.substringBefore('/')?.substringBefore('?')?.substringAfterLast('.')?.removeSuffix("Route")
+    LaunchedEffect(page) {
+        snapshotFlow { app.sheet.expanded }.collect { CrashLog.screen = if (it) "$page, watch page open" else page }
     }
 
     CompositionLocalProvider(
@@ -229,6 +257,7 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
 
             app.sheetItem?.let { item -> ItemActionsSheet(app, item) { app.sheetItem = null } }
             app.saveTarget?.let { video -> SaveToPlaylistSheet(app, video) { app.saveTarget = null } }
+            app.report?.let { r -> ReportSheet(app, r) { app.report = null } }
             AlertHost(app)
             NoticeHost(app, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 6.dp))
         }

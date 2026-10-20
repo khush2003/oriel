@@ -18,6 +18,7 @@ import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
+import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.test.pinch
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.performClick
@@ -42,6 +43,10 @@ import app.oriel.ui.navigation.SettingsRoute
 import app.oriel.ui.navigation.Tab
 import app.oriel.ui.theme.OrielTheme
 import com.github.takahirom.roborazzi.captureRoboImage
+import com.github.takahirom.roborazzi.captureScreenRoboImage
+import com.github.takahirom.roborazzi.ExperimentalRoborazziApi
+import androidx.compose.ui.test.onNodeWithText
+import app.oriel.util.ReportKind
 import app.oriel.core.model.ShortSound
 import androidx.compose.ui.test.onNodeWithContentDescription
 import org.junit.Rule
@@ -60,6 +65,7 @@ import org.robolectric.shadows.ShadowLooper
  * come from the stale-while-revalidate disk cache and the local library, the
  * player from the connection's preview state. Images are drawn by FakeArt.
  */
+@OptIn(ExperimentalRoborazziApi::class)
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(application = TestApp::class, sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -100,6 +106,8 @@ class ScreenshotTest {
         playing: Boolean = true,
         setup: suspend (AppState) -> Unit = {},
         after: () -> Unit = {},
+        /** The whole screen, sheets' windows included, rather than the app's root alone. */
+        screen: Boolean = false,
     ) {
         rule.mainClock.autoAdvance = false
         homeFeed?.let { graph.pages.write("home-false", Feed.serializer(), it) }
@@ -108,7 +116,8 @@ class ScreenshotTest {
         after()
         settle(8)
         println("images for $name: ${TestApp.started.get()} started, ${TestApp.loaded.get()} loaded, ${TestApp.failed.get()} failed")
-        rule.onRoot().captureRoboImage("build/screenshots/$name.png")
+        if (screen) captureScreenRoboImage("build/screenshots/$name.png")
+        else rule.onRoot().captureRoboImage("build/screenshots/$name.png")
     }
 
     @Composable
@@ -464,6 +473,51 @@ class ScreenshotTest {
         settle(8)
         rule.onAllNodes(hasText("replies", substring = true)).onFirst().performClick()
     })
+
+    private val report = ReportRequest(ReportKind.PLAYBACK, "https://youtu.be/${Fixtures.videos[0].id}", "It stops after a few seconds and says it couldn't play the video.")
+
+    // Counted, not fetched one-or-throw: a miss in a tree this big (the whole app under the
+    // sheet) prints every node into the failure message, which takes the better part of an hour.
+    private fun count(matcher: androidx.compose.ui.test.SemanticsMatcher) = rule.onAllNodes(matcher).fetchSemanticsNodes().size
+
+    /** The sheet scrolled by a finger, with the clock run by hand so the fling settles. */
+    private fun scrollSheet() {
+        repeat(2) {
+            rule.onAllNodes(hasText("What kind of problem", ignoreCase = true)).onFirst().performTouchInput { swipeUp(startY = bottom + 600f, endY = top - 400f, durationMillis = 300) }
+            settle(10)
+        }
+    }
+
+    /** Report a problem from a playback error: the kind and the video already filled in, labelled for TalkBack. */
+    @Test fun reportSheet() {
+        shoot("36_report_sheet", playing = false, screen = true, setup = { it.report = report })
+        assertEquals("what happened field", 1, count(hasContentDescription("What happened?")))
+        assertEquals("video link field", 1, count(hasContentDescription("Video link")))
+        assertEquals("playback picked", 1, count(hasText("A video won't play").and(androidx.compose.ui.test.isSelected())))
+        assertEquals("diagnostics on", 1, count(hasText("Include diagnostics").and(androidx.compose.ui.test.isOn())))
+    }
+
+    @Test fun reportSheetLight() = shoot("37_report_sheet_light", theme = ThemeMode.LIGHT, playing = false, screen = true, setup = { it.report = report })
+
+    /** Its end: the diagnostics rows and the two ways to send. */
+    @Test fun reportSheetSend() {
+        shoot("38_report_sheet_send", playing = false, screen = true, setup = { it.report = report }, after = ::scrollSheet)
+        assertEquals("share row", 1, count(hasText("Share…")))
+        assertEquals("issue row", 1, count(hasText("Open a GitHub issue")))
+    }
+
+    @Test fun reportSheetSendLight() = shoot("39_report_sheet_send_light", theme = ThemeMode.LIGHT, playing = false, screen = true, setup = { it.report = report }, after = ::scrollSheet)
+
+    /** Preview report shows the exact text: their words, the link, then the diagnostics. */
+    @Test fun reportPreview() {
+        shoot("40_report_preview", playing = false, screen = true, setup = { it.report = report }, after = {
+            scrollSheet()
+            assertEquals("preview row", 1, count(hasText("Preview report")))
+            rule.onAllNodes(hasText("Preview report")).onFirst().performClick()
+            settle(8)
+        })
+        assertEquals("preview text", 1, count(hasText("Oriel problem report", substring = true)))
+    }
 
     @Test fun homeLoading() {
         TestApp.hang = true

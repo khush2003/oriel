@@ -18,12 +18,14 @@ Labels are defined in [`.github/labels.yml`](../.github/labels.yml) and synced b
 ## Issue flow
 
 1. **New issue** → the template adds `status: needs triage` and its type label.
-2. **Triage** (maintainers, at least weekly):
+2. **Triage** (the maintainer, at least weekly):
    - Out of scope ([`SCOPE.md`](SCOPE.md))? Label `wontfix: out of scope`, link the rule, close.
    - Duplicate? Label `duplicate`, link the original, close.
    - Missing a version, device, steps or a problem report? `status: needs info`. The stale
      workflow closes it after 21 days without a reply.
-   - Real and wanted? Remove `needs triage`, add `status: accepted`, an area, and a priority.
+   - Real and wanted? Remove `needs triage`, add `status: accepted`, an area, a priority, and
+     a milestone (see [`ROADMAP.md`](ROADMAP.md)): bugs that block the next release go in its
+     milestone, everything else in "Later".
      Add `good first issue` / `help wanted` if it's a good outside contribution.
 3. **Work starts** → `status: in progress`, assigned to whoever is doing it. Comment before
    starting so two people don't build the same thing.
@@ -45,6 +47,13 @@ checks or protections ([`SCOPE.md`](SCOPE.md) rule 2).
 1. CI must be green (build, unit and screenshot tests, lint, guardrails).
 2. The template must be complete. Visual changes without screenshots get `needs screenshots`;
    behaviour changes without tests get `needs tests`.
-3. One maintainer approval to merge; two for anything touching `core/`, sign-in, privacy or
-   the build and release setup (see `CODEOWNERS`).
-4. Maintainers squash-merge with a clean message.
+3. Only the maintainer, [@khush2003](https://github.com/khush2003), approves and merges. A
+   ruleset on `main` requires a PR, green CI and the code owner's review, and blocks force-pushes.
+4. The maintainer squash-merges with a clean message.
+
+## Who can do what
+
+Oriel has one maintainer, @khush2003, who triages, merges, releases and decides scope. Regular
+contributors may be invited as collaborators to help with triage or review; that's the
+maintainer's call, and their permissions are adjusted as trust builds. Nobody else merges to
+`main` or publishes releases.

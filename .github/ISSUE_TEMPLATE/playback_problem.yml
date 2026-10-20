@@ -47,12 +47,12 @@ body:
     id: version
     attributes:
       label: Oriel version, phone and Android version
-      placeholder: 0.9.01-alpha, Pixel 8, Android 16
+      placeholder: 1.0.0, Pixel 8, Android 16
     validations:
       required: true
   - type: textarea
     id: report
     attributes:
       label: Problem report
-      description: Settings › About › Share problem report. It contains the error without URLs or cookies.
+      description: Tap Report on the player's error, or Settings › About › Report a problem, and this is filled in for you. It contains the error without URLs, cookies or account details.
       render: text

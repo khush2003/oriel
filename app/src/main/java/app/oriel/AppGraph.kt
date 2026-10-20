@@ -17,9 +17,11 @@ import app.oriel.data.Settings
 import app.oriel.playback.AdaptiveSources
 import app.oriel.playback.MediaCaches
 import app.oriel.playback.StreamDataSources
+import app.oriel.util.CrashLog
 import app.oriel.util.NetworkMonitor
 import com.metrolist.innertubex.InnerTubeLogLevel
 import com.metrolist.innertubex.InnerTubeLogger
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -111,8 +113,19 @@ class AppGraph(val context: Context) {
 
     private val session = context.getSharedPreferences("session", Context.MODE_PRIVATE)
 
+    /** Done once last run's ANRs and native crashes are on record, for the crash prompt to look. */
+    val crashesChecked = CompletableDeferred<Unit>()
+
     fun start() {
         applyLocale()
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                CrashLog.recordExits(context)
+                // Opt-in counts: the kind and the exception's class name, never a trace or message.
+                CrashLog.takeUncounted(context).forEach { telemetry.track("crash", mapOf("kind" to it.kind, "exception" to it.exception)) }
+            }
+            crashesChecked.complete(Unit)
+        }
         // Opt-in usage counts: one "opened" each time the app comes to the foreground.
         scope.launch(Dispatchers.Main) {
             androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.addObserver(androidx.lifecycle.LifecycleEventObserver { _, e ->

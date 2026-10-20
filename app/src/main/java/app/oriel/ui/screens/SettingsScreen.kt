@@ -72,6 +72,8 @@ fun SettingsScreen() {
     var cacheBytes by remember { mutableStateOf<Long?>(null) }
     val context = androidx.compose.ui.platform.LocalContext.current
     var crashes by remember { mutableStateOf(CrashLog.crashCount(context)) }
+    // The report sheet can clear what's kept: counted again when it closes.
+    androidx.compose.runtime.LaunchedEffect(app.report) { if (app.report == null) crashes = CrashLog.crashCount(context) }
     androidx.compose.runtime.LaunchedEffect(Unit) { cacheBytes = withContext(Dispatchers.IO) { runCatching { graph.caches.stream.cacheSpace }.getOrNull() } }
     fun set(t: (SettingsState) -> SettingsState) = graph.settings.update(t)
 
@@ -192,7 +194,7 @@ fun SettingsScreen() {
                 if (graph.telemetry.available) {
                     SwitchRow(
                         "Share anonymous usage", s.telemetry == true, { v -> set { it.copy(telemetry = v) } }, OrielIcons.Insights,
-                        subtitle = "Counts like app opens and features used, with app and Android version. Never what you watch or search.",
+                        subtitle = "Counts like app opens, features used and crashes, with app and Android version. Never what you watch or search.",
                     )
                     RowDivider()
                 }
@@ -239,27 +241,13 @@ fun SettingsScreen() {
                 // Credit required by NOTICE (GPL-3.0 section 7(b)); forks must keep it.
                 SettingsRow("Made by khush2003", OrielIcons.Person, subtitle = SOURCE_URL.removePrefix("https://"), chevron = true, onClick = { app.openExternally(SOURCE_URL) })
                 RowDivider()
-                // Crashes and playback errors, kept on the phone until shared; see CrashLog.
+                // Crashes and errors are kept on the phone until a report is sent; see CrashLog.
                 SettingsRow(
-                    "Share problem report", OrielIcons.Share,
+                    "Report a problem", OrielIcons.Report,
                     subtitle = when (crashes) { 0 -> "No crashes recorded"; 1 -> "1 crash recorded"; else -> "$crashes crashes recorded" },
                     chevron = true,
-                    onClick = {
-                        val send = android.content.Intent(android.content.Intent.ACTION_SEND)
-                            .setType("text/plain")
-                            .putExtra(android.content.Intent.EXTRA_SUBJECT, "Oriel problem report")
-                            .putExtra(android.content.Intent.EXTRA_TEXT, CrashLog.report(context))
-                        runCatching { context.startActivity(android.content.Intent.createChooser(send, "Share problem report")) }
-                    },
+                    onClick = { app.reportProblem() },
                 )
-                if (crashes > 0) {
-                    RowDivider()
-                    SettingsRow("Clear problem report", OrielIcons.Delete, destructive = true, onClick = {
-                        CrashLog.clear(context)
-                        crashes = 0
-                        app.notice("Problem report cleared")
-                    })
-                }
                 RowDivider()
                 SettingsRow("Licences", OrielIcons.Library, chevron = true, onClick = { licences = true })
             }
