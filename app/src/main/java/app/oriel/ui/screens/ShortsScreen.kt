@@ -15,6 +15,14 @@ import app.oriel.ui.player.pressClickable
 import app.oriel.ui.theme.LocalReduceAnimation
 import app.oriel.ui.theme.motion
 import app.oriel.ui.theme.Sp
+import app.oriel.ui.theme.LocalLiquidMotion
+import app.oriel.ui.theme.DropletShape
+import app.oriel.ui.theme.midFlight
+import androidx.compose.foundation.pager.PagerDefaults
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.util.lerp
 import app.oriel.ui.theme.goo
 import app.oriel.ui.theme.gooEffect
 import app.oriel.ui.theme.smoothstep
@@ -434,6 +442,23 @@ fun ShortsScreen(startId: String?) {
     LaunchedEffect(height) { playback.cap(height) }
     val player = playback.player
     val pager = rememberPagerState { ids.size }
+    // Liquid motion: the pages snap on the mock's page spring, the one arriving squashes a little
+    // as it lands, and the page grows out of the Short tapped to open it.
+    val liquid = LocalLiquidMotion.current && !LocalReduceAnimation.current
+    val landing = remember { Animatable(0f) }
+    val lastSettled = remember { intArrayOf(-1) }
+    LaunchedEffect(pager.settledPage, liquid) {
+        val before = lastSettled[0]
+        lastSettled[0] = pager.settledPage
+        if (!liquid || before < 0 || before == pager.settledPage) return@LaunchedEffect
+        // A jelly kick, signed by the way it came: from below (swiped up) it squashes onto its top.
+        landing.snapTo(0f)
+        landing.animateTo(0f, Sp.Jelly.unit, initialVelocity = if (pager.settledPage > before) 1.6f else -1.6f)
+    }
+    val origin = remember { app.takeShortOrigin() }
+    val grow = remember { Animatable(if (origin != null) 0f else 1f) }
+    LaunchedEffect(Unit) { if (grow.value < 1f) { if (liquid) grow.animateTo(1f, Sp.Player.unit) else grow.snapTo(1f) } }
+    val boxCoords = remember { arrayOfNulls<androidx.compose.ui.layout.LayoutCoordinates>(1) }
     var commentsFor by remember { mutableStateOf<ShortInfo?>(null) }
     var soundFor by remember { mutableStateOf<ShortSound?>(null) }
     // Vertical shorts fill the frame, as YouTube crops them; the odd square or wide one fits.
@@ -503,7 +528,40 @@ fun ShortsScreen(startId: String?) {
     // nothing of the short is hidden under it, and the bar reads as part of the frame.
     val barArea = floatingBarInsets.asPaddingValues().calculateBottomPadding() + 2.dp + TAB_BAR_HEIGHT + 8.dp
     DarkIsland {
-        Box(Modifier.fillMaxSize().background(Color.Black).padding(bottom = barArea)) {
+        val density = LocalDensity.current
+        Box(
+            Modifier
+                .fillMaxSize()
+                .onPlaced { boxCoords[0] = it }
+                .then(
+                    if (origin != null && liquid) Modifier.graphicsLayer {
+                        // Out of the tapped poster as a drop: from its rect and corner to the page,
+                        // corners rounding and sides swelling on the way, over-filling a touch.
+                        val f = grow.value
+                        if (f >= 0.9995f && !grow.isRunning) return@graphicsLayer
+                        val b = origin.bounds
+                        val w = size.width
+                        val h = size.height
+                        // Read live: the page may be sliding in under it, and the poster stays put.
+                        val at = boxCoords[0]?.takeIf { it.isAttached }?.positionInWindow() ?: androidx.compose.ui.geometry.Offset.Zero
+                        val l = lerp(b.left - at.x, 0f, f)
+                        val t = lerp(b.top - at.y, 0f, f)
+                        val sx = lerp(b.width / w, 1f, f).coerceAtLeast(0.01f)
+                        val sy = lerp(b.height / h, 1f, f).coerceAtLeast(0.01f)
+                        transformOrigin = TransformOrigin(0f, 0f)
+                        translationX = l
+                        translationY = t
+                        scaleX = sx
+                        scaleY = sy
+                        val swell = midFlight(f)
+                        val r = lerp(origin.corner, 0f, smoothstep(0.55f, 1f, f)) + swell * with(density) { 22.dp.toPx() }
+                        shape = DropletShape(r / sx, r / sy, side = swell * with(density) { 8.dp.toPx() } / sx, ends = swell * with(density) { 18.dp.toPx() } / sy)
+                        clip = true
+                    } else Modifier,
+                )
+                .background(Color.Black)
+                .padding(bottom = barArea),
+        ) {
             when {
                 ids.isEmpty() && error != null -> MessageState(error!!, Modifier.align(Alignment.Center), action = "Try again", onAction = model::retry)
                 ids.isEmpty() -> ActivityIndicator(Modifier.align(Alignment.Center), size = 30.dp, color = Color.White)
@@ -512,14 +570,25 @@ fun ShortsScreen(startId: String?) {
                     Modifier.fillMaxSize().clip(RoundedCornerShape(bottomStart = SHORT_CORNER, bottomEnd = SHORT_CORNER)),
                     key = { ids[it] },
                     beyondViewportPageCount = 1,
+                    flingBehavior = if (liquid) PagerDefaults.flingBehavior(pager, snapAnimationSpec = Sp.Page.spec()) else PagerDefaults.flingBehavior(pager),
                 ) { page ->
                     val id = ids[page]
-                    ShortPage(
+                    val landed = Modifier.graphicsLayer {
+                        if (page != pager.settledPage) return@graphicsLayer
+                        val q = landing.value
+                        if (q == 0f) return@graphicsLayer
+                        // Squashed along the swipe and widened a little, against the edge it came in by.
+                        val k = (kotlin.math.abs(q) * 0.4f).coerceAtMost(0.05f)
+                        scaleY = 1f - k
+                        scaleX = 1f + k * 0.5f
+                        transformOrigin = TransformOrigin(0.5f, if (q > 0f) 0f else 1f)
+                    }
+                    Box(landed) { ShortPage(
                         app, id, infos[id], playback, active = page == pager.settledPage,
                         fit = page == pager.settledPage && aspect > 0.8f,
                         onComments = { commentsFor = it },
                         onSound = { soundFor = it },
-                    )
+                    ) }
                 }
             }
         }

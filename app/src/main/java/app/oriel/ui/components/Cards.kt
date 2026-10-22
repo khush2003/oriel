@@ -210,13 +210,15 @@ fun VideoShelfCard(video: Video, width: Dp = 260.dp) {
 @Composable
 fun ShortCard(video: Video, modifier: Modifier = Modifier, width: Dp? = 150.dp, titleColor: Color = MaterialTheme.colorScheme.onSurface) {
     val app = LocalAppState.current
+    val origin = remember { OriginCapture() }
+    origin.corner = with(androidx.compose.ui.platform.LocalDensity.current) { CARD_CORNER.toPx() }
     CompositionLocalProvider(LocalIndication provides TilePress) {
         Column(
             modifier
                 .then(if (width != null) Modifier.width(width) else Modifier.fillMaxWidth())
-                .longPressMenuClickable(onClick = { app.openShort(video) }, onLongClick = { app.showMenu(video) }),
+                .longPressMenuClickable(onClick = { origin.record(); app.openShort(video) }, onLongClick = { app.showMenu(video) }),
         ) {
-            RemoteImage(Thumbnails.short(video), Modifier.fillMaxWidth().aspectRatio(9f / 16f), RoundedCornerShape(CARD_CORNER), border = true)
+            RemoteImage(Thumbnails.short(video), Modifier.fillMaxWidth().aspectRatio(9f / 16f).then(origin.modifier), RoundedCornerShape(CARD_CORNER), border = true)
             Spacer(Modifier.height(8.dp))
             Text(video.title, style = MaterialTheme.typography.titleSmall, color = titleColor, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 2.dp))
         }
