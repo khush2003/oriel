@@ -7,12 +7,16 @@ import app.oriel.ui.components.ActivityIndicator
 import app.oriel.ui.theme.PlayerSpring
 import app.oriel.ui.theme.SheetSpring
 import app.oriel.ui.theme.DropletShape
-import app.oriel.ui.theme.DropletSpring
+import app.oriel.ui.theme.Sp
+import app.oriel.ui.theme.gooEffect
+import app.oriel.ui.theme.goo
+import app.oriel.ui.theme.metaballNeck
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
 import app.oriel.ui.theme.SmoothedVelocity
-import app.oriel.ui.theme.liquidStretch
 import app.oriel.ui.theme.midFlight
 import app.oriel.ui.theme.smoothstep
-import app.oriel.ui.theme.stretchY
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.positionInWindow
@@ -114,12 +118,6 @@ private data class Box4(val x: Float, val y: Float, val w: Float, val h: Float) 
     fun lerpTo(o: Box4, t: Float) = Box4(lerp(x, o.x, t), lerp(y, o.y, t), lerp(w, o.w, t), lerp(h, o.h, t))
     /** Scaled by [k] about its centre. */
     fun scaled(k: Float) = Box4(x + w * (1f - k) / 2f, y + h * (1f - k) / 2f, w * k, h * k)
-    /** Stretched by [s] along y (half of it given back across), held at its top or bottom edge, as [stretchY] stretches a layer. */
-    fun stretched(s: Float, anchorTop: Boolean): Box4 {
-        val nh = h * (1f + s)
-        val nw = w * (1f - s * 0.5f)
-        return Box4(x + (w - nw) / 2f, if (anchorTop) y else y + h - nh, nw, nh)
-    }
 }
 
 /**
@@ -212,6 +210,12 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
     var dragVelocity by remember { mutableFloatStateOf(0f) }
     var drop by remember { mutableStateOf<Drop?>(null) }
     val flight = remember { androidx.compose.animation.core.Animatable(1f) }
+    // Which drag has the picture, for the droplet left at the dock: the sheet's, or the window's pan.
+    var sheetDragging by remember { mutableStateOf(false) }
+    var panning by remember { mutableStateOf(false) }
+    // The window's speed under a pan, px per second: read only while drawing.
+    val panSpeedX = remember { SmoothedVelocity() }
+    val panSpeedY = remember { SmoothedVelocity() }
     val reveal = remember { androidx.compose.animation.core.Animatable(0f) }
     val hostInWindow = remember { floatArrayOf(0f, 0f) }
     val lastVideo = remember { arrayOfNulls<String>(1) }
@@ -279,8 +283,10 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
                 // It flies with the sheet: done when the sheet lands, turns back, or a finger takes it.
                 snapshotFlow { sheet.progress.value >= 0.999f || sheet.progress.targetValue < 0.5f || drop !== d }.first { it }
             } else {
+                // Into the page already open, the picture wobbles as it's hit (the mock's jelly kick).
+                sheet.jiggle()
                 flight.snapTo(0f)
-                flight.animateTo(1f, DropletSpring)
+                flight.animateTo(1f, Sp.Player.unit)
             }
             if (drop === d) {
                 reveal.animateTo(0f, androidx.compose.animation.core.tween(220))
@@ -299,8 +305,9 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
             val d = Drop(null, 0f, Thumbnails.frame(video.id, 720), docked = false, ghost = false)
             drop = d
             reveal.snapTo(1f)
+            sheet.jiggle()
             flight.snapTo(0f)
-            flight.animateTo(1f, DropletSpring)
+            flight.animateTo(1f, Sp.Player.unit)
             if (drop === d) {
                 reveal.animateTo(0f, androidx.compose.animation.core.tween(220))
                 drop = null
@@ -477,11 +484,16 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
                     // A finger takes the player from a thumbnail's flight: it's the player's again.
                     if (drop?.docked == true) drop = null
                     floating = pan
+                    panning = pan
+                    sheetDragging = !pan
+                    panSpeedX.reset(); panSpeedY.reset()
                     startedExpanded = progress.value > 0.99f
                     startedFullscreen = sheet.fullscreen
                     if (pan) scope.launch { pipDrag.stop() }
                 },
                 onEnd = {
+                    panning = false
+                    sheetDragging = false
                     when {
                         floating -> latestReleasePip()
                         startedFullscreen -> latestReleaseFullscreen(false)
@@ -492,6 +504,8 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
                 // A cancelled drag puts back what it was growing rather than committing it: the
                 // push up used to be left halfway to fullscreen.
                 onCancel = {
+                    panning = false
+                    sheetDragging = false
                     when {
                         floating -> latestReleasePip()
                         startedFullscreen -> latestReleaseFullscreen(true)
@@ -503,6 +517,8 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
                 if (floating) {
                     panTotal += delta
                     tracker.addPosition(uptime, panTotal)
+                    panSpeedX.add(uptime, panTotal.x)
+                    panSpeedY.add(uptime, panTotal.y)
                     val moved = pipDrag.value + delta + (if (zoom != 1f) latestPinchPip(zoom) else Offset.Zero)
                     scope.launch(start = CoroutineStart.UNDISPATCHED) { pipDrag.snapTo(moved) }
                     if (!pinched) latestArmPip(moved)
@@ -534,30 +550,42 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
                 Modifier
                     .fillMaxSize()
                     .layout { m, _ ->
-                        val r = sheetFrom().lerpTo(screen, progress.value)
+                        // The mock's page is the whole screen from the start, its colour fading in;
+                        // without motion it grows out of the window as before.
+                        val r = if (liquid) screen else sheetFrom().lerpTo(screen, progress.value)
                         val p = m.measure(Constraints.fixed(r.w.roundToInt().coerceAtLeast(1), r.h.roundToInt().coerceAtLeast(1)))
                         layout(constraints.maxWidth, constraints.maxHeight) { p.place(r.x.roundToInt(), r.y.roundToInt()) }
                     }
-                    .graphicsLayer {
-                        val c = lerp(px(PIP_CORNER), 0f, (progress.value * 1.4f).coerceAtMost(1f))
-                        shape = RoundedCornerShape(c)
-                        clip = true
-                    }
-                    .animatedBackground(palette.background.copy(alpha = 1f)),
+                    .then(
+                        if (liquid) Modifier else Modifier
+                            .graphicsLayer {
+                                val c = lerp(px(PIP_CORNER), 0f, (progress.value * 1.4f).coerceAtMost(1f))
+                                shape = RoundedCornerShape(c)
+                                clip = true
+                            }
+                            .animatedBackground(palette.background.copy(alpha = 1f)),
+                    ),
             ) {
+                if (liquid) Box(
+                    Modifier
+                        .matchParentSize()
+                        .graphicsLayer { alpha = smoothstep(0f, 0.55f, progress.value) }
+                        .animatedBackground(palette.background.copy(alpha = 1f)),
+                )
                 Box(
                     Modifier
                         .layout { m, c ->
                             val p = m.measure(Constraints.fixed(W.roundToInt(), (H - contentTop).roundToInt().coerceAtLeast(1)))
                             layout(c.maxWidth, c.maxHeight) {
-                                val from = sheetFrom()
+                                val from = if (liquid) screen else sheetFrom()
                                 val sheetY = lerp(from.y, 0f, progress.value)
                                 val sheetX = lerp(from.x, 0f, progress.value)
-                                p.place((-sheetX).roundToInt(), (contentTop - sheetY + (1f - progress.value) * px(48.dp)).roundToInt())
+                                p.place((-sheetX).roundToInt(), (contentTop - sheetY + (1f - progress.value) * px(320.dp)).roundToInt())
                             }
                         }
                         .graphicsLayer {
-                            alpha = ((progress.value - 0.3f) / 0.7f).coerceIn(0f, 1f) * (1f - fsAnim.value)
+                            // The mock's: the details rise 320 dp into place, fading in from a third of the way.
+                            alpha = smoothstep(0.35f, 0.95f, progress.value) * (1f - fsAnim.value)
                             // Into a page already open, the new video's details pour in under the drop.
                             val d = drop
                             if (d != null && !d.docked) {
@@ -572,6 +600,63 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
                     WatchContent(app, palette)
                 }
             }
+        }
+
+        // ---- the droplet left at the dock --------------------------------------------------------
+        // The mock's dock goo: as the picture leaves the window's place (rising into the page, or
+        // the window pulled away under a finger), a droplet stays behind there, shrinking, tied
+        // to the picture by a tail that thins and snaps a third of the way. Fused by the goo
+        // layer on Android 12 and up; below, a metaball neck joins them. Composed only meanwhile.
+        val dockShowing by remember {
+            derivedStateOf {
+                val e = progress.value
+                liquid && drop == null && !sheet.fullscreen &&
+                    ((e > 0.004f && e < 0.5f && (progress.isRunning || sheetDragging)) ||
+                        (panning && pipDrag.value.getDistance() / travel in 0.004f..0.5f))
+            }
+        }
+        if (dockShowing) {
+            val gooBlur = px(6.dp)
+            val fx = remember(gooBlur) { gooEffect(gooBlur) }
+            // The mock paints the droplet in the video's own colours (a 135° gradient of its two).
+            val dockColor = androidx.compose.ui.graphics.Brush.linearGradient(listOf(palette.accent.copy(alpha = 1f), palette.wash.copy(alpha = 1f)))
+            val neck = remember { androidx.compose.ui.graphics.Path() }
+            // The layer covers the dock and where the picture is until the tail has snapped, no more.
+            val reach = pipRest.lerpTo(fullVideo, 0.45f)
+            val pad = px(40.dp) + if (panning) travel * 0.45f else 0f
+            val gl = (minOf(pipRest.x, reach.x) - pad).coerceAtLeast(0f)
+            val gt = (minOf(pipRest.y, reach.y) - pad).coerceAtLeast(0f)
+            val gr = (maxOf(pipRest.x + pipRest.w, reach.x + reach.w) + pad).coerceAtMost(W)
+            val gb = (maxOf(pipRest.y + pipRest.h, reach.y + reach.h) + pad).coerceAtMost(H)
+            Box(
+                Modifier
+                    .layout { m, c ->
+                        val pl = m.measure(Constraints.fixed((gr - gl).roundToInt().coerceAtLeast(1), (gb - gt).roundToInt().coerceAtLeast(1)))
+                        layout(c.maxWidth, c.maxHeight) { pl.place(gl.roundToInt(), gt.roundToInt()) }
+                    }
+                    .goo(fx)
+                    .drawBehind {
+                        val drag = if (panning) pipDrag.value else Offset.Zero
+                        val e = if (panning) (drag.getDistance() / travel) else progress.value.coerceIn(0f, 1f)
+                        val at = if (panning) Box4(pipRest.x + drag.x, pipRest.y + drag.y, pipRest.w, pipRest.h) else pipRest.lerpTo(fullVideo, e)
+                        val k = 1f - smoothstep(0f, 0.28f, e)
+                        val bw = pipRest.w * k
+                        val bh = pipRest.h * k
+                        // Shrinking about a point 85% down, as the mock's blob does.
+                        val bx = pipRest.x + (pipRest.w - bw) / 2f - gl
+                        val by = pipRest.y + (pipRest.h - bh) * 0.85f - gt
+                        if (k > 0f) drawRoundRect(dockColor, Offset(bx, by), Size(bw, bh), CornerRadius(px(PIP_CORNER) * k))
+                        val tr = px(30.dp) * (1f - smoothstep(0.08f, 0.42f, e))
+                        val tx = at.x + at.w / 2f - gl
+                        val ty = if (panning) at.y + at.h / 2f - gt else at.y + at.h - px(10.dp) - gt
+                        if (tr > 0f) drawCircle(dockColor, tr, Offset(tx, ty))
+                        // No goo below Android 12: the tail is joined to the drop by a neck instead.
+                        if (fx == null && k > 0f && tr > 0f) {
+                            val br = minOf(bw, bh) / 2f
+                            if (metaballNeck(neck, bx + bw / 2f, by + bh / 2f, br, tx, ty, tr, maxDistance = br + tr + travel * 0.3f)) drawPath(neck, dockColor)
+                        }
+                    },
+            )
         }
 
         // ---- the picture ----------------------------------------------------------------------
@@ -595,15 +680,27 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
                     val corner = lerp(pipCorner, 0f, p) + (pull / 6f).coerceAtMost(px(20.dp))
                     val d = drop
                     if (liquid && pull == 0f && fsAnim.value == 0f && !fullscreen && d?.docked != true) {
-                        // A drop: longer along its way the faster it goes, rounder mid-flight,
-                        // squashed against where it lands and back.
-                        val v = if (progress.isRunning) progress.velocity else dragVelocity
-                        val s = liquidStretch(abs(v)) + sheet.squash.value
-                        val swell = midFlight(p)
-                        stretchY(s, anchorTop = progress.targetValue > 0.5f)
-                        val side = swell * px(3.dp) + abs(s) * size.width * 0.1f
-                        val r = (corner + swell * px(12.dp)).coerceAtMost(size.minDimension / 2f)
-                        shape = DropletShape(r, r, side, abs(s) * size.height * 0.06f)
+                        // The mock's renderPlayer: a moving drop elongates along its travel (more
+                        // near the dock), a landing one squashes on its bottom, and one that flies
+                        // past the top stretches up by the overshoot. Mid-flight its corners swell.
+                        val v = if (progress.isRunning) progress.velocity else if (sheetDragging) dragVelocity else 0f
+                        val st = abs((v * 0.045f).coerceIn(-0.18f, 0.3f)) * (1f - p * 0.75f)
+                        val o = sheet.over.value
+                        val atTop = progress.targetValue > 0.5f
+                        val land = (if (atTop) 0f else (-o * 2.2f).coerceIn(0f, 0.35f)) + sheet.squash.value
+                        val stretchTop = if (atTop) (o * 0.8f).coerceIn(0f, 0.25f) else 0f
+                        // The window thrown about stretches along its own way, in the same units.
+                        val pv = if (pipDrag.isRunning) pipDrag.velocity else if (panning) Offset(panSpeedX.velocity, panSpeedY.velocity) else Offset.Zero
+                        val sx = abs((pv.x / travel * 0.045f).coerceIn(-0.18f, 0.3f)) * (1f - p)
+                        val sy = abs((pv.y / travel * 0.045f).coerceIn(-0.18f, 0.3f)) * (1f - p)
+                        val kx = 1f - st * 0.45f + land * 0.7f + sx - sy * 0.45f
+                        val ky = 1f + st - land + stretchTop + sy - sx * 0.45f
+                        scaleX = kx
+                        scaleY = ky
+                        transformOrigin = TransformOrigin(0.5f, if (land > 0.001f) 0.9f else 0.5f)
+                        val r = (lerp(pipCorner, 0f, smoothstep(0.55f, 1f, p)) + midFlight(p) * px(22.dp))
+                            .coerceAtMost(minOf(size.width * kx, size.height * ky) / 2f)
+                        shape = DropletShape(r / kx, r / ky)
                     } else {
                         shape = RoundedCornerShape(corner)
                     }
@@ -687,7 +784,8 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
                         abs(flight.velocity) * kotlin.math.hypot(to.x - from.x, to.y - from.y) / travel
                     }
                 },
-                squash = { if (d.docked) sheet.squash.value else 0f },
+                land = { sheet.squash.value + if (d.docked && progress.targetValue < 0.5f) (-sheet.over.value * 2.2f).coerceIn(0f, 0.35f) else 0f },
+                overTop = { if (d.docked) (sheet.over.value * 0.8f).coerceIn(0f, 0.25f) else 0f },
                 alpha = { reveal.value },
                 fallback = fullVideo,
             )
@@ -706,8 +804,10 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
 /**
  * The tapped thumbnail flying into the picture's frame as a drop: laid out once at the size it
  * had on the page, so it shows the very image already loaded there, and flown and shaped by its
- * layer: it stretches along its way, its sides swell mid-flight, and it overshoots the frame a
- * little before settling (DropletSpring). Under it, the picture plays from the start.
+ * layer as the mock flies its player out of a thumbnail: it elongates along its way, squashes
+ * where it lands, its corners round and its sides swell mid-flight (the sheet's blobRect swell,
+ * 8 to 18 dp at the sides and 18 at the ends), and it overshoots the frame on the player spring
+ * before settling. Under it, the picture plays from the start.
  */
 @Composable
 private fun HandoffDrop(
@@ -716,7 +816,8 @@ private fun HandoffDrop(
     targetCorner: () -> Float,
     t: () -> Float,
     speed: () -> Float,
-    squash: () -> Float,
+    land: () -> Float,
+    overTop: () -> Float,
     alpha: () -> Float,
     fallback: Box4,
 ) {
@@ -724,8 +825,10 @@ private fun HandoffDrop(
     val base = d.from ?: fallback
     val w = base.w.roundToInt().coerceAtLeast(1)
     val h = base.h.roundToInt().coerceAtLeast(1)
-    val swellCorner = with(density) { 12.dp.toPx() }
-    val swellSide = with(density) { 3.5.dp.toPx() }
+    val swellCorner = with(density) { 22.dp.toPx() }
+    val swellSide = with(density) { 8.dp.toPx() }
+    val dp1 = density.density
+    val swellEnds = with(density) { 18.dp.toPx() }
     val shadow = with(density) { 14.dp.toPx() }
     Box(
         Modifier
@@ -738,22 +841,29 @@ private fun HandoffDrop(
                 val f = t()
                 val fc = f.coerceIn(0f, 1f)
                 val from = d.from ?: to.scaled(0.82f)
-                val up = to.y + to.h / 2f < from.y + from.h / 2f
-                val s = liquidStretch(speed()) + squash()
+                val v = speed()
+                val st = abs((v * 0.045f).coerceIn(-0.18f, 0.3f)) * (1f - fc * 0.75f)
+                val l = land()
+                val kx = 1f - st * 0.45f + l * 0.7f
+                val ky = 1f + st - l + overTop()
                 // Past 1 the spring's overshoot: the drop over-fills the frame a touch, then settles.
-                val r = from.lerpTo(to, f).stretched(s, anchorTop = up)
+                val at = from.lerpTo(to, f)
+                val nw = at.w * kx
+                val nh = at.h * ky
+                val rx = at.x + (at.w - nw) / 2f
+                val ry = at.y + (at.h - nh) * (if (l > 0.001f) 0.9f else 0.5f)
                 transformOrigin = TransformOrigin(0f, 0f)
-                translationX = r.x
-                translationY = r.y
-                scaleX = r.w / w
-                scaleY = r.h / h
+                translationX = rx
+                translationY = ry
+                scaleX = nw / w
+                scaleY = nh / h
                 val swell = midFlight(fc)
-                val corner = (lerp(d.corner, targetCorner(), fc) + swell * swellCorner).coerceAtMost(minOf(r.w, r.h) / 2f)
+                val corner = (lerp(d.corner, targetCorner(), smoothstep(0.55f, 1f, fc)) + swell * swellCorner).coerceAtMost(minOf(nw, nh) / 2f)
                 shape = DropletShape(
                     rx = corner / scaleX,
                     ry = corner / scaleY,
-                    side = (swell * swellSide + abs(s) * r.w * 0.12f) / scaleX,
-                    ends = (swell * swellSide * 0.6f + abs(s) * r.h * 0.06f) / scaleY,
+                    side = swell * (swellSide + (v * 2f).coerceIn(0f, 10f) * dp1) / scaleX,
+                    ends = swell * swellEnds / scaleY,
                 )
                 clip = true
                 shadowElevation = shadow * swell

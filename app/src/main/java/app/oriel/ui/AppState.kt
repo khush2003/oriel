@@ -41,11 +41,10 @@ import app.oriel.ui.navigation.YouRoute
 import app.oriel.ui.navigation.isRoute
 import app.oriel.ui.navigation.tabRoot
 import app.oriel.ui.player.WatchModel
-import app.oriel.ui.theme.PlayerSpring
-import app.oriel.ui.theme.SquashSpring
+import app.oriel.ui.theme.Sp
+import androidx.compose.animation.core.AnimationEndReason
 import app.oriel.ui.theme.TapOrigin
 import app.oriel.ui.theme.VideoOrigin
-import kotlin.math.abs
 import app.oriel.util.ReportKind
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -70,10 +69,16 @@ class PlayerSheetState(private val scope: CoroutineScope) {
     /** The window's size, pinched bigger or smaller, relative to its default. */
     var pipScale by mutableFloatStateOf(1f)
     /**
-     * The picture's squash as a flight lands (negative), and its rebound, as a fraction of its
-     * height. Only drawn, never laid out; Reduce motion doesn't draw it.
+     * The mock's `P.q`: a jelly squash of the picture (positive squashes it, as a fraction of its
+     * height), kicked when a new video lands in a page already open. Only drawn; Reduce motion doesn't draw it.
      */
     val squash = Animatable(0f)
+    /**
+     * The flight's overshoot past where it lands, which [progress] (bounded) can't show: above 1
+     * at the top, below 0 at the dock, as the mock's `over`. The picture stretches up by it at
+     * the top and squashes on landing at the dock. Only drawn.
+     */
+    val over = Animatable(0f)
     /** The last video opened while the player was showing or about to: where from, for the hand-off. */
     var handoff by mutableStateOf<VideoHandoff?>(null)
 
@@ -88,13 +93,21 @@ class PlayerSheetState(private val scope: CoroutineScope) {
 
     suspend fun settle(target: Float, velocity: Float) = fly(target, velocity)
 
-    // The flight's top speed sets how hard it lands: a flick lands with more give than a tap.
-    private suspend fun fly(target: Float, velocity: Float) {
-        var peak = abs(velocity)
-        progress.animateTo(target, PlayerSpring, initialVelocity = velocity) { peak = maxOf(peak, abs(this.velocity)) }
-        if (peak > 0.8f) scope.launch {
+    /** A new video in the page already open: the picture wobbles as the mock's does (a jelly kick of 2.2). */
+    fun jiggle() {
+        scope.launch {
             squash.snapTo(0f)
-            squash.animateTo(0f, SquashSpring, initialVelocity = -peak.coerceAtMost(8f) * 0.3f)
+            squash.animateTo(0f, Sp.Jelly.unit, initialVelocity = 2.2f)
+        }
+    }
+
+    // The mock's player spring (response 0.5, damping 0.72): it overshoots, and what it would have
+    // carried past the bound plays on in [over], on the same spring, from the speed it hit it at.
+    private suspend fun fly(target: Float, velocity: Float) {
+        val result = progress.animateTo(target, Sp.Player.unit, initialVelocity = velocity)
+        if (result.endReason == AnimationEndReason.BoundReached) {
+            over.snapTo(0f)
+            over.animateTo(0f, Sp.Player.unit, initialVelocity = result.endState.velocity)
         }
     }
 }

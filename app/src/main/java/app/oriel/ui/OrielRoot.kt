@@ -11,6 +11,8 @@ import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.scaleIn
+import kotlin.math.abs
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -23,7 +25,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.animation.core.VisibilityThreshold
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -45,12 +46,10 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.navigationevent.NavigationEventTransitionState
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
-import app.oriel.ui.theme.EdgeGiveSpring
+import app.oriel.ui.theme.Sp
+import app.oriel.ui.theme.SmoothedVelocity
 import app.oriel.ui.theme.LiquidEdgeShape
-import app.oriel.ui.theme.SquashSpring
 import app.oriel.ui.theme.liquidEdgeCurve
-import app.oriel.ui.theme.midFlight
-import app.oriel.ui.theme.smoothstep
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import androidx.navigation.NavBackStackEntry
@@ -300,19 +299,21 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
 }
 
 /**
- * iOS push: the new page slides in whole from the right over the old one, which drifts a
- * third of the way left and dims toward the black behind it rather than fading away. Push and
- * pop share one critically damped spring, as UIKit's do. Kept here rather than in Motion.kt:
- * it's the one IntOffset spring, and only pushes use it.
+ * The push, as the mock's: the new page slides in whole from the right over the old one, which
+ * drifts 28% of the way left and dims 40% toward the black behind it rather than fading away.
+ * Push and pop share the mock's push spring (response 0.5, damping 0.88), a whisker of overshoot.
  */
-private val PushSpring = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 380f, visibilityThreshold = IntOffset.VisibilityThreshold)
+private val PushSpring = Sp.Push.spec(IntOffset.VisibilityThreshold)
 
 /** The page beneath's dim, on the same spring as the slide so the two finish together. */
-private val PushDimSpring = spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 380f)
+private val PushDimSpring = Sp.Push.unit
 
-/** How opaque the page beneath stays over black: about UIKit's dimming in each mode. */
-private const val PUSH_DIM_DARK = 0.7f
-private const val PUSH_DIM_LIGHT = 0.88f
+/** How far the page beneath drifts, as a fraction of the width (the mock's 0.28). */
+private const val PUSH_DRIFT = 0.28f
+
+/** How opaque the page beneath stays over black: the mock's 40% dim, in both modes. */
+private const val PUSH_DIM_DARK = 0.6f
+private const val PUSH_DIM_LIGHT = 0.6f
 
 /**
  * The edge swipe's curve. It's seeked by the gesture's progress, so near the start it has to be
@@ -331,21 +332,22 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.isTabSwitch(tabSwi
  * show through mid-way.
  */
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.push(forward: Boolean, tabSwitchEntry: String?, dim: Float): EnterTransition {
-    if (isTabSwitch(tabSwitchEntry)) return if (forward) fadeIn(tween(160)) else EnterTransition.None
+    // A tab switch crossfades as the mock's do, the incoming page growing from 97%.
+    if (isTabSwitch(tabSwitchEntry)) return if (forward) fadeIn(Sp.TabFade.unit) + scaleIn(Sp.TabFade.unit, initialScale = 0.97f) else EnterTransition.None
     return if (forward) slideInHorizontally(PushSpring) { it }
-    else slideInHorizontally(PushSpring) { -it / 3 } + fadeIn(PushDimSpring, initialAlpha = dim)
+    else slideInHorizontally(PushSpring) { -(it * PUSH_DRIFT).toInt() } + fadeIn(PushDimSpring, initialAlpha = dim)
 }
 
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.pushAway(forward: Boolean, tabSwitchEntry: String?, dim: Float): ExitTransition {
     if (isTabSwitch(tabSwitchEntry)) return if (forward) ExitTransition.KeepUntilTransitionsFinished else fadeOut(tween(160))
-    return if (forward) slideOutHorizontally(PushSpring) { -it / 3 } + fadeOut(PushDimSpring, targetAlpha = dim)
+    return if (forward) slideOutHorizontally(PushSpring) { -(it * PUSH_DRIFT).toInt() } + fadeOut(PushDimSpring, targetAlpha = dim)
     else slideOutHorizontally(PushSpring) { it }
 }
 
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.swipeBackIn(tabSwitchEntry: String?, dim: Float): EnterTransition {
     if (isTabSwitch(tabSwitchEntry)) return EnterTransition.None
     val spec = tween<IntOffset>(SWIPE_BACK_MS, easing = SwipeBackEasing)
-    return slideInHorizontally(spec) { -it / 3 } + fadeIn(tween(SWIPE_BACK_MS, easing = SwipeBackEasing), initialAlpha = dim)
+    return slideInHorizontally(spec) { -(it * PUSH_DRIFT).toInt() } + fadeIn(tween(SWIPE_BACK_MS, easing = SwipeBackEasing), initialAlpha = dim)
 }
 
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.swipeBackOut(tabSwitchEntry: String?): ExitTransition {
@@ -355,34 +357,41 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.swipeBackOut(tabSw
 
 
 /**
- * The system back swipe as it happens: where the finger is, and how far the page's edge has
- * given under it (0 to 1, sprung, so it dents in as the swipe starts and springs flat, with a
- * wobble, when it's let go). Read only while drawing.
+ * The system back swipe as it happens: where the finger is, and the mock's `pd`, how far (px) the
+ * page's edge is dented under it. Held, the dent deepens with the finger's speed (12 dp, plus
+ * 2% of the speed up to 26 dp more) on the snappy spring; let go, it springs flat on the jelly
+ * one, wobbling. Read only while drawing.
  */
 @Stable
 private class BackSwipe {
     var active = false
     var touchY by mutableFloatStateOf(0f)
-    val give = Animatable(0f)
+    val dent = Animatable(0f)
+    val speed = SmoothedVelocity()
 }
 
 @Composable
 private fun rememberBackSwipe(): BackSwipe {
     val swipe = remember { BackSwipe() }
     val owner = LocalNavigationEventDispatcherOwner.current
+    val density = LocalDensity.current.density
     LaunchedEffect(owner) {
         val dispatcher = owner?.navigationEventDispatcher ?: return@LaunchedEffect
         coroutineScope {
             dispatcher.transitionState.collect { state ->
                 if (state is NavigationEventTransitionState.InProgress) {
-                    swipe.touchY = state.latestEvent.touchY
+                    val e = state.latestEvent
+                    swipe.touchY = e.touchY
                     if (!swipe.active) {
                         swipe.active = true
-                        launch { swipe.give.animateTo(1f, EdgeGiveSpring) }
+                        swipe.speed.reset()
                     }
+                    swipe.speed.add(android.os.SystemClock.uptimeMillis(), e.touchX / density)
+                    val depth = (12f + (abs(swipe.speed.velocity) * 0.02f).coerceIn(0f, 26f)) * density
+                    launch { swipe.dent.animateTo(depth, Sp.Snappy.px) }
                 } else if (swipe.active) {
                     swipe.active = false
-                    launch { swipe.give.animateTo(0f, SquashSpring) }
+                    launch { swipe.dent.animateTo(0f, Sp.Jelly.px) }
                 }
             }
         }
@@ -397,8 +406,11 @@ private class PageEdge {
     var forward = false
     /** This slide is (or was) under a back swipe's finger: its edge dents there, not mid-page. */
     var byFinger = false
+    /** The slide's speed, px per second (negative moving left, as a push does). */
+    val speed = SmoothedVelocity()
 
     fun moved(newX: Float, newTop: Float, width: Float, swiping: Boolean) {
+        speed.add(android.os.SystemClock.uptimeMillis(), newX)
         if (newX < x - 0.5f) forward = true else if (newX > x + 0.5f) forward = false
         top = newTop
         if (swiping && newX > 0f) byFinger = true
@@ -409,59 +421,49 @@ private class PageEdge {
 }
 
 /**
- * A page that slides like iOS's, with a softer leading edge: pushed in, its edge bulges forward
- * a little and relaxes as it lands; under a back swipe it dents in where the finger holds it and
- * springs flat when let go; popped by the button it dips gently mid-page. A soft shadow runs
- * along it. The page beneath shrinks a touch as it's covered (in dark mode). Only the outline deforms (the clip
- * is the layer's, the content isn't redrawn for it), all in the draw phase. Reduce motion: none.
+ * A page that slides like the mock's, with a soft leading edge (its `edgePath`): pushed in, the
+ * edge bulges ahead by the slide's speed (1.2% of it in px/s, up to 40 dp; a pop dents it, up
+ * to 30 dp) and relaxes as it lands; under a back swipe it dents where the finger holds it
+ * ([BackSwipe.dent]) and springs flat with a wobble when let go. The bump is a Gaussian 150 dp
+ * across. A soft shadow runs along it. Only the outline deforms (the clip is the layer's), all
+ * in the draw phase. Reduce motion: none.
  */
 @Composable
 private fun LiquidPage(swipe: BackSwipe, content: @Composable () -> Unit) {
     if (LocalReduceAnimation.current) return content()
     val edge = remember { PageEdge() }
     val density = LocalDensity.current
-    // Shrinking shows the black behind the pages at its edges: unseen on dark pages, a hard line on light ones.
-    val shrink = if (LocalIsDark.current) 0.03f else 0f
-    val bulge = with(density) { 14.dp.toPx() }
-    val dent = with(density) { 18.dp.toPx() }
+    val maxBulge = with(density) { 40.dp.toPx() }
+    val maxDent = with(density) { 30.dp.toPx() }
+    val spread = with(density) { 150.dp.toPx() }
     val shadowWidth = with(density) { 10.dp.toPx() }
     val shade = remember { Path() }
-    // The edge's shape at this point of the slide: positive bulges, negative dents (LiquidEdgeShape).
-    fun depth(width: Float): Float {
-        val f = (edge.x / width).coerceIn(0f, 1f)
-        val give = swipe.give.value
-        return when {
-            edge.byFinger -> -dent * give
-            edge.forward -> bulge * midFlight(f)
-            else -> -dent * 0.5f * midFlight(f)
-        }
+    // The edge's depth now: positive bulges, negative dents (LiquidEdgeShape).
+    fun depth(): Float {
+        val d = if (edge.byFinger) -swipe.dent.value else 0f
+        // Held by the finger, the mock's page has no speed of its own; let go, it does.
+        val v = if (swipe.active && edge.byFinger) 0f else (-edge.speed.velocity * 0.012f).coerceIn(-maxDent, maxBulge)
+        return d + v
     }
     fun focus(height: Float) = if (edge.byFinger) (swipe.touchY - edge.top).coerceIn(0f, height) else height * 0.45f
-    fun spread(height: Float, d: Float) = height * if (d >= 0f) 0.34f else 0.15f
     Box(
         Modifier
             .fillMaxSize()
             .onGloballyPositioned { val at = it.positionInRoot(); edge.moved(at.x, at.y, it.size.width.toFloat(), swipe.active) }
             .drawBehind {
                 if (edge.x <= 0.5f) return@drawBehind
-                val d = depth(size.width)
+                val d = depth()
                 shade.reset()
-                shade.liquidEdgeCurve(size.height, d, focus(size.height), spread(size.height, d))
+                shade.liquidEdgeCurve(size.height, d, focus(size.height), spread)
                 // Three soft strokes centred on the edge; the page covers their inner half.
                 for (i in 1..3) drawPath(shade, Color.Black.copy(alpha = 0.045f), style = Stroke(width = shadowWidth * i * 0.8f))
             }
             .graphicsLayer {
                 val w = size.width
                 if (w <= 0f) return@graphicsLayer
-                val f = edge.x / w
-                if (f < -0.001f) {
-                    // Beneath a push: a touch smaller as it's covered, as the dim deepens.
-                    val k = 1f - shrink * smoothstep(0f, 1f, -f * 3f)
-                    scaleX = k
-                    scaleY = k
-                } else if (f > 0.001f) {
-                    val d = depth(w)
-                    shape = LiquidEdgeShape(d, focus(size.height), spread(size.height, d))
+                // The mock's page beneath doesn't shrink, so no black shows at its edges in either mode.
+                if (edge.x / w > 0.001f) {
+                    shape = LiquidEdgeShape(depth(), focus(size.height), spread)
                     clip = true
                 }
             },

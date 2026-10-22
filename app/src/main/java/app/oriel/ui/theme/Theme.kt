@@ -151,7 +151,7 @@ fun OrielTheme(
     MaterialTheme(colorScheme = if (dark) DarkColors else LightColors, typography = OrielTypography) {
         CompositionLocalProvider(
             LocalIsDark provides dark,
-            androidx.compose.foundation.LocalIndication provides remember(dark) { PressHighlight(if (dark) Color.White.copy(alpha = 0.10f) else Color.Black.copy(alpha = 0.07f)) },
+            androidx.compose.foundation.LocalIndication provides remember(dark) { PressHighlight(pressGlow(dark), strength = ROW_PRESS_STRENGTH) },
             LocalReduceAnimation provides reduceAnimation,
             LocalReduceBlur provides reduceBlur,
             LocalLiquidGlassEnabled provides (liquidGlass && !reduceBlur && app.oriel.ui.glass.isGlassSupported()),
@@ -169,7 +169,7 @@ fun DarkIsland(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = DarkColors, typography = MaterialTheme.typography) {
         CompositionLocalProvider(
             LocalIsDark provides true,
-            androidx.compose.foundation.LocalIndication provides remember { PressHighlight(Color.White.copy(alpha = 0.10f)) },
+            androidx.compose.foundation.LocalIndication provides remember { PressHighlight(pressGlow(true), strength = ROW_PRESS_STRENGTH) },
             androidx.compose.material3.LocalContentColor provides DarkColors.onBackground,
             content = content,
         )

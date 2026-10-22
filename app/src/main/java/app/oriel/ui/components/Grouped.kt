@@ -28,15 +28,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.lerp
-import app.oriel.ui.theme.GlassSpring
-import app.oriel.ui.theme.motion
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,6 +45,24 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.oriel.ui.haptics.Haptic
 import app.oriel.ui.haptics.rememberHaptics
+import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
+import app.oriel.ui.theme.LiquidPill
+import app.oriel.ui.theme.LocalReduceAnimation
+import app.oriel.ui.theme.Sp
+import kotlinx.coroutines.launch
 
 /** The grouped card's corner, for anything that should read as one of these cards. */
 val GROUP_CORNER = 14.dp
@@ -137,33 +151,87 @@ fun SettingsRow(
 @Composable
 fun SwitchRow(title: String, checked: Boolean, onChange: (Boolean) -> Unit, icon: ImageVector? = null, subtitle: String? = null, enabled: Boolean = true) {
     val haptics = rememberHaptics()
-    SettingsRow(title, icon, subtitle, enabled = enabled, toggled = checked, onClick = { haptics.play(if (!checked) Haptic.ToggleOn else Haptic.ToggleOff); onChange(!checked) }) {
-        IosSwitch(checked, enabled)
+    val change = { on: Boolean -> haptics.play(if (on) Haptic.ToggleOn else Haptic.ToggleOff); onChange(on) }
+    SettingsRow(title, icon, subtitle, enabled = enabled, toggled = checked, onClick = { change(!checked) }) {
+        IosSwitch(checked, enabled, onChange = if (enabled) change else null)
     }
 }
 
 /**
- * iOS's switch: a 51 x 31 capsule whose white knob springs across, the track filling with
- * primary as it goes. The row takes the tap, so this is drawing only.
+ * iOS's switch: a 51 x 31 capsule, the track filling with primary, and the mock's knob: a blob
+ * on two edge springs that widens under the finger (7 dp toward the other side) and stretches
+ * along its way across, necking a little. With [onChange] the knob can be pressed, tapped and
+ * dragged itself; without, it's drawing only and the row takes the tap.
  */
 @Composable
-fun IosSwitch(checked: Boolean, enabled: Boolean = true) {
-    val t by animateFloatAsState(if (checked) 1f else 0f, motion(GlassSpring), label = "switch")
+fun IosSwitch(checked: Boolean, enabled: Boolean = true, onChange: ((Boolean) -> Unit)? = null) {
+    val reduce = LocalReduceAnimation.current
+    val density = LocalDensity.current.density
+    val scope = rememberCoroutineScope()
+    // The mock's geometry, in dp: the knob 27 tall, from 2 to 29 off and from 22 to 49 on.
+    val pill = remember { LiquidPill((if (checked) 22f else 2f) * density, (if (checked) 49f else 29f) * density, 27f * density, neckK = 0.1f, squash = 0.15f) }
+    val fill = remember { Animatable(if (checked) 1f else 0f) }
+    val shown = remember { booleanArrayOf(checked) }
+    fun rest(on: Boolean) = pill.moveTo(scope, (if (on) 22f else 2f) * density, (if (on) 49f else 29f) * density, reduce = reduce)
+    fun fillTo(on: Boolean) = scope.launch { if (reduce) fill.snapTo(if (on) 1f else 0f) else fill.animateTo(if (on) 1f else 0f, Sp.Snappy.unit) }
+    LaunchedEffect(checked) {
+        if (shown[0] == checked) return@LaunchedEffect
+        shown[0] = checked
+        rest(checked)
+        fillTo(checked)
+    }
+    val currentChecked by rememberUpdatedState(checked)
+    val currentOnChange by rememberUpdatedState(onChange)
     val on = MaterialTheme.colorScheme.primary
     val off = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)
+    val path = remember { Path() }
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     Box(
         Modifier
             .size(51.dp, 31.dp)
             .graphicsLayer { alpha = if (enabled) 1f else 0.4f }
             .drawBehind {
-                val r = size.height / 2
-                drawRoundRect(lerp(off, on, t.coerceIn(0f, 1f)), cornerRadius = CornerRadius(r))
-                val inset = 2.dp.toPx()
-                val knob = size.height - inset * 2
-                val x = inset + (size.width - knob - inset * 2) * t
-                drawCircle(Color.Black.copy(alpha = 0.14f), knob / 2 + 0.5.dp.toPx(), Offset(x + knob / 2, size.height / 2 + 1.dp.toPx()))
-                drawCircle(if (on == Color.White && t > 0.5f) Color.Black else Color.White, knob / 2, Offset(x + knob / 2, size.height / 2))
-            },
+                val t = fill.value.coerceIn(0f, 1f)
+                drawRoundRect(lerp(off, on, t), cornerRadius = CornerRadius(size.height / 2))
+                pill.path(path, size.height / 2f, reduce, if (rtl) size.width else Float.NaN)
+                translate(0f, 1.dp.toPx()) { drawPath(path, Color.Black.copy(alpha = 0.14f)) }
+                drawPath(path, if (on == Color.White && t > 0.5f) Color.Black else Color.White)
+            }
+            .then(
+                if (onChange == null) Modifier else Modifier.pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        val was = currentChecked
+                        // Pressed, the knob widens toward where it would go.
+                        if (was) pill.moveTo(scope, 15f * density, 49f * density, reduce = reduce) else pill.moveTo(scope, 2f * density, 36f * density, reduce = reduce)
+                        var dragging = false
+                        var x = 0f
+                        var moved = 0f
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val c = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!c.pressed) {
+                                c.consume()
+                                break
+                            }
+                            moved += c.positionChange().x
+                            if (!dragging && kotlin.math.abs(moved) > viewConfiguration.touchSlop) dragging = true
+                            if (dragging) {
+                                c.consume()
+                                val fx = if (rtl) size.width - c.position.x else c.position.x
+                                x = (fx / density).coerceIn(19f, 32f)
+                                pill.moveTo(scope, (x - 17f) * density, (x + 17f) * density, reduce = reduce)
+                                fillTo(x > 25.5f)
+                            }
+                        }
+                        val now = if (dragging) x > 25.5f else !was
+                        shown[0] = now
+                        rest(now)
+                        fillTo(now)
+                        if (now != was) currentOnChange?.invoke(now)
+                    }
+                },
+            ),
     )
 }
 
