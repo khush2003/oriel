@@ -775,7 +775,6 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
 
         // ---- the picture ----------------------------------------------------------------------
         val pipCorner = px(PIP_CORNER)
-        val pipShadow = px(18.dp)
         Box(
             Modifier
                 .fillMaxSize()
@@ -842,8 +841,6 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
                         shape = RoundedCornerShape(corner)
                     }
                     clip = true
-                    // Floating, it casts a shadow onto the page, gone by the time it reaches the top.
-                    shadowElevation = pipShadow * (1f - p * 3f).coerceIn(0f, 1f)
                     alpha = if (hidden) progress.value else 1f
                     translationX = drag.x
                     translationY = pull * 0.6f + drag.y
