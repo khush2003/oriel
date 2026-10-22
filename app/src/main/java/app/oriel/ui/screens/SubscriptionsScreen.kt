@@ -52,6 +52,7 @@ import app.oriel.ui.components.PAGE_GUTTER
 import app.oriel.ui.components.TextAction
 import app.oriel.ui.components.VideoCardSkeleton
 import app.oriel.ui.components.feedShelves
+import app.oriel.ui.components.longPressMenuClickable
 import app.oriel.ui.navigation.ChannelsRoute
 import app.oriel.ui.navigation.LoginRoute
 import app.oriel.ui.navigation.Tab
@@ -73,8 +74,7 @@ fun SubscriptionsScreen() {
     val graph = app.graph
     val signedIn by graph.account.signedIn.collectAsState()
     val account by graph.account.account.collectAsState()
-    val library by graph.library.state.collectAsState()
-    val channels = library.subscriptions
+    val channels by graph.library.state.collectSlice { it.subscriptions }
     // One model per account: signing out and in as someone else never shows the last one's feed.
     val model: FeedModel = viewModel(key = "subs:$signedIn:${accountOwner(account)?.hashCode()}") {
         FeedModel(graph, cacheKey = "subs-$signedIn", load = { fresh ->
@@ -115,15 +115,16 @@ fun SubscriptionsScreen() {
     ) {
         if (channels.isNotEmpty()) item(key = "channels", contentType = "channels") {
             LazyRow(contentPadding = PaddingValues(horizontal = PAGE_GUTTER, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                items(strip, key = { it.id }) { ch ->
-                    Column(Modifier.width(64.dp).clip(RoundedCornerShape(12.dp)).clickable { haptics.play(Haptic.Tap); app.openChannel(ch.id) }, horizontalAlignment = Alignment.CenterHorizontally) {
+                items(strip, key = { it.id }, contentType = { "channel" }) { ch ->
+                    // Held, the channel's own menu (Unsubscribe, Share), as every other item has.
+                    Column(Modifier.width(64.dp).clip(RoundedCornerShape(12.dp)).longPressMenuClickable(onClick = { haptics.play(Haptic.Tap); app.openChannel(ch.id) }, onLongClick = { app.showMenu(ch) }), horizontalAlignment = Alignment.CenterHorizontally) {
                         Avatar(ch.avatar, 58.dp, name = ch.title)
                         Spacer(Modifier.height(4.dp))
                         Text(ch.title, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
                     }
                 }
                 // Every channel, as the strip's last bubble.
-                item(key = "all") {
+                item(key = "all", contentType = "all") {
                     Column(Modifier.width(64.dp).clip(RoundedCornerShape(12.dp)).clickable { haptics.play(Haptic.Tap); app.navigate(ChannelsRoute) }, horizontalAlignment = Alignment.CenterHorizontally) {
                         Box(Modifier.size(58.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
                             Icon(OrielIcons.Chevron, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(26.dp))
@@ -139,15 +140,15 @@ fun SubscriptionsScreen() {
         }
         refreshNotice(state, onRetry = { model.reload(true) })
         when {
-            !signedIn && channels.isEmpty() -> item {
+            !signedIn && channels.isEmpty() -> item(key = "none", contentType = "message") {
                 Column {
                     MessageState("Follow channels and their new videos gather here.", icon = OrielIcons.Subscriptions)
                     SignInCard(onSignIn = { app.navigate(LoginRoute) }, onDismiss = null, text = "Or sign in to bring your YouTube subscriptions with you.")
                 }
             }
-            feed == null && state.loading -> items(4, contentType = { "skeleton" }) { VideoCardSkeleton(it) }
-            feed == null && state.error != null -> item(key = "error") { MessageState(state.error!!, action = "Try again", onAction = { model.reload() }) }
-            feed != null && feed.isEmpty -> item(key = "empty") { MessageState(feed.message ?: if (filter == SubsFilter.All) "No new videos from your channels." else "Nothing ${filter.empty} from your channels.") }
+            feed == null && state.loading -> items(4, key = { "sk$it" }, contentType = { "skeleton" }) { VideoCardSkeleton(it) }
+            feed == null && state.error != null -> item(key = "error", contentType = "message") { MessageState(state.error!!, action = "Try again", onAction = { model.reload() }) }
+            feed != null && feed.isEmpty -> item(key = "empty", contentType = "message") { MessageState(feed.message ?: if (filter == SubsFilter.All) "No new videos from your channels." else "Nothing ${filter.empty} from your channels.") }
             feed != null -> feedShelves(feed, keyPrefix = "subs")
         }
         feedFooter(state, onRetry = model::retryMore)

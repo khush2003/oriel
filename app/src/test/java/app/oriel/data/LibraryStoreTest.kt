@@ -110,6 +110,15 @@ class LibraryStoreTest {
     }
 
     @Test
+    fun addingToAPlaylistKeepsOrderAndSkipsWhatsThere() = runBlocking {
+        val s = store()
+        s.awaitLoaded()
+        val p = s.createPlaylist("Invented", listOf(video("fakeVideo01"), video("fakeVideo02")))
+        s.addToLocalPlaylist(p.id, listOf(video("fakeVideo03"), video("fakeVideo02"), video("fakeVideo04"), video("fakeVideo03")))
+        assertEquals(listOf("fakeVideo01", "fakeVideo02", "fakeVideo03", "fakeVideo04"), s.state.value.localPlaylists.single().videos.map { it.id })
+    }
+
+    @Test
     fun pagesFromBeforeAClearAreDropped() {
         val pages = PageDiskCache(File(dir, "pages"), scope)
         val before = pages.generation

@@ -42,6 +42,8 @@ import app.oriel.ui.components.MessageState
 import app.oriel.ui.components.PAGE_GUTTER
 import app.oriel.ui.components.RemoteImage
 import app.oriel.ui.components.SkeletonLine
+import app.oriel.ui.components.shimmer
+import androidx.compose.foundation.layout.height
 import app.oriel.ui.components.feedItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -136,7 +138,7 @@ fun NotificationsScreen() {
         onNearEnd = model::loadMore,
     ) {
         when {
-            state.loading -> items(6, contentType = { "skeleton" }) { InboxSkeleton() }
+            state.loading -> items(6, key = { "sk$it" }, contentType = { "skeleton" }) { InboxSkeleton() }
             state.error != null && state.items.isEmpty() -> item(key = "error") {
                 MessageState(state.error!!, icon = OrielIcons.Offline, action = "Try again", onAction = { model.load() })
             }
@@ -187,12 +189,13 @@ private fun InboxRow(n: InboxNotification, modifier: Modifier, onClick: () -> Un
 
 @Composable
 private fun InboxSkeleton() {
-    Row(Modifier.fillMaxWidth().padding(horizontal = PAGE_GUTTER, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+    // Laid out as InboxRow is (top-aligned, the dot's gutter, the same frames), so rows replace it in place.
+    Row(Modifier.fillMaxWidth().padding(horizontal = PAGE_GUTTER, vertical = 10.dp), verticalAlignment = Alignment.Top) {
         Spacer(Modifier.width(16.dp))
-        Box(Modifier.size(44.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant))
+        Box(Modifier.size(44.dp).clip(CircleShape).shimmer())
         Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) { SkeletonLine(0.9f); Spacer(Modifier.padding(top = 6.dp)); SkeletonLine(0.4f) }
+        Column(Modifier.weight(1f).padding(top = 3.dp)) { SkeletonLine(0.9f); Spacer(Modifier.height(6.dp)); SkeletonLine(0.7f); Spacer(Modifier.height(8.dp)); SkeletonLine(0.3f, 11.dp) }
         Spacer(Modifier.width(12.dp))
-        Box(Modifier.width(112.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant))
+        Box(Modifier.width(112.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(8.dp)).shimmer())
     }
 }

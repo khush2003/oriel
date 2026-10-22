@@ -2,7 +2,10 @@ package app.oriel.ui
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
-import app.oriel.ui.theme.EaseOutCubic
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.ui.graphics.Color
+import app.oriel.ui.theme.LocalIsDark
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
@@ -46,6 +49,7 @@ import app.oriel.ui.components.ItemActionsSheet
 import app.oriel.ui.components.OrielIcons
 import app.oriel.ui.components.NoticeHost
 import app.oriel.ui.components.SaveToPlaylistSheet
+import app.oriel.ui.components.TextPromptDialog
 import app.oriel.ui.glass.LocalAppBackdrop
 import app.oriel.ui.glass.backdropWanted
 import app.oriel.ui.glass.backdrop.backdrops.layerBackdrop
@@ -128,6 +132,8 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
     val backdrop = rememberLayerBackdrop()
     val record = backdropWanted()
     val reduce = LocalReduceAnimation.current
+    // The page underneath a push dims toward black, as UIKit's does, in light as in dark.
+    val dim = if (LocalIsDark.current) PUSH_DIM_DARK else PUSH_DIM_LIGHT
 
     LaunchedEffect(app) { app.graph.actions.notices.collectLatest { app.notice(it) } }
     // Usage counts are opt-in: asked once, a little after the first launch settles, and only in
@@ -185,16 +191,22 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
             return@CompositionLocalProvider
         }
         Box(Modifier.fillMaxSize()) {
-            Box(Modifier.fillMaxSize().then(if (record) Modifier.layerBackdrop(backdrop) else Modifier).background(MaterialTheme.colorScheme.background)) {
+            // Black behind the pages, not the page colour: the dim is the page beneath fading toward
+            // it, and on light the page colour would have washed it out to white instead. Every
+            // page paints its own background, and nothing fades both pages at once (see below).
+            Box(Modifier.fillMaxSize().then(if (record) Modifier.layerBackdrop(backdrop) else Modifier).background(Color.Black)) {
                 NavHost(
                     navController = nav,
                     startDestination = HomeRoute,
                     modifier = Modifier.fillMaxSize(),
                     // Reduce motion snaps pages in and out, as it does every other animation.
-                    enterTransition = { if (reduce) EnterTransition.None else push(true, app.tabSwitchEntry) },
-                    exitTransition = { if (reduce) ExitTransition.None else pushAway(true, app.tabSwitchEntry) },
-                    popEnterTransition = { if (reduce) EnterTransition.None else push(false, app.tabSwitchEntry) },
-                    popExitTransition = { if (reduce) ExitTransition.None else pushAway(false, app.tabSwitchEntry) },
+                    enterTransition = { if (reduce) EnterTransition.None else push(true, app.tabSwitchEntry, dim) },
+                    exitTransition = { if (reduce) ExitTransition.None else pushAway(true, app.tabSwitchEntry, dim) },
+                    popEnterTransition = { if (reduce) EnterTransition.None else push(false, app.tabSwitchEntry, dim) },
+                    popExitTransition = { if (reduce) ExitTransition.None else pushAway(false, app.tabSwitchEntry, dim) },
+                    // The edge swipe seeks these with the finger, and on release the rest plays on from there.
+                    predictivePopEnterTransition = { if (reduce) EnterTransition.None else swipeBackIn(app.tabSwitchEntry, dim) },
+                    predictivePopExitTransition = { if (reduce) ExitTransition.None else swipeBackOut(app.tabSwitchEntry) },
                 ) {
                     composable<HomeRoute> { HomeScreen() }
                     composable<ShortsRoute> { ShortsScreen(it.toRoute<ShortsRoute>().startId) }
@@ -253,6 +265,12 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
             app.sheetItem?.let { item -> ItemActionsSheet(app, item) { app.sheetItem = null } }
             app.saveTarget?.let { video -> SaveToPlaylistSheet(app, video) { app.saveTarget = null } }
             app.report?.let { r -> ReportSheet(app, r) { app.report = null } }
+            app.renameTarget?.let { p ->
+                TextPromptDialog("Rename playlist", p.title, "Save", onDismiss = { app.renameTarget = null }) { name ->
+                    app.graph.library.renameLocalPlaylist(p.id.removePrefix("local:"), name)
+                    app.renameTarget = null
+                }
+            }
             AlertHost(app)
             NoticeHost(app, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 6.dp))
         }
@@ -261,26 +279,54 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
 
 /**
  * iOS push: the new page slides in whole from the right over the old one, which drifts a
- * third of the way left and dims rather than fading away. Forward is a critically damped
- * spring; back stays a tween, since predictive back seeks through it with the finger.
- * Kept here rather than in Motion.kt: it's the one IntOffset spring, and only pushes use it.
+ * third of the way left and dims toward the black behind it rather than fading away. Push and
+ * pop share one critically damped spring, as UIKit's do. Kept here rather than in Motion.kt:
+ * it's the one IntOffset spring, and only pushes use it.
  */
 private val PushSpring = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 380f, visibilityThreshold = IntOffset.VisibilityThreshold)
 
-/** The old page's dim, on the same spring as the slide so the two finish together. */
+/** The page beneath's dim, on the same spring as the slide so the two finish together. */
 private val PushDimSpring = spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 380f)
+
+/** How opaque the page beneath stays over black: about UIKit's dimming in each mode. */
+private const val PUSH_DIM_DARK = 0.7f
+private const val PUSH_DIM_LIGHT = 0.88f
+
+/**
+ * The edge swipe's curve. It's seeked by the gesture's progress, so near the start it has to be
+ * about linear for the page to stay under the finger (EaseOutCubic ran it nearly three times
+ * ahead); it eases out at the end so a release lands softly instead of stopping dead.
+ */
+private val SwipeBackEasing = CubicBezierEasing(0.4f, 0.4f, 0.65f, 1f)
+private const val SWIPE_BACK_MS = 340
 
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.isTabSwitch(tabSwitchEntry: String?) =
     (initialState.isRoot() && targetState.isRoot()) || targetState.id == tabSwitchEntry
 
-private fun AnimatedContentTransitionScope<NavBackStackEntry>.push(forward: Boolean, tabSwitchEntry: String?): EnterTransition {
-    if (isTabSwitch(tabSwitchEntry)) return fadeIn(tween(160))
+/*
+ * A tab switch crossfades by fading only the page on top, in for a switch and out for a pop
+ * back, with the page beneath kept opaque until it's done: fading both let the black behind
+ * show through mid-way.
+ */
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.push(forward: Boolean, tabSwitchEntry: String?, dim: Float): EnterTransition {
+    if (isTabSwitch(tabSwitchEntry)) return if (forward) fadeIn(tween(160)) else EnterTransition.None
     return if (forward) slideInHorizontally(PushSpring) { it }
-    else slideInHorizontally(tween(320, easing = EaseOutCubic)) { -it / 3 } + fadeIn(tween(320), initialAlpha = 0.7f)
+    else slideInHorizontally(PushSpring) { -it / 3 } + fadeIn(PushDimSpring, initialAlpha = dim)
 }
 
-private fun AnimatedContentTransitionScope<NavBackStackEntry>.pushAway(forward: Boolean, tabSwitchEntry: String?): ExitTransition {
-    if (isTabSwitch(tabSwitchEntry)) return fadeOut(tween(120))
-    return if (forward) slideOutHorizontally(PushSpring) { -it / 3 } + fadeOut(PushDimSpring, targetAlpha = 0.7f)
-    else slideOutHorizontally(tween(300, easing = EaseOutCubic)) { it }
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.pushAway(forward: Boolean, tabSwitchEntry: String?, dim: Float): ExitTransition {
+    if (isTabSwitch(tabSwitchEntry)) return if (forward) ExitTransition.KeepUntilTransitionsFinished else fadeOut(tween(160))
+    return if (forward) slideOutHorizontally(PushSpring) { -it / 3 } + fadeOut(PushDimSpring, targetAlpha = dim)
+    else slideOutHorizontally(PushSpring) { it }
+}
+
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.swipeBackIn(tabSwitchEntry: String?, dim: Float): EnterTransition {
+    if (isTabSwitch(tabSwitchEntry)) return EnterTransition.None
+    val spec = tween<IntOffset>(SWIPE_BACK_MS, easing = SwipeBackEasing)
+    return slideInHorizontally(spec) { -it / 3 } + fadeIn(tween(SWIPE_BACK_MS, easing = SwipeBackEasing), initialAlpha = dim)
+}
+
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.swipeBackOut(tabSwitchEntry: String?): ExitTransition {
+    if (isTabSwitch(tabSwitchEntry)) return fadeOut(tween(SWIPE_BACK_MS, easing = LinearEasing))
+    return slideOutHorizontally(tween(SWIPE_BACK_MS, easing = SwipeBackEasing)) { it }
 }

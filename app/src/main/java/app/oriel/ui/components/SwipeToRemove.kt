@@ -6,6 +6,10 @@ import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Box
@@ -41,6 +45,7 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.unit.LayoutDirection
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -53,7 +58,7 @@ val DestructiveRed: Color
  * iOS's trailing swipe action: drag a row left to show a red [label] button behind it. Let go
  * past the button and it stays open; tap it to remove. A long swipe, past half the row, removes
  * at once with a tick as it crosses the line. Anything else springs closed. Null [onRemove]
- * leaves the row as it is. Right to left, it all mirrors: the row slides right. TalkBack gets
+ * leaves the row as it is. Open, a tap on the row closes it. Right to left, it all mirrors: the row slides right. TalkBack gets
  * [label] as a custom action.
  */
 @Composable
@@ -72,6 +77,11 @@ fun SwipeToRemove(onRemove: (() -> Unit)?, modifier: Modifier = Modifier, label:
     // The offset is kept in reading order (negative is toward the start, where the row goes);
     // offset {} mirrors it in RTL, so only the finger's screen-space deltas need turning round.
     val sign = if (LocalLayoutDirection.current == LayoutDirection.Rtl) -1f else 1f
+
+    fun close() {
+        armed = 0
+        scope.launch { offset.animateTo(0f, settle) }
+    }
 
     fun commit() {
         haptics.play(Haptic.ToggleOff)
@@ -97,14 +107,16 @@ fun SwipeToRemove(onRemove: (() -> Unit)?, modifier: Modifier = Modifier, label:
         }
         Box(
             Modifier
-                .offset { IntOffset(offset.value.roundToInt(), 0) }
-                .background(MaterialTheme.colorScheme.background)
+                // Outside the offset, so the drag reads the finger on the screen: inside it, each
+                // move read short by as much as the row had followed, and the row fell behind.
                 .draggable(
                     rememberDraggableState { d ->
                         val next = (offset.value + d * sign).coerceIn(-width.toFloat(), 0f)
                         val past = width > 0 && abs(next) > width * 0.5f
                         if (past && armed == 0) { armed = 1; haptics.play(Haptic.Tick) } else if (!past) armed = 0
-                        scope.launch { offset.snapTo(next) }
+                        // At once, not dispatched: two moves between frames would both start from
+                        // the same stale offset, and the row fell behind the finger.
+                        scope.launch(start = CoroutineStart.UNDISPATCHED) { offset.snapTo(next) }
                     },
                     Orientation.Horizontal,
                     onDragStopped = { screenVelocity ->
@@ -117,7 +129,28 @@ fun SwipeToRemove(onRemove: (() -> Unit)?, modifier: Modifier = Modifier, label:
                         }
                         armed = 0
                     },
-                ),
+                )
+                .offset { IntOffset(offset.value.roundToInt(), 0) }
+                .background(MaterialTheme.colorScheme.background)
+                // Open, the row is iOS's: a tap on it closes it rather than opening it, and so does
+                // starting to scroll the list on it. A sideways drag is still the draggable's.
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                        if (offset.targetValue > -1f) return@awaitEachGesture
+                        down.consume()
+                        while (true) {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                            val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                            val moved = change.position - down.position
+                            if (!change.pressed) {
+                                if (moved.getDistance() <= viewConfiguration.touchSlop) { change.consume(); close() }
+                                break
+                            }
+                            if (abs(moved.y) > viewConfiguration.touchSlop && abs(moved.y) > abs(moved.x)) { close(); break }
+                        }
+                    }
+                },
         ) {
             // The row's own clickable takes this as a custom action, so TalkBack offers it where the focus is.
             CompositionLocalProvider(LocalRowActions provides listOf(CustomAccessibilityAction(label) { commit(); true })) { content() }

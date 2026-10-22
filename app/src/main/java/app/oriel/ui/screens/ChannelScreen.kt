@@ -74,6 +74,7 @@ import app.oriel.ui.components.PillAction
 import app.oriel.ui.components.RemoteImage
 import app.oriel.ui.components.SearchField
 import app.oriel.ui.components.SkeletonLine
+import app.oriel.ui.components.shimmer
 import app.oriel.ui.components.VerifiedBadge
 import app.oriel.ui.components.VideoCardSkeleton
 import app.oriel.ui.components.feedShelves
@@ -278,10 +279,15 @@ fun ChannelScreen(id: String, params: String?) {
             channel?.let { PillAction(OrielIcons.Share, "Share") { app.share(it) } }
         },
     ) {
-        item(key = "header") {
+        item(key = "header", contentType = "header") {
             Column {
                 val banner = state.page?.banner
-                if (banner != null) {
+                // Most channels have a banner: its space is held while the page loads, so the
+                // header doesn't drop by a banner's height when it lands.
+                val bannered = banner != null || state.page == null && state.loading
+                if (banner == null && bannered) {
+                    Box(Modifier.fillMaxWidth().aspectRatio(2.9f).shimmer())
+                } else if (banner != null) {
                     Box(Modifier.fillMaxWidth()) {
                         RemoteImage(Thumbnails.sized(banner, 1280), Modifier.fillMaxWidth().aspectRatio(2.9f).graphicsLayer {
                             // A gentle parallax as the page scrolls up.
@@ -294,11 +300,11 @@ fun ChannelScreen(id: String, params: String?) {
                 // Centred, as iOS sets a profile (Contacts, an artist in Music): the avatar ringed in
                 // the page's colour where it overlaps the banner, the name and figures under it.
                 val bg = MaterialTheme.colorScheme.background
-                Box(Modifier.fillMaxWidth().offset(y = if (banner != null) (-34).dp else 0.dp), contentAlignment = Alignment.Center) {
+                Box(Modifier.fillMaxWidth().offset(y = if (bannered) (-34).dp else 0.dp), contentAlignment = Alignment.Center) {
                     Box(Modifier.clip(CircleShape).background(bg).padding(4.dp)) { Avatar(channel?.avatar, 92.dp, name = channel?.title) }
                 }
                 Column(
-                    Modifier.fillMaxWidth().padding(horizontal = PAGE_GUTTER).offset(y = if (banner != null) (-24).dp else 8.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = PAGE_GUTTER).offset(y = if (bannered) (-24).dp else 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     if (channel == null) {
@@ -317,7 +323,10 @@ fun ChannelScreen(id: String, params: String?) {
                         )
                         // As on YouTube: a short preview whose tap opens the full About sheet; centred, with "more ›".
                         // An empty About comes back as YouTube's own placeholder; that's a link, not a preview.
-                        val preview = channel.description?.takeIf { it.isNotBlank() && !it.trim().equals("More about this channel", ignoreCase = true) }
+                        val preview = remember(channel.description) {
+                            channel.description?.takeIf { it.isNotBlank() && !it.trim().equals("More about this channel", ignoreCase = true) }
+                                ?.lineSequence()?.filter { it.isNotBlank() }?.take(2)?.joinToString(" ")
+                        }
                         if (preview != null || state.page?.aboutToken != null) {
                             Spacer(Modifier.height(10.dp))
                             // At least 44dp to tap, however short the preview.
@@ -329,7 +338,7 @@ fun ChannelScreen(id: String, params: String?) {
                             ) {
                                 if (preview != null) {
                                     Text(
-                                        preview.lineSequence().filter { it.isNotBlank() }.take(2).joinToString(" "),
+                                        preview,
                                         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
                                     )
@@ -349,7 +358,7 @@ fun ChannelScreen(id: String, params: String?) {
                         )
                     }
                 }
-                Spacer(Modifier.height(if (banner != null) 0.dp else 18.dp))
+                Spacer(Modifier.height(if (bannered) 0.dp else 18.dp))
             }
         }
         if (searching) item(key = "search") {
@@ -368,9 +377,9 @@ fun ChannelScreen(id: String, params: String?) {
         }
         val feed = state.feed
         when {
-            state.loading || state.loadingTab -> items(4, contentType = { "skeleton" }) { VideoCardSkeleton(it) }
-            state.error != null && feed == null -> item(key = "error") { MessageState(state.error!!, action = "Try again", onAction = model::retry) }
-            feed != null && feed.isEmpty -> item { MessageState(feed.message ?: if (state.searchQuery != null) "No results in this channel." else "Nothing here yet.") }
+            state.loading || state.loadingTab -> items(4, key = { "sk$it" }, contentType = { "skeleton" }) { VideoCardSkeleton(it) }
+            state.error != null && feed == null -> item(key = "error", contentType = "message") { MessageState(state.error!!, action = "Try again", onAction = model::retry) }
+            feed != null && feed.isEmpty -> item(key = "empty", contentType = "message") { MessageState(feed.message ?: if (state.searchQuery != null) "No results in this channel." else "Nothing here yet.") }
             feed != null -> {
                 state.error?.let { e -> item(key = "notice") { NoticeRow(e, action = "Try again", onAction = model::retry) } }
                 feedShelves(feed, keyPrefix = "ch:${state.selectedTab}:${state.searchQuery}")

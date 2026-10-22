@@ -72,6 +72,7 @@ import androidx.compose.ui.window.DialogProperties
 import app.oriel.core.model.Channel
 import app.oriel.core.model.Item
 import app.oriel.core.model.Playlist
+import app.oriel.ui.navigation.LocalPlaylistRoute
 import app.oriel.core.model.Post
 import app.oriel.core.model.Video
 import app.oriel.ui.AlertSpec
@@ -91,6 +92,13 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import kotlinx.coroutines.delay
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 
 /**
  * Closes the sheet it's read inside: slides it down, then runs [after]. Rows that end the
@@ -112,23 +120,99 @@ fun OrielSheet(onDismiss: () -> Unit, scrollable: Boolean = true, maxHeight: Dp 
     val close: (() -> Unit) -> Unit = remember(state) {
         { after -> scope.launch { state.hide() }.invokeOnCompletion { dismiss(); after() } }
     }
+    val scroll = rememberScrollState()
+    val page = MaterialTheme.colorScheme.background
+    val overdrag = rememberSheetOverdrag(state) { !scroll.canScrollForward }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        modifier = if (scrollable) Modifier.sheetOverdrag(overdrag, page) else Modifier,
         sheetState = state,
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = page,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         tonalElevation = 0.dp,
         scrimColor = Color.Black.copy(alpha = 0.36f),
         dragHandle = { Grabber { close {} } },
     ) {
-        CompositionLocalProvider(LocalSheetClose provides close) {
+        // A scrolling sheet stretches as a whole past its top, rather than its content inside it.
+        CompositionLocalProvider(
+            LocalSheetClose provides close,
+            androidx.compose.foundation.LocalOverscrollFactory provides if (scrollable) null else androidx.compose.foundation.LocalOverscrollFactory.current,
+        ) {
             val body = Modifier.fillMaxWidth().heightIn(max = maxHeight)
             Column(
-                (if (scrollable) body.verticalScroll(rememberScrollState()) else body).navigationBarsPadding().padding(bottom = 12.dp),
+                (if (scrollable) body.verticalScroll(scroll) else body).navigationBarsPadding().padding(bottom = 12.dp),
                 content = content,
             )
         }
     }
+}
+
+/**
+ * The sheet pulled up past its top: M3's stops dead there; iOS's gives, less and less the
+ * further it's pulled, and springs back on release. The finger is watched, never consumed, so
+ * M3's own drag and fling-to-dismiss run as before; this only adds the stretch above the rest.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+private class SheetOverdrag(private val state: androidx.compose.material3.SheetState, private val scope: kotlinx.coroutines.CoroutineScope, private val canStretch: () -> Boolean) {
+    val stretch = androidx.compose.animation.core.Animatable(0f)
+    private var restOffset = Float.NaN
+
+    fun noteRest() {
+        if (state.currentValue == androidx.compose.material3.SheetValue.Expanded && !state.isAnimationRunning) restOffset = runCatching { state.requireOffset() }.getOrDefault(Float.NaN)
+    }
+
+    private fun atRest(): Boolean {
+        val rest = restOffset
+        if (rest.isNaN()) return false
+        val now = runCatching { state.requireOffset() }.getOrNull() ?: return false
+        return kotlin.math.abs(now - rest) < 1.5f
+    }
+
+    fun Modifier.stretched(fill: Color): Modifier = this
+        .pointerInput(Unit) {
+            val limit = size.height * 0.5f
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                scope.launch { stretch.stop() }
+                var over = stretch.value.let { if (it > 0f) unRubber(it, limit) else 0f }
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                    if (!change.pressed) break
+                    val dy = change.position.y - change.previousPosition.y
+                    over = when {
+                        dy < 0f && atRest() && canStretch() -> over - dy
+                        dy > 0f -> (over - dy).coerceAtLeast(0f)
+                        else -> over
+                    }
+                    val shown = rubber(over, limit)
+                    scope.launch { stretch.snapTo(shown) }
+                }
+                scope.launch { stretch.animateTo(0f, spring(dampingRatio = 1f, stiffness = 400f)) }
+            }
+        }
+        .graphicsLayer { translationY = -stretch.value }
+        // The sheet's foot comes up with it; this keeps the gap under it filled with the sheet.
+        .drawBehind {
+            val s = stretch.value
+            if (s > 0f) drawRect(fill, topLeft = androidx.compose.ui.geometry.Offset(0f, size.height - 1f), size = androidx.compose.ui.geometry.Size(size.width, s + 1f))
+        }
+}
+
+private fun Modifier.sheetOverdrag(overdrag: SheetOverdrag, fill: Color): Modifier = with(overdrag) { this@sheetOverdrag.stretched(fill) }
+
+/** UIScrollView's rubber band: the further past, the less it gives, never beyond [limit]. */
+private fun rubber(x: Float, limit: Float): Float = if (x <= 0f || limit <= 0f) 0f else limit * (1f - 1f / (x * 0.55f / limit + 1f))
+private fun unRubber(y: Float, limit: Float): Float = if (y <= 0f || y >= limit) 0f else limit / 0.55f * (1f / (1f - y / limit) - 1f)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun rememberSheetOverdrag(state: androidx.compose.material3.SheetState, canStretch: () -> Boolean): SheetOverdrag {
+    val scope = rememberCoroutineScope()
+    val stretchable by rememberUpdatedState(canStretch)
+    val overdrag = remember(state) { SheetOverdrag(state, scope) { stretchable() } }
+    LaunchedEffect(overdrag) { snapshotFlow { state.currentValue to state.isAnimationRunning }.collect { overdrag.noteRest() } }
+    return overdrag
 }
 
 /** iOS's grabber. Drawn only; for TalkBack it's the sheet's close, since the drag has no other equivalent. */
@@ -238,7 +322,20 @@ fun ColumnScope.ItemActions(app: AppState, item: Item, dismiss: () -> Unit) {
             MenuRow(if (subscribed) "Unsubscribe" else "Subscribe", if (subscribed) OrielIcons.Bell else OrielIcons.BellOutline, { run { app.toggleSubscribe(item) } }, destructive = subscribed)
             MenuRow("Share", OrielIcons.Share, { run { app.share(item) } })
         }
-        is Playlist -> {
+        is Playlist -> if (item.id.startsWith("local:")) {
+            // A playlist kept on this device: nothing on YouTube to share or save it to.
+            val id = item.id.removePrefix("local:")
+            MenuRow("Open playlist", OrielIcons.Playlist, { run { app.navigate(LocalPlaylistRoute(id)) } })
+            MenuRow("Rename", OrielIcons.Edit, { run { app.renameTarget = item } })
+            MenuRow("Delete playlist", OrielIcons.Delete, {
+                run {
+                    app.alert = AlertSpec("Delete “${item.title}”?", "This removes the playlist from this device. The videos stay on YouTube.", listOf(
+                        AlertAction("Cancel"),
+                        AlertAction("Delete", destructive = true) { app.graph.library.deleteLocalPlaylist(id) },
+                    ))
+                }
+            }, destructive = true)
+        } else {
             if (item.isMix) {
                 MenuRow("Play mix", OrielIcons.Play, { run { app.openItem(item) } })
             } else {

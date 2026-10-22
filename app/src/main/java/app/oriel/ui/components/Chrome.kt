@@ -69,6 +69,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.layout.onSizeChanged
@@ -87,6 +88,13 @@ import app.oriel.ui.theme.EaseOutCubic
 import app.oriel.ui.theme.LocalLiquidGlassEnabled
 import app.oriel.ui.theme.fade
 import app.oriel.ui.theme.motion
+import app.oriel.ui.theme.GLASS_PRESS_SCALE
+import app.oriel.ui.theme.GlyphPress
+import app.oriel.ui.theme.PressHighlight
+import app.oriel.ui.theme.pressEffect
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -280,12 +288,14 @@ fun FloatingTabBar(
                 if (searchSelected) tint ?: MaterialTheme.colorScheme.primary else (tint?.copy(alpha = 0.8f) ?: MaterialTheme.colorScheme.onSurface),
                 fade(200), label = "searchTint",
             )
+            val press = remember { MutableInteractionSource() }
             Box(
                 Modifier
                     .fillMaxHeight()
                     .aspectRatio(1f)
+                    .pressEffect(press, scale = GLASS_PRESS_SCALE)
                     .glassSurface(CircleShape)
-                    .selectable(searchSelected, remember { MutableInteractionSource() }, indication = null, role = Role.Tab) {
+                    .selectable(searchSelected, press, indication = null, role = Role.Tab) {
                         haptics.play(Haptic.Select)
                         onSearch()
                     },
@@ -298,6 +308,9 @@ fun FloatingTabBar(
     }
 }
 
+/** A tab's icon and label give under the finger, the stretch of the indicator aside. */
+private val TabPress = PressHighlight(Color.Transparent, scale = 0.92f)
+
 @Composable
 private fun TabItem(
     tab: BottomTab,
@@ -307,9 +320,10 @@ private fun TabItem(
     selectedTint: Color? = null,
     unselectedTint: Color? = null,
 ) {
-    val scale by animateFloatAsState(if (selected) 1.08f else 1f, motion(GlassSpring), label = "tabScale")
+    val scale = animateFloatAsState(if (selected) 1.08f else 1f, motion(GlassSpring), label = "tabScale")
     val haptics = rememberHaptics()
-    val tint by animateColorAsState(
+    // Read only where it's drawn, so a tab change's fade doesn't recompose the bar every frame.
+    val tint = animateColorAsState(
         if (selected) selectedTint ?: MaterialTheme.colorScheme.primary else unselectedTint ?: MaterialTheme.colorScheme.onSurfaceVariant,
         fade(200), label = "tabTint",
     )
@@ -317,16 +331,18 @@ private fun TabItem(
         horizontalAlignment = Alignment.CenterHorizontally,
         // No clip: there's no ripple to bound, and a stadium clip shaves the ends off a long label.
         modifier = modifier
-            .selectable(selected, remember { MutableInteractionSource() }, indication = null, role = Role.Tab) {
+            .selectable(selected, null, TabPress, role = Role.Tab) {
                 if (!selected) haptics.play(Haptic.Select)
                 onClick()
             }
             .padding(vertical = TAB_VERTICAL_PADDING, horizontal = 2.dp),
     ) {
         // The label below names the tab; the icon would only say it twice.
-        Icon(
-            if (selected) tab.selectedIcon else tab.icon, null, tint = tint,
-            modifier = Modifier.size(25.dp).graphicsLayer { scaleX = scale; scaleY = scale },
+        val glyph = rememberVectorPainter(if (selected) tab.selectedIcon else tab.icon)
+        Box(
+            Modifier.size(25.dp)
+                .graphicsLayer { scaleX = scale.value; scaleY = scale.value }
+                .drawBehind { with(glyph) { draw(size, colorFilter = ColorFilter.tint(tint.value)) } },
         )
         Spacer(Modifier.height(TAB_ICON_LABEL_GAP))
         // The bar is a fixed TAB_BAR_HEIGHT that the mini player and page padding stand on, so its
@@ -337,7 +353,7 @@ private fun TabItem(
             androidx.compose.foundation.text.BasicText(
                 tab.label,
                 style = MaterialTheme.typography.labelSmall,
-                color = { tint },
+                color = { tint.value },
                 maxLines = 1,
                 autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = MaterialTheme.typography.labelSmall.fontSize, stepSize = 0.5.sp),
             )
@@ -375,6 +391,21 @@ fun TopFadeScrim(modifier: Modifier = Modifier, pageColor: Color = MaterialTheme
     Box(modifier.fillMaxWidth().height(height).background(brush))
 }
 
+/**
+ * iOS 26's scroll edge: the page colour gathering under the floating bar once content scrolls
+ * beneath it, so the bar's title and circles stay legible over whatever passes under. Strong
+ * through the status bar and the bar, dissolving just below. [progress] (0 to 1) is read in the
+ * layer, so following the scroll never recomposes.
+ */
+@Composable
+fun TopScrollEdge(progress: () -> Float, modifier: Modifier = Modifier, pageColor: Color = MaterialTheme.colorScheme.background) {
+    val height = topBarHeight() + 18.dp
+    val brush = remember(pageColor) {
+        Brush.verticalGradient(colorStops = Array(STOPS) { i -> val t = i / (STOPS - 1f); t to pageColor.copy(alpha = 0.9f * (1f - EaseInCubic.transform(t))) })
+    }
+    Box(modifier.fillMaxWidth().height(height).graphicsLayer { alpha = progress().coerceIn(0f, 1f) }.background(brush))
+}
+
 // ---- floating top bar ----------------------------------------------------------------------
 
 /** The 44dp glass back circle. */
@@ -382,11 +413,14 @@ fun TopFadeScrim(modifier: Modifier = Modifier, pageColor: Color = MaterialTheme
 fun GlassCircleButton(icon: ImageVector, contentDescription: String?, onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 44.dp, iconSize: Dp = 22.dp) {
     val haptics = rememberHaptics()
     val tint = if (LocalLiquidGlassEnabled.current) glassContentColor() else MaterialTheme.colorScheme.onSurface
+    val press = remember { MutableInteractionSource() }
     Box(
         modifier
             .size(size)
+            // The whole circle swells, glass and all, so the press goes before the surface.
+            .pressEffect(press, scale = GLASS_PRESS_SCALE)
             .glassSurface(CircleShape)
-            .clickable {
+            .clickable(press, indication = null, role = Role.Button) {
                 haptics.play(Haptic.Tap)
                 onClick()
             },
@@ -400,8 +434,22 @@ fun GlassCircleButton(icon: ImageVector, contentDescription: String?, onClick: (
 @Composable
 fun GlassActionsPill(modifier: Modifier = Modifier, content: @Composable RowScope.() -> Unit) {
     val tint = if (LocalLiquidGlassEnabled.current) glassContentColor() else MaterialTheme.colorScheme.onSurface
+    val glass = Modifier.glassSurface(RoundedCornerShape(percent = 50))
     CompositionLocalProvider(LocalContentColor provides tint) {
-        Row(modifier.height(44.dp).glassSurface(RoundedCornerShape(percent = 50)).padding(horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically, content = content)
+        // The glass is a layer of its own under the buttons, so actions that turn out to draw
+        // nothing leave no empty pill behind.
+        Layout(
+            contents = listOf({ Box(glass) }, { Row(Modifier.height(44.dp).padding(horizontal = 2.dp), verticalAlignment = Alignment.CenterVertically, content = content) }),
+            modifier = modifier,
+        ) { (pills, rows), constraints ->
+            val row = rows.first().measure(constraints.copy(minWidth = 0, minHeight = 0))
+            if (row.width <= 4.dp.roundToPx()) return@Layout layout(0, 0) {}
+            val pill = pills.first().measure(androidx.compose.ui.unit.Constraints.fixed(row.width, row.height))
+            layout(row.width, row.height) {
+                pill.place(0, 0)
+                row.place(0, 0)
+            }
+        }
     }
 }
 
@@ -409,7 +457,7 @@ fun GlassActionsPill(modifier: Modifier = Modifier, content: @Composable RowScop
 fun PillAction(icon: ImageVector, contentDescription: String, onClick: () -> Unit) {
     val haptics = rememberHaptics()
     Box(
-        Modifier.size(44.dp).clip(CircleShape).clickable {
+        Modifier.size(44.dp).clickable(null, GlyphPress, role = Role.Button) {
             haptics.play(Haptic.Tap)
             onClick()
         },
@@ -420,7 +468,10 @@ fun PillAction(icon: ImageVector, contentDescription: String, onClick: () -> Uni
 /**
  * The transparent top bar every page floats: a back circle on the left, an
  * actions pill on the right, and (optionally) a centred title that fades in
- * once the page's own large title has scrolled under the bar.
+ * once the page's own large title has scrolled under the bar. With
+ * [titleProgress] the title follows the scroll, as UINavigationBar's does,
+ * read in the layer only; [showTitle] then just says whether it's there for
+ * accessibility. Without it, the title fades in and out on [showTitle].
  */
 @Composable
 fun FloatingTopBar(
@@ -430,6 +481,7 @@ fun FloatingTopBar(
     showTitle: Boolean = false,
     leading: (@Composable () -> Unit)? = null,
     actions: (@Composable RowScope.() -> Unit)? = null,
+    titleProgress: (() -> Float)? = null,
 ) {
     CenteredTitleRow(
         modifier
@@ -446,7 +498,20 @@ fun FloatingTopBar(
             }
         },
         title = {
-            if (title != null) {
+            if (title != null && titleProgress != null) {
+                Text(
+                    title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .graphicsLayer {
+                            val p = titleProgress().coerceIn(0f, 1f)
+                            alpha = p
+                            // Rises the last few points into place as it fades in.
+                            translationY = (1f - p) * 6.dp.toPx()
+                        }
+                        // The large title says it until then; this would only say it twice.
+                        .then(if (showTitle) Modifier else Modifier.clearAndSetSemantics {}),
+                )
+            } else if (title != null) {
                 AnimatedVisibility(showTitle, enter = fadeIn(fade(220)), exit = fadeOut(fade(220))) {
                     Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }

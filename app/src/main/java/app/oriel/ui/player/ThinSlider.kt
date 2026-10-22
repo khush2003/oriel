@@ -103,6 +103,9 @@ fun ThinSlider(
     val capsule = remember { Path() }
     // The loading sheen runs only while loading, not every frame the controls are up.
     val sheen = remember { Animatable(0f) }
+    // Its gradient is made once per width and slid along, not rebuilt (with a new shader) every frame.
+    val sheenColors = remember(activeColor) { listOf(Color.Transparent, activeColor.copy(alpha = 0.45f), Color.Transparent) }
+    val sheenBrush = remember(sheenColors) { SheenBrush(sheenColors) }
     LaunchedEffect(loading) {
         if (!loading) return@LaunchedEffect
         while (true) { sheen.snapTo(0f); sheen.animateTo(1f, tween(1000, easing = LinearEasing)) }
@@ -170,7 +173,8 @@ fun ThinSlider(
                 if (loading) {
                     val band = size.width * 0.34f
                     val x = -band + (size.width + band) * sheen.value
-                    drawRect(Brush.horizontalGradient(listOf(Color.Transparent, activeColor.copy(alpha = 0.45f), Color.Transparent), startX = x, endX = x + band))
+                    val brush = sheenBrush.of(band)
+                    translate(left = x) { drawRect(brush, topLeft = Offset(-x, 0f), size = size) }
                 }
                 // Chapters part the capsule with hairline gaps, as YouTube's scrubber does.
                 if (durationMs > 0) {
@@ -183,5 +187,16 @@ fun ThinSlider(
                 }
             } }
         }
+    }
+}
+
+/** The loading sheen's gradient over [0, band], kept until the band's width changes. */
+private class SheenBrush(private val colors: List<Color>) {
+    private var band = -1f
+    private var brush: Brush = Brush.horizontalGradient(colors)
+
+    fun of(width: Float): Brush {
+        if (width != band) { band = width; brush = Brush.horizontalGradient(colors, startX = 0f, endX = width) }
+        return brush
     }
 }

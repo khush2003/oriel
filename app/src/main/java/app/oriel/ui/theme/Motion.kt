@@ -32,6 +32,15 @@ val PlayerSpring = spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, sti
 
 val EaseOutCubic = CubicBezierEasing(0.215f, 0.61f, 0.355f, 1f)
 
+/*
+ * Press feedback (PressHighlight.kt): touch-down is quick and critically damped, so the
+ * response is there before the finger has finished landing; release is softer and a touch
+ * underdamped, so what was pressed settles back with the slight give iOS controls have.
+ * Both work on a 0-to-1 press progress, hence the small thresholds.
+ */
+val PressSpring = spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 1_400f, visibilityThreshold = 0.001f)
+val ReleaseSpring = spring<Float>(dampingRatio = 0.62f, stiffness = 520f, visibilityThreshold = 0.001f)
+
 /** [spec], or an instant snap under "reduce animation". */
 @Composable
 @ReadOnlyComposable

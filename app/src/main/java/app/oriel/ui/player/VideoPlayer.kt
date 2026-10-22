@@ -19,6 +19,9 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.AwaitPointerEventScope
+import androidx.compose.ui.input.pointer.PointerInputChange
+import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.runtime.rememberUpdatedState
@@ -34,7 +37,6 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -217,7 +219,8 @@ fun VideoControls(
     LaunchedEffect(scrubbing) { if (scrubbing) app.watch.wantExtras() }
     var scrubValue by remember { mutableFloatStateOf(0f) }
     var hideJob by remember { mutableStateOf<Job?>(null) }
-    val position = rememberPosition(connection, if (visible) 200 else 250)
+    // Hidden, only captions need the position, and with none showing nothing does: polled at a walk.
+    val position = rememberPosition(connection, if (visible) 200 else if (captions.selected != null) 250 else 1_000)
 
     fun scheduleHide() {
         hideJob?.cancel()
@@ -294,7 +297,7 @@ fun VideoControls(
                     val down = awaitFirstDown()
                     var cancelled = false
                     val up = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
-                        waitForUpOrCancellation().also { if (it == null) cancelled = true }
+                        awaitTapUp(down).also { if (it == null) cancelled = true }
                     }
                     if (cancelled) return@awaitEachGesture
                     if (up == null) {
@@ -309,7 +312,12 @@ fun VideoControls(
                                 haptics.play(Haptic.Tick)
                                 connection.setSpeed(2f)
                             }
-                            waitForUpOrCancellation()
+                            // The hold owns the finger until it lifts: moving it must not start the
+                            // swipes into or out of fullscreen, or the sheet's drag, underneath.
+                            do {
+                                val event = awaitPointerEvent()
+                                event.changes.forEach { it.consume() }
+                            } while (event.changes.any { it.pressed })
                         } finally {
                             if (boosting) {
                                 boosting = false
@@ -328,8 +336,13 @@ fun VideoControls(
                             val second = withTimeoutOrNull(viewConfiguration.doubleTapTimeoutMillis) { awaitFirstDown() }
                             if (second == null) toggleControls()
                             else {
-                                waitForUpOrCancellation()?.consume()
-                                seek(sideOf(second.position.x).takeIf { it != 0 } ?: side, second.position)
+                                // A second touch that turns into a drag (down to the mini player, out
+                                // of fullscreen) is that drag's, not a seek.
+                                val secondUp = awaitTapUp(second)
+                                if (secondUp != null) {
+                                    secondUp.consume()
+                                    seek(sideOf(second.position.x).takeIf { it != 0 } ?: side, second.position)
+                                }
                             }
                         }
                     }
@@ -525,6 +538,23 @@ fun VideoControls(
                 }
             }
         }
+    }
+}
+
+/**
+ * The finger's lift, as a tap's, or null once it isn't one: another gesture took it, it strayed
+ * past the touch slop, or a second finger joined it. A slow drag nothing claims (sideways on the
+ * picture) used to sit out the long-press timeout and turn into the 2x hold.
+ */
+private suspend fun AwaitPointerEventScope.awaitTapUp(down: PointerInputChange): PointerInputChange? {
+    while (true) {
+        val event = awaitPointerEvent()
+        val change = event.changes.firstOrNull { it.id == down.id } ?: return null
+        if (event.changes.any { it.id != down.id && it.pressed }) return null
+        if (change.changedToUp()) return change
+        if (change.isConsumed || (change.position - down.position).getDistance() > viewConfiguration.touchSlop) return null
+        // The picture's drag, around this, takes a move in the same pass, after this handler has seen it.
+        if (awaitPointerEvent(PointerEventPass.Final).changes.any { it.isConsumed }) return null
     }
 }
 

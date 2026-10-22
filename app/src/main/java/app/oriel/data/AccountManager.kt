@@ -30,7 +30,8 @@ import kotlin.coroutines.cancellation.CancellationException
  */
 class AccountManager(
     context: Context,
-    private val yt: YouTube,
+    /** Built off the main thread at launch; [restore] gets by without it. */
+    private val client: () -> YouTube,
     private val resolver: () -> StreamResolver,
     private val library: LibraryStore,
     private val scope: CoroutineScope,
@@ -40,6 +41,7 @@ class AccountManager(
     /** How a [sync] went, for a sync the person asked for to say so when it didn't. */
     enum class SyncResult { DONE, PARTIAL, FAILED, SKIPPED }
 
+    private val yt: YouTube get() = client()
     private val prefs = context.getSharedPreferences("account", Context.MODE_PRIVATE)
     private val _account = MutableStateFlow<AccountInfo?>(null)
     val account: StateFlow<AccountInfo?> = _account.asStateFlow()
@@ -59,14 +61,23 @@ class AccountManager(
      */
     private val session = AtomicInteger()
 
+    /**
+     * The saved session as the UI sees it, from the prefs alone: the client may still be being
+     * built, and gets the cookie itself from [applySession].
+     */
     fun restore() {
         val cookie = prefs.getString(KEY_COOKIE, null) ?: return
         if (!prefs.contains(KEY_SCHEMA)) prefs.edit { putInt(KEY_SCHEMA, SCHEMA) }
-        yt.cookie = cookie
-        yt.dataSyncId = prefs.getString(KEY_DATASYNC, null)
-        _signedIn.value = yt.isSignedIn
+        _signedIn.value = YouTube.isSignedInCookie(cookie)
         _account.value = prefs.getString(KEY_ACCOUNT, null)?.let { runCatching { AppJson.decodeFromString<AccountInfo>(it) }.getOrNull()?.takeIf { a -> a.name.isNotBlank() } }
         scope.launch(Dispatchers.IO) { refresh() }
+    }
+
+    /** Puts the saved session on [client], as it's built (before anyone else can use it). */
+    fun applySession(client: YouTube) {
+        val cookie = prefs.getString(KEY_COOKIE, null) ?: return
+        client.cookie = cookie
+        client.dataSyncId = prefs.getString(KEY_DATASYNC, null)
     }
 
     suspend fun signIn(cookie: String, dataSyncId: String?): Boolean {

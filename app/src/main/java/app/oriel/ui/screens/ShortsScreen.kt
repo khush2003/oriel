@@ -361,8 +361,13 @@ private class ShortsPlayback(context: android.content.Context, private val graph
     fun show(ids: List<String>, index: Int) {
         val id = ids.getOrNull(index) ?: return
         current = index
-        // Newly listed shorts join the manager, ranked by their place in the pager.
-        ids.forEachIndexed { i, other -> if (other !in ranked && i >= index - 1) { ranked[other] = i; preload.add(item(other), i) } }
+        // Newly listed shorts join the manager, ranked by their place in the pager: only the ones
+        // the control readies. Every short listed ahead used to join, and the manager walked them
+        // all on the main thread at each swipe.
+        for (i in (index - 1).coerceAtLeast(0)..minOf(index + 2, ids.lastIndex)) {
+            val other = ids[i]
+            if (other !in ranked) { ranked[other] = i; preload.add(item(other), i) }
+        }
         // And ones well behind are let go, so a long session doesn't hold every short it passed.
         ranked.entries.filter { it.value < index - 3 }.toList().forEach { (other, _) ->
             preload.remove(item(other)); ranked.remove(other); items.remove(other)
@@ -623,8 +628,9 @@ private fun ShortPage(app: AppState, id: String, info: ShortInfo?, playback: Sho
                 secondary = "Report", onSecondary = { app.reportProblem(ReportKind.PLAYBACK, id) },
             )
         }
-        if (fast) {
-            Row(Modifier.align(Alignment.TopCenter).padding(top = 96.dp).videoGlass(RoundedCornerShape(50), 0.5f).padding(horizontal = 12.dp, vertical = 6.dp)) {
+        // Fades in and out as the watch page's 2x pill does, rather than popping.
+        AnimatedVisibility(fast, Modifier.align(Alignment.TopCenter).padding(top = 96.dp), enter = enterMotion(fadeIn(tween(120)) + scaleIn(initialScale = 0.9f)), exit = exitMotion(fadeOut(tween(160)))) {
+            Row(Modifier.videoGlass(RoundedCornerShape(50), 0.5f).padding(horizontal = 12.dp, vertical = 6.dp)) {
                 Text("2× ▸▸", style = MaterialTheme.typography.labelLarge, color = Color.White)
             }
         }
@@ -727,14 +733,7 @@ private fun ShortPage(app: AppState, id: String, info: ShortInfo?, playback: Sho
         // The progress bar along the bottom, and a scrubber: drag along it (or tap it) to seek.
         // It swells while held, the overlay steps aside, and the time shows above it.
         val thick by animateFloatAsState(if (scrubbing) 1f else 0f, motion(spring(dampingRatio = 0.8f, stiffness = 700f)), label = "scrubThick")
-        if (scrubbing) {
-            val d = player.duration.coerceAtLeast(0)
-            Text(
-                "${Format.durationMs((scrubAt * d).toLong())} / ${Format.durationMs(d)}",
-                style = MaterialTheme.typography.headlineSmall.copy(shadow = androidx.compose.ui.graphics.Shadow(Color.Black.copy(alpha = 0.5f), blurRadius = 12f)),
-                color = Color.White, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 64.dp),
-            )
-        }
+        if (scrubbing) ScrubTime({ scrubAt }, player.duration.coerceAtLeast(0), Modifier.align(Alignment.BottomCenter).padding(bottom = 64.dp))
         Box(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(30.dp)
                 .pointerInput(active) {
@@ -787,6 +786,16 @@ private fun ShortPage(app: AppState, id: String, info: ShortInfo?, playback: Sho
                 },
         )
     }
+}
+
+/** The time over the scrubber, in its own scope: each move of the finger recomposes this, not the page. */
+@Composable
+private fun ScrubTime(at: () -> Float, durationMs: Long, modifier: Modifier) {
+    Text(
+        "${Format.durationMs((at() * durationMs).toLong())} / ${Format.durationMs(durationMs)}",
+        style = MaterialTheme.typography.headlineSmall.copy(shadow = androidx.compose.ui.graphics.Shadow(Color.Black.copy(alpha = 0.5f), blurRadius = 12f)),
+        color = Color.White, modifier = modifier,
+    )
 }
 
 @Composable

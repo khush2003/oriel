@@ -1,0 +1,57 @@
+# Hand-written ART baseline profile. AGP merges it with the profiles AndroidX and Coil ship,
+# and androidx.profileinstaller installs the result, so a sideloaded APK runs these paths
+# compiled from its first launch instead of interpreted until the background dexopt.
+#
+# Broad on purpose: the app's own code, and the libraries on the cold start, feed-scroll and
+# playback paths that ship no profile of their own. To replace it with a measured one, see
+# docs/RELEASING.md ("Baseline profile").
+
+# The app: startup, every screen, the player and the data layer.
+HSPLapp/oriel/**;->**(**)**
+Lapp/oriel/**;
+
+# Network: OkHttp under everything, Ktor and InnerTubeX for every page and player request.
+HSPLokhttp3/**;->**(**)**
+Lokhttp3/**;
+HSPLokio/**;->**(**)**
+Lokio/**;
+HSPLio/ktor/client/**;->**(**)**
+Lio/ktor/client/**;
+HSPLio/ktor/http/**;->**(**)**
+Lio/ktor/http/**;
+HSPLio/ktor/utils/io/**;->**(**)**
+Lio/ktor/utils/io/**;
+HSPLio/ktor/util/**;->**(**)**
+Lio/ktor/util/**;
+HSPLio/ktor/serialization/**;->**(**)**
+Lio/ktor/serialization/**;
+HSPLcom/metrolist/innertubex/**;->**(**)**
+Lcom/metrolist/innertubex/**;
+
+# JSON: the page cache on the first frame, every parsed response, the library and settings.
+HSPLkotlinx/serialization/**;->**(**)**
+Lkotlinx/serialization/**;
+
+# Coroutines: every load, flow and StateFlow the UI collects.
+HSPLkotlinx/coroutines/**;->**(**)**
+Lkotlinx/coroutines/**;
+
+# Playback: the player, its sources and extractors (MP4, WebM, HLS), the stream cache, the session.
+HSPLandroidx/media3/common/**;->**(**)**
+Landroidx/media3/common/**;
+HSPLandroidx/media3/exoplayer/**;->**(**)**
+Landroidx/media3/exoplayer/**;
+HSPLandroidx/media3/datasource/**;->**(**)**
+Landroidx/media3/datasource/**;
+HSPLandroidx/media3/extractor/**;->**(**)**
+Landroidx/media3/extractor/**;
+HSPLandroidx/media3/container/**;->**(**)**
+Landroidx/media3/container/**;
+HSPLandroidx/media3/decoder/**;->**(**)**
+Landroidx/media3/decoder/**;
+HSPLandroidx/media3/database/**;->**(**)**
+Landroidx/media3/database/**;
+HSPLandroidx/media3/session/**;->**(**)**
+Landroidx/media3/session/**;
+HSPLandroidx/media3/ui/compose/**;->**(**)**
+Landroidx/media3/ui/compose/**;

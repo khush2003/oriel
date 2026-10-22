@@ -24,6 +24,16 @@ rejects a `versionCode` that doesn't go up. The private test build `0.9.01-alpha
    architecture plus a universal one) and drafts a GitHub release with them and their SHA-256
    sums. Check the draft, write the notes (what changed, for users), publish.
 
+## Baseline profile
+
+`app/src/main/baseline-prof.txt` is written by hand: broad rules for the app and the libraries
+that ship no profile of their own. The release build merges it into `assets/dexopt/baseline.prof`
+(check with `unzip -l` on the APK). A measured profile is better; to make one, with a phone or an
+emulator attached, add a `:baselineprofile` module (`androidx.baselineprofile` plugin, a
+`BaselineProfileRule` test that launches the app, scrolls Home and plays a video), run
+`./gradlew :app:generateReleaseBaselineProfile`, and replace the hand-written file with the result.
+CI has no device, so the module isn't kept in the repository.
+
 ## Secrets the release workflow needs
 
 Set these in the repository's Settings › Secrets and variables › Actions:

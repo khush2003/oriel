@@ -14,15 +14,12 @@ import androidx.compose.foundation.background
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.drag
-import androidx.compose.foundation.gestures.verticalDrag
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.offset
@@ -224,9 +221,12 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
         val progress = sheet.progress
         val fullscreen = sheet.fullscreen
         val fsAnim = remember { androidx.compose.animation.core.Animatable(0f) }
+        // A swipe up that finishes fullscreen hands its speed on, so the flight doesn't pause at release.
+        val fsThrow = remember { floatArrayOf(0f) }
         LaunchedEffect(fullscreen) {
             val target = if (fullscreen) 1f else 0f
-            if (reduceMotion) fsAnim.snapTo(target) else fsAnim.animateTo(target, PlayerSpring)
+            val v = fsThrow[0].also { fsThrow[0] = 0f }
+            if (reduceMotion) fsAnim.snapTo(target) else fsAnim.animateTo(target, PlayerSpring, initialVelocity = v)
         }
 
         // ---- the drag that moves the sheet ------------------------------------------------
@@ -234,6 +234,13 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
         var dragTotal by remember { mutableFloatStateOf(0f) }
         var panTotal by remember { mutableStateOf(Offset.Zero) }
         var pinched by remember { mutableStateOf(false) }
+        // Past the point where letting go commits (out of fullscreen, into it, the window put away):
+        // one tick as the finger crosses it, as iOS marks it, and none again at the release.
+        var armed by remember { mutableStateOf(false) }
+        fun arm(past: Boolean) {
+            if (past && !armed) haptics.play(Haptic.Tick)
+            armed = past
+        }
         val latestTravel by rememberUpdatedState(travel)
         fun release() {
             val v = tracker.calculateVelocity().y
@@ -277,7 +284,7 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
             val offLeft = pushedLeft || flungLeft
             val offRight = !offLeft && (pushedRight || flungRight)
             if (offLeft || offRight) {
-                haptics.play(Haptic.Tap)
+                if (!armed) haptics.play(Haptic.Tap)
                 scope.launch {
                     val out = Offset(if (offLeft) -W else W, v.y * 0.15f)
                     if (reduceMotion) {
@@ -318,15 +325,23 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
         // The drag handler outlives compositions; these read the window's geometry as it is now.
         val latestReleasePip by rememberUpdatedState({ releasePip() })
         val latestPinchPip by rememberUpdatedState({ zoom: Float -> pinchPip(zoom) })
+        // Pushed a third of the way off a side, where letting go puts the window away (as releasePip judges it).
+        val latestArmPip by rememberUpdatedState({ drag: Offset ->
+            val x = rest.x + drag.x
+            arm(x < -pipW * 0.33f || x + pipW > W + pipW * 0.33f)
+        })
         // In fullscreen the picture follows a finger down, and lets go of fullscreen past a
         // threshold or on a flick; short of it, it springs back.
         val fsPull = remember { androidx.compose.animation.core.Animatable(0f) }
-        fun releaseFullscreen() {
+        fun releaseFullscreen(cancelled: Boolean = false) {
             val v = tracker.calculateVelocity().y
             tracker.resetTracking()
-            val leave = dragTotal > px(72.dp) || (v > 900f && dragTotal > px(16.dp))
-            if (leave) { haptics.play(Haptic.Tap); sheet.fullscreen = false }
-            scope.launch { if (reduceMotion) fsPull.snapTo(0f) else fsPull.animateTo(0f, SheetSpring) }
+            // Cancelled (a second finger's pinch took over, the system took the touch), it only springs back.
+            val leave = !cancelled && (dragTotal > px(72.dp) || (v > 900f && dragTotal > px(16.dp)))
+            if (leave) { if (!armed) haptics.play(Haptic.Tap); sheet.fullscreen = false }
+            armed = false
+            val throwV = if (cancelled) 0f else v.coerceIn(-4000f, 4000f)
+            scope.launch { if (reduceMotion) fsPull.snapTo(0f) else fsPull.animateTo(0f, SheetSpring, initialVelocity = throwV) }
         }
         // Expanded, a drag up grows the picture toward fullscreen under the finger (the same
         // flight the button runs, held at the finger's place), and letting go past a quarter of
@@ -337,30 +352,37 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
             val eased = if (f < 0.85f) f else 0.85f + (f - 0.85f) * 0.3f
             scope.launch(start = CoroutineStart.UNDISPATCHED) { fsAnim.snapTo(eased.coerceIn(0f, 0.95f)) }
         }
-        fun releasePush() {
+        fun releasePush(cancelled: Boolean = false) {
             val v = tracker.calculateVelocity().y
             tracker.resetTracking()
-            val go = fsAnim.value > 0.22f || (v < -900f && dragTotal < -px(16.dp))
-            if (go) { haptics.play(Haptic.Expand); sheet.fullscreen = true }
-            else scope.launch { if (reduceMotion) fsAnim.snapTo(0f) else fsAnim.animateTo(0f, SheetSpring) }
+            val go = !cancelled && (fsAnim.value > 0.22f || (v < -900f && dragTotal < -px(16.dp)))
+            // The flight's speed in its own units: the push grows over 45% of the screen's height.
+            val flight = if (cancelled) 0f else (-v / (H * 0.45f)).coerceIn(-8f, 8f)
+            if (go) { if (!armed) haptics.play(Haptic.Expand); fsThrow[0] = flight.coerceAtLeast(0f); sheet.fullscreen = true }
+            // PlayerSpring, not SheetSpring: this is a 0-to-1 value, and SheetSpring's half-unit
+            // threshold ended the settle at once, so the picture jumped back.
+            else scope.launch { if (reduceMotion) fsAnim.snapTo(0f) else fsAnim.animateTo(0f, PlayerSpring, initialVelocity = flight) }
+            armed = false
         }
         // The drag handler outlives compositions; these see the screen as it is now, after a resize.
         val latestPushFullscreen by rememberUpdatedState({ dragUp: Float -> pushFullscreen(dragUp) })
-        val latestReleaseFullscreen by rememberUpdatedState({ releaseFullscreen() })
-        val latestReleasePush by rememberUpdatedState({ releasePush() })
+        val latestReleaseFullscreen by rememberUpdatedState({ cancelled: Boolean -> releaseFullscreen(cancelled) })
+        val latestReleasePush by rememberUpdatedState({ cancelled: Boolean -> releasePush(cancelled) })
         // The picture's one drag, in every state: floating, it moves the window anywhere;
         // expanded, down collapses and a flick up goes fullscreen; in fullscreen, down leaves it.
         // What it does is decided as each drag starts. (It used to be two handlers swapped by
         // state, and they traded places mid-drag as the sheet crossed halfway. Compose restarts a
         // pointer handler whose code changes, so the drag died there with nothing to settle it.)
-        val pictureDrag = Modifier.pointerInput(Unit) {
+        val pictureScreen = remember { ScreenPosition() }
+        val pictureDrag = Modifier.screenPosition(pictureScreen).pointerInput(Unit) {
             var startedExpanded = false
             var startedFullscreen = false
             var floating = false
             detectPictureDrag(
+                screen = pictureScreen,
                 pansFreely = { progress.value < 0.01f && !sheet.fullscreen },
                 onStart = { pan ->
-                    dragTotal = 0f; panTotal = Offset.Zero; pinched = false; tracker.resetTracking()
+                    dragTotal = 0f; panTotal = Offset.Zero; pinched = false; armed = false; tracker.resetTracking()
                     floating = pan
                     startedExpanded = progress.value > 0.99f
                     startedFullscreen = sheet.fullscreen
@@ -369,18 +391,28 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
                 onEnd = {
                     when {
                         floating -> latestReleasePip()
-                        startedFullscreen -> latestReleaseFullscreen()
-                        startedExpanded && dragTotal < 0f && progress.value > 0.99f -> latestReleasePush()
+                        startedFullscreen -> latestReleaseFullscreen(false)
+                        startedExpanded && dragTotal < 0f && progress.value > 0.99f -> latestReleasePush(false)
                         else -> release()
                     }
                 },
-                onCancel = { if (floating) latestReleasePip() else if (startedFullscreen) latestReleaseFullscreen() else release() },
+                // A cancelled drag puts back what it was growing rather than committing it: the
+                // push up used to be left halfway to fullscreen.
+                onCancel = {
+                    when {
+                        floating -> latestReleasePip()
+                        startedFullscreen -> latestReleaseFullscreen(true)
+                        startedExpanded && dragTotal < 0f && progress.value > 0.99f -> latestReleasePush(true)
+                        else -> release()
+                    }
+                },
             ) { uptime, delta, zoom ->
                 if (floating) {
                     panTotal += delta
                     tracker.addPosition(uptime, panTotal)
                     val moved = pipDrag.value + delta + (if (zoom != 1f) latestPinchPip(zoom) else Offset.Zero)
                     scope.launch(start = CoroutineStart.UNDISPATCHED) { pipDrag.snapTo(moved) }
+                    if (!pinched) latestArmPip(moved)
                     return@detectPictureDrag
                 }
                 val dy = delta.y
@@ -389,12 +421,13 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
                 if (startedFullscreen) {
                     // Resists past the threshold, like a rubber band, and not at all upward.
                     val pull = dragTotal.coerceAtLeast(0f)
+                    arm(dragTotal > px(72.dp))
                     val limit = px(160.dp)
                     scope.launch(start = CoroutineStart.UNDISPATCHED) { fsPull.snapTo(if (pull < limit) pull else limit + (pull - limit) * 0.3f) }
                     return@detectPictureDrag
                 }
                 if (sheet.fullscreen) return@detectPictureDrag
-                if (startedExpanded && dragTotal < 0 && progress.value > 0.99f) { latestPushFullscreen(-dragTotal); return@detectPictureDrag }
+                if (startedExpanded && dragTotal < 0 && progress.value > 0.99f) { latestPushFullscreen(-dragTotal); arm(fsAnim.value > 0.22f); return@detectPictureDrag }
                 if (fsAnim.value > 0f && !sheet.fullscreen) scope.launch(start = CoroutineStart.UNDISPATCHED) { fsAnim.snapTo(0f) }
                 follow(dy)
             }
@@ -518,6 +551,7 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
  * controls. The mode is fixed for the whole drag when it starts.
  */
 private suspend fun PointerInputScope.detectPictureDrag(
+    screen: ScreenPosition,
     pansFreely: () -> Boolean,
     onStart: (pan: Boolean) -> Unit,
     onEnd: () -> Unit,
@@ -531,12 +565,25 @@ private suspend fun PointerInputScope.detectPictureDrag(
         var started = false
         var moved = Offset.Zero
         var spread = 1f
+        // Each finger's last place on the screen: the window moves under them as they drag it.
+        val last = HashMap<androidx.compose.ui.input.pointer.PointerId, Offset>()
+        last[down.id] = screen.of(down.position)
         while (true) {
             val event = awaitPointerEvent()
             val pressed = event.changes.count { it.pressed }
             if (pressed == 0) break
             if (!started && event.changes.any { it.isConsumed }) return@awaitEachGesture
-            val pan = event.calculatePan()
+            var sum = Offset.Zero
+            var n = 0
+            event.changes.forEach { c ->
+                val at = screen.of(c.position)
+                val before = last[c.id]
+                if (c.pressed) {
+                    if (before != null) { sum += at - before; n++ }
+                    last[c.id] = at
+                } else last.remove(c.id)
+            }
+            val pan = if (n > 0) sum / n.toFloat() else Offset.Zero
             val zoom = if (pressed >= 2) event.calculateZoom() else 1f
             if (!started) {
                 moved += pan
@@ -557,8 +604,21 @@ private suspend fun PointerInputScope.detectPictureDrag(
     val start = awaitVerticalTouchSlopOrCancellation(down.id) { change, over -> change.consume(); slop = over } ?: return@awaitEachGesture
     onStart(false)
     onDrag(start.uptimeMillis, Offset(0f, slop), 1f)
-    val completed = verticalDrag(start.id) { val dy = it.positionChange().y; it.consume(); onDrag(it.uptimeMillis, Offset(0f, dy), 1f) }
-    if (completed) onEnd() else onCancel()
+    var lastY = screen.of(start.position).y
+    while (true) {
+        val event = awaitPointerEvent()
+        // A second finger makes it a pinch (fill or fit in fullscreen), not this drag: it lets go
+        // as a cancel, which springs back rather than committing.
+        if (event.changes.any { it.id != start.id && it.pressed }) { onCancel(); return@awaitEachGesture }
+        val change = event.changes.firstOrNull { it.id == start.id }
+        if (change == null || change.isConsumed) { onCancel(); return@awaitEachGesture }
+        if (!change.pressed) { change.consume(); break }
+        val y = screen.of(change.position).y
+        change.consume()
+        if (y != lastY) onDrag(change.uptimeMillis, Offset(0f, y - lastY), 1f)
+        lastY = y
+    }
+    onEnd()
 }
 
 /**

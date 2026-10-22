@@ -62,6 +62,13 @@ import app.oriel.ui.LocalAppState
 import app.oriel.ui.haptics.Haptic
 import app.oriel.ui.haptics.rememberHaptics
 import app.oriel.util.Thumbnails
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
+import androidx.compose.ui.semantics.Role
+import app.oriel.ui.theme.CardPress
+import app.oriel.ui.theme.GlyphPress
+import app.oriel.ui.theme.TilePress
 
 /**
  * The cards' quieter line: who and when, "Channel · 2 days ago". The view count waits for
@@ -87,7 +94,7 @@ val ROW_CORNER = 12.dp
 fun MoreButton(onClick: () -> Unit, modifier: Modifier = Modifier, tint: Color = MaterialTheme.colorScheme.onSurfaceVariant) {
     val haptics = rememberHaptics()
     Box(
-        modifier.offset(x = 6.dp).size(44.dp).clip(CircleShape).clickable {
+        modifier.offset(x = 6.dp).size(44.dp).clickable(null, GlyphPress, role = Role.Button) {
             haptics.play(Haptic.Tap)
             onClick()
         },
@@ -106,6 +113,8 @@ fun MoreButton(onClick: () -> Unit, modifier: Modifier = Modifier, tint: Color =
 fun VideoCard(video: Video, modifier: Modifier = Modifier, showAvatar: Boolean = false, titleColor: Color = MaterialTheme.colorScheme.onSurface, metaColor: Color = MaterialTheme.colorScheme.onSurfaceVariant) {
     val app = LocalAppState.current
     val haptics = rememberHaptics()
+    // A card gives under the finger rather than washing over, as Apple's TV app's do.
+    CompositionLocalProvider(LocalIndication provides CardPress) {
     Column(
         modifier
             .fillMaxWidth()
@@ -123,7 +132,7 @@ fun VideoCard(video: Video, modifier: Modifier = Modifier, showAvatar: Boolean =
                 Avatar(
                     video.channel?.avatar, 36.dp, name = video.channel?.name,
                     modifier = Modifier.offset(x = (-4).dp, y = (-2).dp).clip(CircleShape)
-                        .clickable(enabled = video.channel?.id != null, onClickLabel = "Open channel") { haptics.play(Haptic.Tap); app.openChannel(video.channel!!.id!!) }
+                        .clickable(null, GlyphPress, enabled = video.channel?.id != null, onClickLabel = "Open channel") { haptics.play(Haptic.Tap); app.openChannel(video.channel!!.id!!) }
                         .minTouchTarget(),
                 )
                 Spacer(Modifier.width(4.dp))
@@ -135,6 +144,7 @@ fun VideoCard(video: Video, modifier: Modifier = Modifier, showAvatar: Boolean =
             }
             MoreButton({ app.showMenu(video) }, tint = metaColor)
         }
+    }
     }
 }
 
@@ -181,12 +191,14 @@ fun VideoRow(
 @Composable
 fun VideoShelfCard(video: Video, width: Dp = 260.dp) {
     val app = LocalAppState.current
-    Column(Modifier.width(width).longPressMenuClickable(onClick = { app.openVideo(video) }, onLongClick = { app.showMenu(video) })) {
-        VideoThumbnail(video, Modifier.fillMaxWidth(), corner = CARD_CORNER - 2.dp, widthHint = width)
-        Spacer(Modifier.height(10.dp))
-        Text(video.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Spacer(Modifier.height(2.dp))
-        Text(video.calmLine(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    CompositionLocalProvider(LocalIndication provides TilePress) {
+        Column(Modifier.width(width).longPressMenuClickable(onClick = { app.openVideo(video) }, onLongClick = { app.showMenu(video) })) {
+            VideoThumbnail(video, Modifier.fillMaxWidth(), corner = CARD_CORNER - 2.dp, widthHint = width)
+            Spacer(Modifier.height(10.dp))
+            Text(video.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.height(2.dp))
+            Text(video.calmLine(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
     }
 }
 
@@ -194,14 +206,16 @@ fun VideoShelfCard(video: Video, width: Dp = 260.dp) {
 @Composable
 fun ShortCard(video: Video, modifier: Modifier = Modifier, width: Dp? = 150.dp, titleColor: Color = MaterialTheme.colorScheme.onSurface) {
     val app = LocalAppState.current
-    Column(
-        modifier
-            .then(if (width != null) Modifier.width(width) else Modifier.fillMaxWidth())
-            .longPressMenuClickable(onClick = { app.openShort(video) }, onLongClick = { app.showMenu(video) }),
-    ) {
-        RemoteImage(Thumbnails.short(video), Modifier.fillMaxWidth().aspectRatio(9f / 16f), RoundedCornerShape(CARD_CORNER), border = true)
-        Spacer(Modifier.height(8.dp))
-        Text(video.title, style = MaterialTheme.typography.titleSmall, color = titleColor, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 2.dp))
+    CompositionLocalProvider(LocalIndication provides TilePress) {
+        Column(
+            modifier
+                .then(if (width != null) Modifier.width(width) else Modifier.fillMaxWidth())
+                .longPressMenuClickable(onClick = { app.openShort(video) }, onLongClick = { app.showMenu(video) }),
+        ) {
+            RemoteImage(Thumbnails.short(video), Modifier.fillMaxWidth().aspectRatio(9f / 16f), RoundedCornerShape(CARD_CORNER), border = true)
+            Spacer(Modifier.height(8.dp))
+            Text(video.title, style = MaterialTheme.typography.titleSmall, color = titleColor, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 2.dp))
+        }
     }
 }
 
@@ -230,11 +244,13 @@ private fun PlaylistFrame(playlist: Playlist, modifier: Modifier, corner: Dp, wi
 @Composable
 fun PlaylistShelfCard(playlist: Playlist, width: Dp = 220.dp) {
     val app = LocalAppState.current
-    Column(Modifier.width(width).longPressMenuClickable(onClick = { app.openItem(playlist) }, onLongClick = { app.showMenu(playlist) })) {
-        PlaylistFrame(playlist, Modifier.fillMaxWidth(), CARD_CORNER - 2.dp, width)
-        Spacer(Modifier.height(10.dp))
-        Text(playlist.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Text(listOfNotNull(playlist.owner?.name, playlist.countText).joinToString(" · "), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    CompositionLocalProvider(LocalIndication provides TilePress) {
+        Column(Modifier.width(width).longPressMenuClickable(onClick = { app.openItem(playlist) }, onLongClick = { app.showMenu(playlist) })) {
+            PlaylistFrame(playlist, Modifier.fillMaxWidth(), CARD_CORNER - 2.dp, width)
+            Spacer(Modifier.height(10.dp))
+            Text(playlist.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(listOfNotNull(playlist.owner?.name, playlist.countText).joinToString(" · "), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
     }
 }
 
@@ -282,7 +298,7 @@ fun ChannelRow(channel: Channel, modifier: Modifier = Modifier) {
 fun ChannelShelfCard(channel: Channel) {
     val app = LocalAppState.current
     val haptics = rememberHaptics()
-    Column(Modifier.width(110.dp).clip(RoundedCornerShape(12.dp)).clickable { haptics.play(Haptic.Tap); app.openChannel(channel.id) }.padding(vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(Modifier.width(110.dp).clickable(null, TilePress, role = Role.Button) { haptics.play(Haptic.Tap); app.openChannel(channel.id) }.padding(vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Avatar(channel.avatar, 88.dp, name = channel.title)
         Spacer(Modifier.height(8.dp))
         Text(channel.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, textAlign = TextAlign.Center, overflow = TextOverflow.Ellipsis)
@@ -316,7 +332,7 @@ fun PostCard(post: Post, modifier: Modifier = Modifier, inset: Boolean = true) {
         }
         post.video?.let { v ->
             Spacer(Modifier.height(10.dp))
-            VideoThumbnail(v, Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { app.openVideo(v) }, corner = 12.dp)
+            VideoThumbnail(v, Modifier.fillMaxWidth().clickable(null, CardPress) { app.openVideo(v) }, corner = 12.dp)
         }
         if (post.pollChoices.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))
@@ -336,13 +352,14 @@ fun PostCard(post: Post, modifier: Modifier = Modifier, inset: Boolean = true) {
 @Composable
 fun ShelfRow(items: List<Item>, spacing: Dp = 14.dp, content: @Composable (Item) -> Unit) {
     val state = rememberLazyListState()
+    val distinct = remember(items) { items.distinctBy { it.id } }
     LazyRow(
         state = state,
         contentPadding = PaddingValues(horizontal = PAGE_GUTTER),
         horizontalArrangement = Arrangement.spacedBy(spacing),
         flingBehavior = rememberSnapFlingBehavior(state),
     ) {
-        items(items.distinctBy { it.id }, key = { it.id }) { content(it) }
+        items(distinct, key = { it.id }) { content(it) }
     }
 }
 

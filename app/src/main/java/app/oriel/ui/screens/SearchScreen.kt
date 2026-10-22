@@ -307,7 +307,8 @@ fun SearchScreen(initial: String?) {
     val graph = app.graph
     val model: SearchModel = viewModel(key = "search:${initial.orEmpty()}") { SearchModel(graph, initial, createSavedStateHandle()) }
     val state by model.state.collectAsState()
-    val library by graph.library.state.collectAsState()
+    // Only the recent searches: the whole library moves with every resume point while something plays.
+    val recent by graph.library.state.collectSlice { it.searchHistory.distinct().take(20) }
     var focused by remember { mutableStateOf(false) }
     var filtersOpen by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
@@ -315,6 +316,7 @@ fun SearchScreen(initial: String?) {
     val keyboard = LocalSoftwareKeyboardController.current
     val listState = rememberLazyListState()
     val page = state.page
+    val filters = remember(page?.filters) { page?.filters.orEmpty().distinctBy { it.label }.take(24) }
     val showResults = state.submitted != null && (!focused || state.query == state.submitted)
     val scrolled by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0 } }
 
@@ -389,8 +391,8 @@ fun SearchScreen(initial: String?) {
             when {
                 focused && state.query.isNotBlank() && state.query != state.submitted -> {
                     val typed = state.query.trim()
-                    items(state.suggestions.distinct(), key = { "s:$it" }) { s -> SuggestionRow(completion(typed, s), OrielIcons.Search, onClick = { submit(s) }, onFill = { model.type("$s ") }) }
-                    if (state.suggestions.isEmpty()) item(key = "typed") { SuggestionRow(AnnotatedString(typed), OrielIcons.Search, onClick = { submit(typed) }, onFill = null) }
+                    items(state.suggestions.distinct(), key = { "s:$it" }, contentType = { "suggestion" }) { s -> SuggestionRow(completion(typed, s), OrielIcons.Search, onClick = { submit(s) }, onFill = { model.type("$s ") }) }
+                    if (state.suggestions.isEmpty()) item(key = "typed", contentType = "suggestion") { SuggestionRow(AnnotatedString(typed), OrielIcons.Search, onClick = { submit(typed) }, onFill = null) }
                 }
                 showResults -> {
                     page?.correctedQuery?.let { c ->
@@ -401,7 +403,6 @@ fun SearchScreen(initial: String?) {
                             )
                         }
                     }
-                    val filters = page?.filters.orEmpty().distinctBy { it.label }.take(24)
                     if (state.chips.isNotEmpty()) item(key = "chips") {
                         val chips = state.chips.mapIndexed { i, c -> c.copy(selected = if (state.selectedChip == null) i == 0 else c.title == state.selectedChip) }
                         // YouTube's full filters (upload date, type, duration, features, sort) sit behind a
@@ -425,9 +426,9 @@ fun SearchScreen(initial: String?) {
                         }
                     }
                     when {
-                        state.loading && page == null -> items(5) { VideoCardSkeleton(it) }
-                        state.error != null && page == null -> item(key = "error") { MessageState(state.error!!, action = "Try again", onAction = model::retry) }
-                        page != null && page.feed.isEmpty -> item { MessageState(page.feed.message ?: "No results for “${state.submitted}”.", icon = OrielIcons.Search) }
+                        state.loading && page == null -> items(5, key = { "sk$it" }, contentType = { "skeleton" }) { VideoCardSkeleton(it) }
+                        state.error != null && page == null -> item(key = "error", contentType = "message") { MessageState(state.error!!, action = "Try again", onAction = model::retry) }
+                        page != null && page.feed.isEmpty -> item(key = "none", contentType = "message") { MessageState(page.feed.message ?: "No results for “${state.submitted}”.", icon = OrielIcons.Search) }
                         page != null -> {
                             if (state.loading) item(key = "reloading") { LoadingRow() }
                             else state.error?.let { e -> item(key = "notice") { NoticeRow(e, action = "Try again", onAction = model::retry) } }
@@ -436,18 +437,18 @@ fun SearchScreen(initial: String?) {
                     }
                     moreFooter(state.loadingMore, state.moreFailed, model::retryMore)
                 }
-                library.searchHistory.isNotEmpty() -> {
+                recent.isNotEmpty() -> {
                     item(key = "recent-h") {
                         Row(Modifier.fillMaxWidth().padding(start = PAGE_GUTTER, end = PAGE_GUTTER - 4.dp, top = 10.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("Recent searches", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W600), modifier = Modifier.weight(1f))
                             TextAction("Clear", { graph.library.clearSearches() })
                         }
                     }
-                    items(library.searchHistory.distinct().take(20), key = { "r:$it" }) { q ->
+                    items(recent, key = { "r:$it" }, contentType = { "suggestion" }) { q ->
                         SuggestionRow(AnnotatedString(q), OrielIcons.History, onClick = { submit(q) }, onFill = { model.type("$q ") }, onRemove = { graph.library.removeSearch(q) })
                     }
                 }
-                else -> item(key = "empty") {
+                else -> item(key = "empty", contentType = "message") {
                     MessageState("Find videos, Shorts, channels and playlists.", icon = OrielIcons.Search)
                 }
             }

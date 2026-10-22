@@ -415,7 +415,10 @@ class LibraryStore(
 
     fun addToLocalPlaylist(id: String, videos: List<Video>) = update { s ->
         s.copy(localPlaylists = s.localPlaylists.map { p ->
-            if (p.id == id) p.copy(videos = p.videos + videos.filterNot { new -> p.videos.any { it.id == new.id } }) else p
+            if (p.id != id) return@map p
+            // A set, not a scan per video: adding a whole playlist to a long one stays linear.
+            val have = p.videos.mapTo(HashSet()) { it.id }
+            p.copy(videos = p.videos + videos.filter { have.add(it.id) })
         })
     }
 

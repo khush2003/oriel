@@ -301,6 +301,68 @@ class ScreenshotTest {
         assertFalse("a swipe down leaves fullscreen", appState!!.sheet.fullscreen)
     }
 
+    /** Holding for 2x and then moving the finger down is still the hold, not the swipe out. */
+    @Test @Config(qualifiers = "w915dp-h412dp-xhdpi")
+    fun holdThenDragKeepsFullscreen() {
+        shoot("18b_fullscreen_hold_drag", setup = { it.sheet.progress.snapTo(1f); it.sheet.fullscreen = true }, after = {
+            rule.onRoot().performTouchInput { down(Offset(width * 0.3f, height * 0.25f)) }
+            rule.mainClock.advanceTimeBy(900)
+            rule.onRoot().performTouchInput {
+                for (i in 1..10) moveTo(Offset(width * 0.3f, height * (0.25f + i * 0.05f)))
+                up()
+            }
+        })
+        assertTrue("the hold keeps fullscreen", appState!!.sheet.fullscreen)
+    }
+
+    /** A slow sideways drag on the picture is nobody's gesture: it doesn't sit out the timeout and turn into the 2x hold. */
+    @Test fun slowSidewaysDragIsNoHold() {
+        shoot("18c_slow_drag_no_hold", setup = { it.sheet.progress.snapTo(1f) }, after = {
+            rule.onRoot().performTouchInput { down(Offset(70f, 320f)) }
+            repeat(12) {
+                rule.mainClock.advanceTimeBy(50)
+                rule.onRoot().performTouchInput { moveBy(Offset(10f, 0f)) }
+            }
+            settle(2)
+            assertEquals("no 2x", 0, rule.onAllNodes(hasText("2×")).fetchSemanticsNodes().size)
+            rule.onRoot().performTouchInput { up() }
+        })
+    }
+
+    /** A tap on a side and then a drag (here a short pull on the fullscreen picture) is the drag's: it doesn't seek. */
+    @Test @Config(qualifiers = "w915dp-h412dp-xhdpi")
+    fun tapThenDragDoesntSeek() {
+        shoot("18d_tap_then_drag_no_seek", setup = { it.sheet.progress.snapTo(1f); it.sheet.fullscreen = true }, after = {
+            val at = Offset(300f, 400f)
+            rule.onRoot().performTouchInput { down(at); up() }
+            rule.mainClock.advanceTimeBy(100)
+            rule.onRoot().performTouchInput {
+                down(at)
+                repeat(8) { moveBy(Offset(0f, 6f)); advanceEventTime(16) }
+                up()
+            }
+            settle(2)
+            assertEquals("no seek", 0, rule.onAllNodes(hasText("seconds", substring = true)).fetchSemanticsNodes().size)
+        })
+        assertTrue("still fullscreen", appState!!.sheet.fullscreen)
+    }
+
+    /** A pull down out of fullscreen that a pinch takes over from springs back rather than leaving fullscreen. */
+    @Test @Config(qualifiers = "w915dp-h412dp-xhdpi")
+    fun pinchDuringPullKeepsFullscreen() {
+        shoot("18e_pinch_during_pull", setup = { it.sheet.progress.snapTo(1f); it.sheet.fullscreen = true }, after = {
+            rule.onRoot().performTouchInput {
+                down(0, Offset(width * 0.4f, height * 0.2f))
+                repeat(10) { moveBy(0, Offset(0f, 22f)); advanceEventTime(16) }
+                down(1, Offset(width * 0.6f, height * 0.5f))
+                repeat(10) { moveBy(1, Offset(20f, 0f)); moveBy(0, Offset(-20f, 0f)); advanceEventTime(16) }
+                up(1)
+                up(0)
+            }
+        })
+        assertTrue("still fullscreen", appState!!.sheet.fullscreen)
+    }
+
     /** A short swipe isn't enough: the picture springs back and fullscreen stays. */
     @Test @Config(qualifiers = "w915dp-h412dp-xhdpi")
     fun shortSwipeKeepsFullscreen() {
@@ -320,6 +382,27 @@ class ScreenshotTest {
             androidx.test.espresso.Espresso.pressBack()
         })
         assertFalse("back closed the comments", panelOpen())
+        assertTrue("the watch page is still open", appState!!.sheet.expanded)
+    }
+
+    /** With the comments' list at its top, a pull down on the list pulls the panel down and closes it, as an iOS sheet does. */
+    @Test fun pullDownOnListClosesPanel() {
+        fun panelOpen() = rule.onAllNodes(hasContentDescription("Close")).fetchSemanticsNodes().isNotEmpty()
+        shoot("19b_pull_closes_panel", setup = { it.sheet.progress.snapTo(1f) }, after = {
+            rule.onAllNodes(hasText("Comments")).onFirst().performClick()
+            settle(8)
+            assertTrue("comments open", panelOpen())
+            // A frame between moves, as on a phone, so the panel moves under the finger as it pulls.
+            rule.onRoot().performTouchInput { down(Offset(width * 0.5f, height * 0.6f)) }
+            repeat(30) {
+                rule.mainClock.advanceTimeBy(16)
+                rule.onRoot().performTouchInput { moveBy(Offset(0f, 15f)) }
+            }
+            rule.mainClock.advanceTimeBy(200)
+            rule.onRoot().performTouchInput { up() }
+            settle(8)
+        })
+        assertFalse("the pull closed the comments", panelOpen())
         assertTrue("the watch page is still open", appState!!.sheet.expanded)
     }
 

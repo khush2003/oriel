@@ -23,6 +23,7 @@ import app.oriel.util.LocaleTags
 import app.oriel.util.NetworkMonitor
 import app.oriel.util.Scrubber
 import app.oriel.util.SkipBadList
+import app.oriel.util.VideoCaps
 import com.metrolist.innertubex.InnerTubeLogLevel
 import com.metrolist.innertubex.InnerTubeLogger
 import io.ktor.client.HttpClient
@@ -49,9 +50,9 @@ import java.util.concurrent.TimeUnit
 
 /**
  * The app's singletons, built once in [OrielApp] and reachable from any
- * Context. Expensive pieces (the stream resolver and its JS engine, media
- * caches) are lazy, so a cold start pays only for what
- * the first screen needs.
+ * Context. Expensive pieces (the HTTP clients, the stream resolver and its JS
+ * engine, media caches) are lazy, and [start] builds them off the main thread,
+ * so a cold start's first frame pays only for what it draws.
  */
 class AppGraph(val context: Context) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -66,7 +67,8 @@ class AppGraph(val context: Context) {
 
     private val report: (String, Throwable) -> Unit = { where, e -> CrashLog.nonFatal(context, where, e) }
 
-    val okHttp: OkHttpClient = OkHttpClient.Builder()
+    private val okHttpLazy = lazy {
+        OkHttpClient.Builder()
         // Ktor, the media loaders and image loading all queue in this one dispatcher, and
         // time spent queued counts against their timeouts: OkHttp's default of 5 per host
         // made a signed-out home (about 26 calls) time out its own player requests.
@@ -79,13 +81,15 @@ class AppGraph(val context: Context) {
         .retryOnConnectionFailure(true)
         .apply { testInterceptor?.let(::addInterceptor) }
         .build()
+    }
+    val okHttp: OkHttpClient by okHttpLazy
 
     val settings = Settings(context)
     val telemetry = Telemetry(settings, scope)
     val network = NetworkMonitor(context).apply {
         // Pooled connections belong to the network they were opened on; after a switch they
         // only fail, one timeout at a time.
-        onSwitch = { okHttp.connectionPool.evictAll() }
+        onSwitch = { if (okHttpLazy.isInitialized()) okHttp.connectionPool.evictAll() }
     }
 
     private val logger = InnerTubeLogger { event ->
@@ -101,7 +105,35 @@ class AppGraph(val context: Context) {
         }
     }
 
-    val yt = YouTube(okHttp, logger)
+    /**
+     * Built on first use, which at launch is [start]'s, on IO: loading Ktor and InnerTubeX is the
+     * costliest part of a cold start, and the first frame doesn't need them. Whoever gets it
+     * first gets it with the locale and the saved session already on it ([adopt]).
+     */
+    val yt: YouTube by lazy { YouTube(okHttp, logger).also(::adopt) }
+
+    /** [yt] once it's built, for what shouldn't build it (saving the session on the way out). Set under [localeLock]. */
+    @Volatile
+    private var builtYt: YouTube? = null
+
+    /** Whether [start] ran, so the saved session belongs on the client. Under [localeLock]. */
+    private var sessionStarted = false
+
+    /** The country and language [applyLocale] last chose. Under [localeLock]. */
+    private var chosenLocale: Pair<String, String>? = null
+
+    private fun adopt(client: YouTube) = synchronized(localeLock) {
+        chosenLocale?.let { (country, language) -> client.setLocale(country = country, language = language) }
+        if (sessionStarted) restoreSession(client)
+        builtYt = client
+    }
+
+    private fun restoreSession(client: YouTube) {
+        // The visitor identity YouTube issued last time. Signed out, it's what ties one
+        // session's watching to the next one's suggestions; and a cold start needn't fetch one.
+        if (client.innerTube.visitorData == null) session.getString(KEY_VISITOR, null)?.let { client.innerTube.visitorData = it }
+        account.applySession(client)
+    }
 
     val resolver: StreamResolver by lazy {
         StreamResolver(
@@ -135,7 +167,7 @@ class AppGraph(val context: Context) {
     val dislikes by lazy { ReturnDislike(extrasHttp) }
     val library = LibraryStore(File(context.filesDir, "library.json"), scope, report)
     val homeComposer by lazy { HomeComposer(yt, library) }
-    val account = AccountManager(context, yt, { resolver }, library, scope, forgetVisitor = { forgetVisitor() })
+    val account = AccountManager(context, { yt }, { resolver }, library, scope, forgetVisitor = { forgetVisitor() })
     val actions = LibraryActions(this)
     val pages = PageDiskCache(File(context.cacheDir, "pages"), scope, report)
     val caches by lazy { MediaCaches(context, settings) }
@@ -150,7 +182,12 @@ class AppGraph(val context: Context) {
     val crashesChecked = CompletableDeferred<Unit>()
 
     fun start() {
+        synchronized(localeLock) {
+            sessionStarted = true
+            builtYt?.let(::restoreSession)
+        }
         applyLocale()
+        scope.launch(Dispatchers.IO) { yt }
         // Shown once there's a screen to show them on.
         scope.launch { library.problems.collect { actions.noticeWhenShown(it) } }
         scope.launch(Dispatchers.IO) {
@@ -167,9 +204,6 @@ class AppGraph(val context: Context) {
                 if (e == androidx.lifecycle.Lifecycle.Event.ON_START) telemetry.track("app_open", mapOf("signedIn" to account.signedIn.value))
             })
         }
-        // The visitor identity YouTube issued last time. Signed out, it's what ties one
-        // session's watching to the next one's suggestions; and a cold start needn't fetch one.
-        if (yt.innerTube.visitorData == null) session.getString(KEY_VISITOR, null)?.let { yt.innerTube.visitorData = it }
         account.restore()
         // Pages saved under one account aren't shown to the next, or once signed out.
         scope.launch { account.signedIn.drop(1).collect { pages.clear() } }
@@ -179,18 +213,21 @@ class AppGraph(val context: Context) {
         // The media caches load their index from disk when first built; do that here, off the
         // main thread, rather than in the playback service's onCreate on the first tap.
         scope.launch(Dispatchers.IO) { runCatching { caches; dataSources } }
+        // The decoder queries behind Auto's ceiling and the VP9 preference walk every codec on
+        // the device; the playback service asks for them on the main thread as it starts.
+        scope.launch(Dispatchers.IO) { VideoCaps.hardwareVp9(); VideoCaps.hardwareHeight() }
         scope.launch { settings.state.map { it.transport.protocol }.distinctUntilChanged().collect { resolver.protocol = it } }
         scope.launch { settings.state.map { it.premium }.distinctUntilChanged().collect { resolver.premium = it } }
     }
 
     /** Keeps what should outlive the process (the visitor identity) for the next launch. */
     fun saveSession() {
-        yt.innerTube.visitorData?.let { session.edit().putString(KEY_VISITOR, it).apply() }
+        builtYt?.innerTube?.visitorData?.let { session.edit().putString(KEY_VISITOR, it).apply() }
     }
 
     /** Drops the visitor identity, in memory and on disk, so the next request starts a new one. */
-    fun forgetVisitor() {
-        yt.innerTube.visitorData = null
+    fun forgetVisitor() = synchronized(localeLock) {
+        builtYt?.innerTube?.visitorData = null
         session.edit { remove(KEY_VISITOR) }
     }
 
@@ -215,8 +252,10 @@ class AppGraph(val context: Context) {
         val applied = "$country|$language"
         if (applied == lastLocale) return@synchronized
         lastLocale = applied
-        // Clears the in-memory pages itself when the locale differs from what it has.
-        yt.setLocale(country = country, language = language)
+        chosenLocale = country to language
+        // Clears the in-memory pages itself when the locale differs from what it has. Not built
+        // yet, it takes the locale as it's built.
+        builtYt?.setLocale(country = country, language = language)
         // Remembered across launches: a cold start in the same locale keeps the pages on disk, which
         // are what its first frame is made of; a new one (the device's language changed) drops them.
         if (session.getString(KEY_LOCALE, null) == applied) return@synchronized
@@ -241,7 +280,7 @@ class AppGraph(val context: Context) {
         private const val TAG = "Oriel"
         private const val KEY_VISITOR = "visitorData"
         private const val KEY_LOCALE = "locale"
-        private val PREFS = listOf("account", "session", "resolver", "diagnostics")
+        private val PREFS = listOf("account", "session", "resolver", "diagnostics", "abr")
 
         /** Lets tests run the app offline (or hanging) without touching the network. */
         @androidx.annotation.VisibleForTesting

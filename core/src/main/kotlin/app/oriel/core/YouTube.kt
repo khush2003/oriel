@@ -30,6 +30,7 @@ import com.metrolist.innertubex.InnerTube
 import com.metrolist.innertubex.InnerTubeLogger
 import com.metrolist.innertubex.models.YouTubeClient
 import com.metrolist.innertubex.models.YouTubeLocale
+import com.metrolist.innertubex.utils.sanitizeCookieString
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpRequestTimeoutException
@@ -151,10 +152,7 @@ class YouTube(
         get() = innerTube.dataSyncId
         set(value) { innerTube.dataSyncId = value?.substringBefore("||")?.ifBlank { null } }
 
-    private val sapisid: String?
-        get() = cookie?.split(';')?.map { it.trim() }?.associate { it.substringBefore('=') to it.substringAfter('=', "") }?.let {
-            it["SAPISID"] ?: it["__Secure-3PAPISID"] ?: it["__Secure-1PAPISID"]
-        }?.ifBlank { null }
+    private val sapisid: String? get() = sapisidOf(cookie)
 
     val isSignedIn: Boolean get() = sapisid != null
 
@@ -733,6 +731,17 @@ class YouTube(
         if (short || Regex("[?&]el=").containsMatchIn(base)) base else "$base&el=detailpage"
 
     companion object {
+        /**
+         * Whether [cookie] makes a signed-in session, as [isSignedIn] says once it's set: for
+         * knowing at launch, before the client (and its HTTP stack) has been built.
+         */
+        fun isSignedInCookie(cookie: String?): Boolean = sapisidOf(cookie?.let(::sanitizeCookieString)) != null
+
+        private fun sapisidOf(cookie: String?): String? =
+            cookie?.split(';')?.map { it.trim() }?.associate { it.substringBefore('=') to it.substringAfter('=', "") }?.let {
+                it["SAPISID"] ?: it["__Secure-3PAPISID"] ?: it["__Secure-1PAPISID"]
+            }?.ifBlank { null }
+
         private const val MINUTE = 60_000L
         private const val RETRIES = 2
         /** Past this, a failing read isn't asked again; it's been long enough to show the error. */

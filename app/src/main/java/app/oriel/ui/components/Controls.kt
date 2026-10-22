@@ -27,7 +27,6 @@ import app.oriel.ui.glass.glassEdgeColor
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
@@ -39,7 +38,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -68,6 +66,10 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.layout.positionInWindow
+import kotlinx.coroutines.launch
+import androidx.compose.ui.node.invalidateDraw
+import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.runtime.mutableStateListOf
@@ -107,6 +109,10 @@ import app.oriel.ui.haptics.Haptic
 import app.oriel.ui.haptics.rememberHaptics
 import app.oriel.ui.theme.LocalIsDark
 import app.oriel.ui.theme.LocalReduceAnimation
+import app.oriel.ui.theme.GlyphPress
+import app.oriel.ui.theme.TilePress
+import app.oriel.ui.theme.TILE_PRESS_SCALE
+import app.oriel.ui.theme.pressEffect
 
 // ---- headers & text -------------------------------------------------------------------------
 
@@ -146,14 +152,11 @@ fun Modifier.minTouchTarget(size: Dp = MIN_TOUCH): Modifier = layout { measurabl
 @Composable
 private fun TextButton(text: String, onClick: () -> Unit, style: TextStyle, color: Color, padding: PaddingValues) {
     val haptics = rememberHaptics()
-    val press = remember { MutableInteractionSource() }
-    val pressed by press.collectIsPressedAsState()
     Text(
         text, style = style, color = color, maxLines = 1,
         modifier = Modifier
-            .clickable(press, indication = null, role = Role.Button) { haptics.play(Haptic.Tap); onClick() }
+            .clickable(null, GlyphPress, role = Role.Button) { haptics.play(Haptic.Tap); onClick() }
             .minTouchTarget()
-            .graphicsLayer { alpha = if (pressed) 0.4f else 1f }
             .padding(padding),
     )
 }
@@ -234,7 +237,7 @@ fun TabStrip(titles: List<String>, selected: Int, onSelect: (Int) -> Unit, modif
             Text(
                 title, style = MaterialTheme.typography.titleSmall, color = color, maxLines = 1,
                 modifier = Modifier
-                    .clickable(remember { MutableInteractionSource() }, indication = null) { if (!on) { haptics.play(Haptic.Select); onSelect(i) } }
+                    .clickable(null, GlyphPress) { if (!on) { haptics.play(Haptic.Select); onSelect(i) } }
                     .semantics { this.selected = on; role = Role.Tab }
                     .minTouchTarget()
                     .onGloballyPositioned { c ->
@@ -253,19 +256,16 @@ fun FilterChip(label: String, selected: Boolean, leading: ImageVector? = null, r
     val haptics = rememberHaptics()
     val fill by animateColorAsState(if (selected) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.surfaceVariant, fade(160), label = "chipFill")
     val text by animateColorAsState(if (selected) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onBackground, fade(160), label = "chipText")
-    // A capsule that gives a little under the finger, as iOS's segmented pills do.
-    val press = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-    val pressed by press.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.94f else 1f, motion(spring(dampingRatio = 0.6f, stiffness = 900f)), label = "chipPress")
     Row(
         Modifier
-            .clickable(press, indication = null) {
+            // A capsule that gives a little under the finger, as iOS's segmented pills do.
+            .clickable(null, TilePress) {
                 if (!selected) haptics.play(Haptic.Select)
                 onClick()
             }
             .semantics { if (role == Role.Tab) this.selected = selected; this.role = role }
             .minTouchTarget()
-            .graphicsLayer { scaleX = scale; scaleY = scale }.clip(CircleShape).background(fill).padding(horizontal = 14.dp, vertical = 7.dp),
+            .clip(CircleShape).background(fill).padding(horizontal = 14.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (leading != null) {
@@ -299,9 +299,6 @@ fun ActionPill(
 ) {
     val haptics = rememberHaptics()
     val dark = LocalIsDark.current
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.96f else 1f, motion(spring(stiffness = 900f)), label = "pillPress")
     val fill = when {
         filled -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.onSurface.copy(alpha = if (dark) 0.09f else 0.06f)
@@ -310,12 +307,12 @@ fun ActionPill(
     val large = size != PillSize.Compact
     Row(
         modifier
-            .clickable(interaction, indication = null, enabled = enabled, role = Role.Button) {
+            .clickable(null, TilePress, enabled = enabled, role = Role.Button) {
                 haptics.play(haptic)
                 onClick()
             }
             .minTouchTarget()
-            .graphicsLayer { scaleX = scale; scaleY = scale; alpha = if (enabled) 1f else 0.38f }
+            .graphicsLayer { alpha = if (enabled) 1f else 0.38f }
             .heightIn(min = size.height)
             .clip(CircleShape)
             .background(fill)
@@ -387,7 +384,7 @@ fun SearchField(
             )
         }
         if (value.isNotEmpty()) {
-            Box(Modifier.size(MIN_TOUCH).clip(CircleShape).clickable(onClickLabel = "Clear") { haptics.play(Haptic.Tap); onValueChange("") }, contentAlignment = Alignment.Center) {
+            Box(Modifier.size(MIN_TOUCH).clickable(null, GlyphPress, onClickLabel = "Clear") { haptics.play(Haptic.Tap); onValueChange("") }, contentAlignment = Alignment.Center) {
                 Icon(OrielIcons.Close, "Clear", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
             }
         } else idleTrailing?.invoke()
@@ -417,6 +414,8 @@ fun <T> SegmentedControl(
     val at by animateFloatAsState(index.toFloat(), motion(spring(dampingRatio = 0.78f, stiffness = 520f)), label = "segThumb")
     // The layer's offset doesn't mirror, so right to left the thumb steps the other way.
     val sign = if (LocalLayoutDirection.current == LayoutDirection.Rtl) -1f else 1f
+    // Each segment's presses: the chosen one's shrinks the thumb, as iOS's does; the others dim their label.
+    val presses = remember(options.size) { List(options.size) { MutableInteractionSource() } }
     // At least 34dp, and as tall as the labels at a large font size.
     Box(modifier.fillMaxWidth().heightIn(min = 34.dp).height(IntrinsicSize.Min).clip(RoundedCornerShape(9.dp)).background(track).padding(2.dp)) {
         // The thumb, with the soft shadow iOS gives it in light mode.
@@ -424,6 +423,7 @@ fun <T> SegmentedControl(
             Modifier
                 .fillMaxWidth(1f / options.size.coerceAtLeast(1)).fillMaxHeight()
                 .graphicsLayer { translationX = at * size.width * sign }
+                .then(presses.getOrNull(index)?.let { Modifier.pressEffect(it, scale = TILE_PRESS_SCALE) } ?: Modifier)
                 .shadow(if (LocalIsDark.current) 0.dp else 3.dp, RoundedCornerShape(7.dp), clip = false, ambientColor = Color.Black.copy(alpha = 0.12f), spotColor = Color.Black.copy(alpha = 0.12f))
                 .clip(RoundedCornerShape(7.dp))
                 .background(thumb),
@@ -433,7 +433,7 @@ fun <T> SegmentedControl(
                 val on = i == index
                 Box(
                     Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(7.dp))
-                        .clickable(remember { MutableInteractionSource() }, indication = null) { if (!on) { haptics.play(Haptic.Select); onSelect(option) } }
+                        .clickable(presses[i], if (on) null else SegmentPress) { if (!on) { haptics.play(Haptic.Select); onSelect(option) } }
                         .semantics { this.selected = on; role = Role.RadioButton },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -443,6 +443,9 @@ fun <T> SegmentedControl(
         }
     }
 }
+
+/** An unchosen segment's label dims under the finger, less than a button's: it sits on a track. */
+private val SegmentPress = app.oriel.ui.theme.PressHighlight(Color.Transparent, dim = 0.5f)
 
 // ---- states --------------------------------------------------------------------------------
 
@@ -481,31 +484,77 @@ fun ActivityIndicator(modifier: Modifier = Modifier, size: Dp = 22.dp, color: Co
     val reduce = LocalReduceAnimation.current
     val turn = if (reduce) null else rememberInfiniteTransition(label = "spin").animateFloat(0f, 8f, infiniteRepeatable(tween(960, easing = LinearEasing)), label = "spin")
     Canvas(modifier.size(size).semantics { progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate }) {
-        val step = turn?.value?.toInt() ?: 0
-        val w = this.size.minDimension
-        val stroke = w * 0.095f
-        for (i in 0 until 8) {
-            val age = (step - i + 8) % 8
-            val a = (1f - age / 8f).coerceAtLeast(0.22f)
-            rotate(i * 45f) {
-                drawLine(color.copy(alpha = color.alpha * a), Offset(w / 2, w * 0.1f), Offset(w / 2, w * 0.33f), stroke, cap = StrokeCap.Round)
-            }
+        drawActivitySpokes(color, step = turn?.value?.toInt() ?: 0)
+    }
+}
+
+/**
+ * The activity indicator's eight spokes: the lit one at [step], the rest trailing off. [shown]
+ * fewer than eight draws only the first ones, evenly grey, as iOS's pull to refresh fills in
+ * spoke by spoke while it's being pulled.
+ */
+internal fun androidx.compose.ui.graphics.drawscope.DrawScope.drawActivitySpokes(color: Color, step: Int, shown: Int = 8) {
+    val w = this.size.minDimension
+    val stroke = w * 0.095f
+    for (i in 0 until shown.coerceIn(0, 8)) {
+        val a = if (shown < 8) 0.5f else (1f - ((step - i + 8) % 8) / 8f).coerceAtLeast(0.22f)
+        // From twelve o'clock, clockwise.
+        rotate(i * 45f) {
+            drawLine(color.copy(alpha = color.alpha * a), Offset(w / 2, w * 0.1f), Offset(w / 2, w * 0.33f), stroke, cap = StrokeCap.Round)
         }
     }
 }
 
 // ---- skeletons -----------------------------------------------------------------------------
 
-/** A highlight band half the width wide sweeping left to right every 1400ms, over surfaceVariant. */
+/**
+ * A highlight band half the screen wide sweeping left to right every [SHIMMER_PERIOD_MS], over
+ * surfaceVariant. Every placeholder on screen shares the one band, timed off the frame clock and
+ * placed in window coordinates, so a page of skeletons shimmers as one sheet rather than each
+ * bone on its own clock. Draw-only: it never recomposes.
+ */
 fun Modifier.shimmer(): Modifier = composed {
-    if (LocalReduceAnimation.current) return@composed background(MaterialTheme.colorScheme.surfaceVariant)
     val base = MaterialTheme.colorScheme.surfaceVariant
-    val highlight = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.16f)
-    val t by rememberInfiniteTransition(label = "shimmer").animateFloat(0f, 1f, infiniteRepeatable(tween(1400, easing = LinearEasing), RepeatMode.Restart), label = "shimmerT")
-    background(base).drawWithContent {
+    if (LocalReduceAnimation.current) return@composed background(base)
+    background(base).then(ShimmerElement(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.16f)))
+}
+
+private const val SHIMMER_PERIOD_MS = 1400L
+
+private data class ShimmerElement(val highlight: Color) : androidx.compose.ui.node.ModifierNodeElement<ShimmerNode>() {
+    override fun create() = ShimmerNode(highlight)
+    override fun update(node: ShimmerNode) { node.highlight = highlight }
+    override fun androidx.compose.ui.platform.InspectorInfo.inspectableProperties() {
+        name = "shimmer"
+        properties["highlight"] = highlight
+    }
+}
+
+private class ShimmerNode(var highlight: Color) : Modifier.Node(), androidx.compose.ui.node.DrawModifierNode, androidx.compose.ui.node.GlobalPositionAwareModifierNode {
+    private var phase = 0f
+    private var left = 0f
+    private var span = 0f
+
+    override fun onAttach() {
+        coroutineScope.launch {
+            while (true) {
+                androidx.compose.runtime.withFrameMillis { t -> phase = (t % SHIMMER_PERIOD_MS) / SHIMMER_PERIOD_MS.toFloat() }
+                invalidateDraw()
+            }
+        }
+    }
+
+    override fun onGloballyPositioned(coordinates: androidx.compose.ui.layout.LayoutCoordinates) {
+        left = coordinates.positionInWindow().x
+        span = coordinates.findRootCoordinates().size.width.toFloat()
+    }
+
+    override fun androidx.compose.ui.graphics.drawscope.ContentDrawScope.draw() {
         drawContent()
-        val band = size.width * 0.5f
-        val x = -band + (size.width + band * 2) * t
+        val width = if (span > 0f) span else size.width
+        val band = width * 0.5f
+        val x = -band + (width + band * 2) * phase - left
+        if (x + band / 2 < 0f || x - band / 2 > size.width) return
         drawRect(Brush.horizontalGradient(listOf(Color.Transparent, highlight, Color.Transparent), startX = x - band / 2, endX = x + band / 2))
     }
 }

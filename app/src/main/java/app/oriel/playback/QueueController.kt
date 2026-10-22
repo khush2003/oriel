@@ -319,10 +319,19 @@ class QueueController(
      * prepared until it's played: preparing would buffer up to two minutes of
      * the old video at launch, competing with the first screen for the network
      * and spending data on a video that may never be resumed.
+     *
+     * The file is read and decoded on IO: the service starts on the main thread during launch.
+     * Anything played meanwhile is the queue, and the saved one is left.
      */
-    fun restore(): Boolean {
-        if (player.mediaItemCount > 0 || !graph.settings.current.persistQueue) return false
-        val saved = readSaved() ?: return false
+    fun restore() {
+        if (player.mediaItemCount > 0 || !graph.settings.current.persistQueue) return
+        scope.launch {
+            val saved = withContext(Dispatchers.IO) { readSaved() } ?: return@launch
+            if (player.mediaItemCount == 0) apply(saved)
+        }
+    }
+
+    private fun apply(saved: SavedQueue) {
         _context.value = saved.context
         _audioOnly.value = saved.audioOnly
         player.playWhenReady = false
@@ -334,7 +343,6 @@ class QueueController(
                 if (player.playbackState == Player.STATE_IDLE && player.mediaItemCount > 0 && player.playerError == null) player.prepare()
             }
         })
-        return true
     }
 
     fun savedQueue(): Pair<List<MediaItem>, Pair<Int, Long>>? {

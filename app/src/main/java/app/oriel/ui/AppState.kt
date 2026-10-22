@@ -111,6 +111,8 @@ class AppState(
     var alert by mutableStateOf<AlertSpec?>(null)
     var shareTarget by mutableStateOf<Item?>(null)
     var report by mutableStateOf<ReportRequest?>(null)
+    /** A playlist on this device being renamed from its menu (its id is "local:…"). */
+    var renameTarget by mutableStateOf<Playlist?>(null)
 
     /** Opens "Report a problem"; a [videoId] fills in the video's link. */
     fun reportProblem(kind: ReportKind = ReportKind.BROKEN, videoId: String? = null) {

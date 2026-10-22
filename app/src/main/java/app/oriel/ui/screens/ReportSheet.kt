@@ -28,7 +28,10 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import app.oriel.BuildConfig
+import app.oriel.ui.AlertAction
+import app.oriel.ui.AlertSpec
 import app.oriel.ui.AppState
+import kotlinx.coroutines.launch
 import app.oriel.ui.ReportRequest
 import app.oriel.ui.components.ChoiceRow
 import app.oriel.ui.components.LocalSheetClose
@@ -139,10 +142,17 @@ fun ReportSheet(app: AppState, request: ReportRequest, onDismiss: () -> Unit) {
             SettingsRow("Preview report", OrielIcons.Report, chevron = true, onClick = { previewing = true })
             if (held != null && !held.isEmpty) {
                 RowDivider()
+                // What's cleared can't be sent afterwards: asked first, as every other clear is.
                 SettingsRow("Clear diagnostics", OrielIcons.Delete, destructive = true, onClick = {
-                    CrashLog.clear(context)
-                    stored = Stored(emptyList(), emptyList())
-                    cleared = true
+                    app.alert = AlertSpec("Clear diagnostics?", "The crashes and errors kept on this phone are deleted, and can't go in a report.", listOf(
+                        AlertAction("Cancel"),
+                        AlertAction("Clear", destructive = true) {
+                            stored = Stored(emptyList(), emptyList())
+                            cleared = true
+                            // The app's scope: closing the sheet mustn't cut the clear short.
+                            app.scope.launch(Dispatchers.IO) { CrashLog.clear(context) }
+                        },
+                    ))
                 })
             }
         }

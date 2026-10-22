@@ -167,14 +167,25 @@ class StreamDataSources(private val graph: AppGraph) {
             val spec = DataSpec.Builder().setUri(url.toUri()).setKey(key).setPosition(0).setLength(bytes).setHttpRequestHeaders(stream.headers).build()
             runCatching { CacheWriter(streamCached.createDataSource(), spec, null, null).cache() }
         }
-        warm(stream.url, "a:$videoId:${stream.itag}", PRECACHE_AUDIO)
-        stream.video?.let { warm(it.url, "v:$videoId:${it.itag}", PRECACHE_VIDEO) }
+        warm(stream.url, "a:$videoId:${stream.itag}", precacheBytes(stream.bitrate, PRECACHE_AUDIO))
+        stream.video?.let { warm(it.url, "v:$videoId:${it.itag}", precacheBytes(it.bitrate, PRECACHE_VIDEO)) }
     }
 
-    private companion object {
-        const val DEFAULT_CHUNK = 10L * 1024 * 1024
-        const val BOUNDED_CHUNK = 4L * 1024 * 1024
+    internal companion object {
+        private const val DEFAULT_CHUNK = 10L * 1024 * 1024
+        private const val BOUNDED_CHUNK = 4L * 1024 * 1024
         const val PRECACHE_AUDIO = 256L * 1024
         const val PRECACHE_VIDEO = 1024L * 1024
+        /** Twice the 1.5 s the player waits for before starting ([Abr.loadControl]), with the stream's index in front. */
+        private const val PRECACHE_SECONDS = 3L
+        private const val PRECACHE_MAX = 8L * 1024 * 1024
+
+        /**
+         * How much of a stream's opening to cache ahead: enough to start on at its bitrate. A fixed
+         * megabyte was most of a second of 1080p VP9 but a third of one at 4K, so the next video
+         * still waited on the network at the qualities that need it most. Never less than [floor].
+         */
+        fun precacheBytes(bitrate: Int?, floor: Long): Long =
+            if (bitrate == null || bitrate <= 0) floor else (bitrate / 8L * PRECACHE_SECONDS).coerceIn(floor, maxOf(floor, PRECACHE_MAX))
     }
 }

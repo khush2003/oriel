@@ -37,6 +37,8 @@ import app.oriel.core.model.Chip
 import app.oriel.core.model.Feed
 import app.oriel.data.HomeComposer
 import app.oriel.ui.LocalAppState
+import app.oriel.ui.haptics.Haptic
+import app.oriel.ui.haptics.rememberHaptics
 import app.oriel.ui.components.ActionPill
 import app.oriel.ui.components.PillSize
 import app.oriel.ui.components.Avatar
@@ -77,7 +79,8 @@ fun HomeScreen() {
     }
     var selected by model::selectedChip
     val baseChips = model.baseChips.ifEmpty { state.feed?.takeIf { selected == null }?.chips.orEmpty() }
-    val bannerDismissed = graph.settings.state.collectAsState().value.signInBannerDismissed
+    val bannerDismissed by graph.settings.state.collectSlice { it.signInBannerDismissed }
+    val haptics = rememberHaptics()
     val feed = state.feed
 
     fun loaderFor(chip: Chip?): (suspend (Boolean) -> Feed)? {
@@ -89,9 +92,11 @@ fun HomeScreen() {
         val token = chip.token ?: return null
         return { _ -> graph.yt.more(token) }
     }
-    val chips = if (signedIn) {
-        baseChips.mapIndexed { i, c -> c.copy(selected = if (selected == null) i == 0 else c.title == selected) }
-    } else HomeComposer.chips(selected?.let { s -> HomeComposer.chips().firstOrNull { it.title == s }?.token })
+    val chips = remember(signedIn, baseChips, selected) {
+        if (signedIn) {
+            baseChips.mapIndexed { i, c -> c.copy(selected = if (selected == null) i == 0 else c.title == selected) }
+        } else HomeComposer.chips(selected?.let { s -> HomeComposer.chips().firstOrNull { it.title == s }?.token })
+    }
 
     fun retry() {
         val chip = chips.firstOrNull { it.selected && it.title == selected }
@@ -108,7 +113,7 @@ fun HomeScreen() {
         titleTrailing = {
             Box(
                 Modifier.size(44.dp).clip(CircleShape)
-                    .clickable(onClickLabel = "Open You") { app.selectTab(Tab.YOU) }
+                    .clickable(onClickLabel = "Open You") { haptics.play(Haptic.Tap); app.selectTab(Tab.YOU) }
                     .semantics { contentDescription = account?.name?.let { "Account, $it" } ?: "Account" },
                 contentAlignment = Alignment.Center,
             ) { Avatar(account?.avatar, 34.dp, name = account?.name) }
@@ -131,14 +136,14 @@ fun HomeScreen() {
             SignInCard(onSignIn = { app.navigate(LoginRoute) }, onDismiss = { graph.settings.update { it.copy(signInBannerDismissed = true) } })
         }
         when {
-            feed == null && state.loading -> items(5, contentType = { "skeleton" }) { VideoCardSkeleton(it) }
+            feed == null && state.loading -> items(5, key = { "sk$it" }, contentType = { "skeleton" }) { VideoCardSkeleton(it) }
             // A chip's page that failed is tried again as that chip, not as the whole feed under it.
-            feed == null && state.error != null -> item(key = "error") { MessageState(state.error!!, action = "Try again", onAction = ::retry) }
-            feed != null && feed.isEmpty && !state.loading -> item {
+            feed == null && state.error != null -> item(key = "error", contentType = "message") { MessageState(state.error!!, action = "Try again", onAction = ::retry) }
+            feed != null && feed.isEmpty && !state.loading -> item(key = "empty", contentType = "message") {
                 MessageState(feed.message ?: "Nothing here yet. Watch something or follow a few channels and Home fills in.", icon = OrielIcons.Home)
             }
             feed != null -> {
-                if (state.loading) items(5, contentType = { "skeleton" }) { VideoCardSkeleton(it) } else feedShelves(feed, keyPrefix = "home")
+                if (state.loading) items(5, key = { "sk$it" }, contentType = { "skeleton" }) { VideoCardSkeleton(it) } else feedShelves(feed, keyPrefix = "home")
             }
         }
         feedFooter(state, onRetry = model::retryMore)

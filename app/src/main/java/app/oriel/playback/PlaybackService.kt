@@ -224,6 +224,9 @@ class PlaybackService : MediaLibraryService() {
                 reporter.paused(player.currentPosition)
                 savePosition()
                 queue.scheduleSave()
+                // Also here, not only in onDestroy: a process stopped in the background never gets
+                // there, and the next session's first pick would start from an old measurement.
+                applicationContext.graph.let { it.abr.save(it.network.metered.value) }
             }
         }
 

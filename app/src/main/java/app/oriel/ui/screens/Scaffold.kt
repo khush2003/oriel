@@ -23,7 +23,28 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.pullToRefresh
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.runtime.State
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import app.oriel.ui.components.TopScrollEdge
+import app.oriel.ui.components.drawActivitySpokes
+import app.oriel.ui.haptics.Haptic
+import app.oriel.ui.haptics.rememberHaptics
+import app.oriel.ui.theme.LocalReduceAnimation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.CompositionLocalProvider
@@ -70,7 +91,9 @@ fun bottomPadding(): PaddingValues = pagePadding(LocalMiniPlayerVisible.current,
 /**
  * An iOS page: a large title that scrolls with the content and hands over to
  * a small centred title in the floating bar, glass circles for back and
- * actions, the fade under the status bar, and pull to refresh.
+ * actions, the fade under the status bar and the scroll edge under the bar,
+ * and iOS's pull to refresh. All of it follows the scroll in the draw and
+ * layer phases: scrolling never recomposes the page's chrome.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -96,12 +119,34 @@ fun PageScaffold(
 ) {
     val app = LocalAppState.current
     val density = LocalDensity.current
-    val showTitle by remember(largeTitle, edgeToEdge) {
-        derivedStateOf {
-            val threshold = with(density) { (if (edgeToEdge) 220.dp else 44.dp).toPx() }
-            state.firstVisibleItemIndex > 0 || state.firstVisibleItemScrollOffset > threshold || (!largeTitle && !edgeToEdge)
+    val hasLargeTitle = largeTitle && title != null && !edgeToEdge
+    // How far the large title (or an edge-to-edge page's header) has handed over to the bar,
+    // 0 to 1. Called from layers and draw blocks only.
+    val collapse: () -> Float = remember(state, hasLargeTitle, edgeToEdge, density) {
+        {
+            when {
+                !hasLargeTitle && !edgeToEdge -> 1f
+                state.firstVisibleItemIndex > 0 -> 1f
+                edgeToEdge -> with(density) { ((state.firstVisibleItemScrollOffset - 200.dp.toPx()) / 40.dp.toPx()).coerceIn(0f, 1f) }
+                else -> {
+                    // The bar's title fades in over the second half of the large one's exit.
+                    val h = state.layoutInfo.visibleItemsInfo.firstOrNull()?.size?.toFloat()?.takeIf { it > 0f } ?: with(density) { 56.dp.toPx() }
+                    ((state.firstVisibleItemScrollOffset - h * 0.5f) / (h * 0.4f)).coerceIn(0f, 1f)
+                }
+            }
         }
     }
+    // The large title fades as it goes under the bar, so it never sits behind the small one.
+    val largeTitleAlpha: () -> Float = remember(state, density) {
+        {
+            if (state.firstVisibleItemIndex > 0) 0f
+            else {
+                val h = state.layoutInfo.visibleItemsInfo.firstOrNull()?.size?.toFloat()?.takeIf { it > 0f } ?: with(density) { 56.dp.toPx() }
+                1f - (state.firstVisibleItemScrollOffset / (h * 0.75f)).coerceIn(0f, 1f)
+            }
+        }
+    }
+    val showTitle = remember(collapse) { derivedStateOf { collapse() > 0.5f } }
     val refreshAction by rememberUpdatedState(onRefresh)
     if (tab != null) {
         // Only taps from now on: the flow keeps the last one, which a page coming back would replay.
@@ -158,6 +203,17 @@ fun PageScaffold(
         else -> topBarContentPadding()
     }
     val padding = pagePadding(LocalMiniPlayerVisible.current, top = top, withTabBar = LocalTabBarVisible.current)
+    // Under the bar: content passes beneath it as soon as it scrolls when the page starts below
+    // the bar; on a tab root the large title sits there at rest, so not until it's gone.
+    val edge: () -> Float = remember(state, barContent, hasLargeTitle, collapse, density) {
+        if (hasLargeTitle && !barContent || edgeToEdge) collapse
+        else {
+            {
+                if (state.firstVisibleItemIndex > 0) 1f
+                else with(density) { (state.firstVisibleItemScrollOffset / 24.dp.toPx()).coerceIn(0f, 1f) }
+            }
+        }
+    }
 
     // The bar's glass samples this page's own layer: the app-wide backdrop holds the page, bar included,
     // so sampling it from inside would draw the layer into itself.
@@ -165,24 +221,98 @@ fun PageScaffold(
     val pageBackdrop = rememberLayerBackdrop()
     Box(Modifier.fillMaxSize().animatedBackground(background)) {
         Box(Modifier.fillMaxSize().then(if (glass) Modifier.layerBackdrop(pageBackdrop) else Modifier).animatedBackground(background)) {
-            val list = @Composable {
-                LazyColumn(state = state, modifier = Modifier.fillMaxSize(), contentPadding = padding) {
-                    if (largeTitle && title != null && !edgeToEdge) item(key = "large-title", contentType = "title") { LargeTitle(title, trailing = titleTrailing) }
+            val list = @Composable { listModifier: Modifier ->
+                LazyColumn(state = state, modifier = listModifier.fillMaxSize(), contentPadding = padding) {
+                    if (hasLargeTitle) item(key = "large-title", contentType = "title") {
+                        LargeTitle(title!!, Modifier.graphicsLayer { alpha = largeTitleAlpha() }, trailing = titleTrailing)
+                    }
                     content()
                 }
             }
             if (onRefresh != null) {
-                PullToRefreshBox(refreshing, onRefresh, Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { list() }
-            } else list()
+                IosPullToRefresh(refreshing, onRefresh, spinnerTop = top) { offset -> list(Modifier.graphicsLayer { translationY = offset() }) }
+            } else list(Modifier)
             overlay()
         }
         TopFadeScrim(Modifier.align(Alignment.TopCenter), pageColor = background)
+        TopScrollEdge(edge, Modifier.align(Alignment.TopCenter), pageColor = background)
         // Back only from a page that's settled in: a second tap while it slides away popped the
         // page under it too, or sent the app to the background from Home.
         val back = onBack?.let { androidx.lifecycle.compose.dropUnlessResumed(block = it) }
         CompositionLocalProvider(LocalAppBackdrop provides if (glass) pageBackdrop else null) {
-            FloatingTopBar(back, Modifier.align(Alignment.TopCenter), title = title, showTitle = showTitle, leading = leading, actions = actions)
+            ScaffoldBar(back, Modifier.align(Alignment.TopCenter), title, showTitle, collapse, leading, actions)
         }
+    }
+}
+
+/** The bar, in a scope of its own: the title showing or not, for accessibility, recomposes only this. */
+@Composable
+private fun ScaffoldBar(
+    onBack: (() -> Unit)?,
+    modifier: Modifier,
+    title: String?,
+    showTitle: State<Boolean>,
+    progress: () -> Float,
+    leading: (@Composable () -> Unit)?,
+    actions: (@Composable RowScope.() -> Unit)?,
+) {
+    FloatingTopBar(onBack, modifier, title = title, showTitle = showTitle.value, leading = leading, actions = actions, titleProgress = progress)
+}
+
+/** How far M3's pull is past its threshold turns into iOS's rubber band: it gives less and less. */
+private fun pullOffset(fraction: Float, threshold: Float): Float {
+    if (fraction <= 1f) return fraction * threshold
+    val over = (fraction - 1f).coerceIn(0f, 2f)
+    return threshold * (1f + over - over * over / 4f)
+}
+
+/** iOS's refresh: where it holds the content while it loads, and how far it has to be pulled (twice this, under the finger). */
+private val REFRESH_HOLD = 60.dp
+
+/**
+ * iOS's pull to refresh rather than Material's: the content itself comes down with the finger
+ * (passed to [content] as a layer offset), the activity indicator filling in spoke by spoke in
+ * the gap above it, a tick as it catches, and the content held open while [refreshing].
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun IosPullToRefresh(refreshing: Boolean, onRefresh: () -> Unit, spinnerTop: Dp, content: @Composable (offset: () -> Float) -> Unit) {
+    val state = rememberPullToRefreshState()
+    val holdPx = with(LocalDensity.current) { REFRESH_HOLD.toPx() }
+    val haptics = rememberHaptics()
+    val loading by rememberUpdatedState(refreshing)
+    LaunchedEffect(state) {
+        snapshotFlow { state.distanceFraction >= 1f }.distinctUntilChanged().filter { it }.collect {
+            // The pull caught; a refresh started from elsewhere opens without one.
+            if (!loading) haptics.play(Haptic.Tap)
+        }
+    }
+    val offset = remember(state, holdPx) { { pullOffset(state.distanceFraction, holdPx) } }
+    // A page that starts under the status bar still shows the indicator below it.
+    val top = maxOf(spinnerTop, WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 4.dp)
+    Box(Modifier.fillMaxSize().pullToRefresh(refreshing, state, threshold = REFRESH_HOLD, onRefresh = onRefresh)) {
+        content(offset)
+        RefreshSpinner(refreshing, { state.distanceFraction }, offset, Modifier.align(Alignment.TopCenter).padding(top = top))
+    }
+}
+
+@Composable
+private fun RefreshSpinner(refreshing: Boolean, fraction: () -> Float, offset: () -> Float, modifier: Modifier) {
+    val color = MaterialTheme.colorScheme.onSurfaceVariant
+    val turn = if (refreshing && !LocalReduceAnimation.current) {
+        rememberInfiniteTransition(label = "refresh").animateFloat(0f, 8f, infiniteRepeatable(tween(960, easing = LinearEasing)), label = "refreshTurn")
+    } else null
+    Canvas(
+        modifier.size(26.dp)
+            .graphicsLayer {
+                // Centred in the gap the content has opened, until it's opened enough to hold it.
+                translationY = ((offset() - size.height) / 2f).coerceAtLeast(0f)
+                alpha = (fraction() * 2f).coerceIn(0f, 1f)
+            }
+            .semantics { if (refreshing) progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate },
+    ) {
+        val shown = if (refreshing) 8 else (fraction() * 8f).toInt()
+        drawActivitySpokes(color, step = turn?.value?.toInt() ?: 0, shown = shown)
     }
 }
 

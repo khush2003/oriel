@@ -14,9 +14,15 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 data class FeedState(
     val feed: Feed? = null,
@@ -190,6 +196,17 @@ class FeedModel(
         const val MINUTE = 60_000L
         const val AFTER_WATCH_MS = MINUTE
     }
+}
+
+/**
+ * One part of a state flow, recomposing only when that part changes. The library's state moves
+ * every few seconds while something plays (resume points); a page showing only its
+ * subscriptions or searches used to recompose with every one. [select] is read once.
+ */
+@Composable
+fun <T, R> StateFlow<T>.collectSlice(select: (T) -> R): State<R> {
+    val flow = remember(this) { map(select).distinctUntilChanged() }
+    return flow.collectAsState(initial = remember(this) { select(value) })
 }
 
 /**

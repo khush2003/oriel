@@ -11,6 +11,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import app.oriel.ui.haptics.Haptic
@@ -48,3 +51,16 @@ internal fun enterMotion(enter: EnterTransition): EnterTransition = if (LocalRed
 @Composable
 @ReadOnlyComposable
 internal fun exitMotion(exit: ExitTransition): ExitTransition = if (LocalReduceAnimation.current) ExitTransition.None else exit
+
+/**
+ * Where a pointer is on the screen, for a drag on something the drag itself moves. Pointer
+ * positions come in the moving node's own coordinates, so as it follows the finger each move
+ * reads short, and the picture (or panel) fell behind the finger by as much as it had moved.
+ */
+internal class ScreenPosition {
+    internal var coordinates: LayoutCoordinates? = null
+    fun of(local: Offset): Offset = coordinates?.takeIf { it.isAttached }?.localToRoot(local) ?: local
+}
+
+/** Gives [position] this node's coordinates: put it just before the pointer input it serves. */
+internal fun Modifier.screenPosition(position: ScreenPosition): Modifier = onPlaced { position.coordinates = it }

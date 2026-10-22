@@ -233,9 +233,11 @@ fun SettingsScreen() {
         }
         item(key = "region") {
             SettingsGroup(header = "Region & language", footer = "What YouTube treats as your country and language, for trending, topics and search.") {
-                SettingsRow("Content country", OrielIcons.Language, value = s.country?.let { Locale.Builder().setRegion(it).build().displayCountry } ?: "Automatic", chevron = true, onClick = {
-                    val countries = listOf<String?>(null) + Locale.getISOCountries().sortedBy { Locale.Builder().setRegion(it).build().displayCountry }
-                    picker = Picker("Content country", countries, s.country, { it?.let { c -> Locale.Builder().setRegion(c).build().displayCountry } ?: "Automatic" }) { v -> set { it.copy(country = v) }; graph.applyLocale() }
+                SettingsRow("Content country", OrielIcons.Language, value = s.country?.let(::countryName) ?: "Automatic", chevron = true, onClick = {
+                    // Each name worked out once: sorting by a fresh Locale per comparison stalled the tap.
+                    val names = Locale.getISOCountries().associateWith(::countryName)
+                    val countries = listOf<String?>(null) + names.keys.sortedBy { names[it] }
+                    picker = Picker("Content country", countries, s.country, { it?.let { c -> names[c] } ?: "Automatic" }) { v -> set { it.copy(country = v) }; graph.applyLocale() }
                 })
                 RowDivider()
                 SettingsRow("Language", OrielIcons.Language, value = s.language?.let { Locale.forLanguageTag(it).displayName } ?: "Automatic", chevron = true, onClick = {
@@ -314,7 +316,7 @@ private fun LongPickerSheet(p: Picker<Any?>, onDismiss: () -> Unit) {
         SheetTitle(p.title)
         SearchField(query, { query = it }, { }, Modifier.padding(horizontal = PAGE_GUTTER, vertical = 6.dp), placeholder = "Search")
         androidx.compose.foundation.lazy.LazyColumn(state = list, modifier = Modifier.fillMaxWidth(), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = PAGE_GUTTER, vertical = 8.dp)) {
-            items(shown.size) { i ->
+            items(shown.size, key = { shown[it].toString() }, contentType = { "choice" }) { i ->
                 val o = shown[i]
                 val first = i == 0
                 val last = i == shown.lastIndex
@@ -328,6 +330,8 @@ private fun LongPickerSheet(p: Picker<Any?>, onDismiss: () -> Unit) {
         }
     }
 }
+
+private fun countryName(code: String): String = Locale.Builder().setRegion(code).build().displayCountry
 
 private val CATEGORY_PICKER = Picker<Any?>("Skip these", emptyList(), null, { "" }) {}
 

@@ -42,6 +42,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.oriel.core.model.Playlist
 import app.oriel.data.AccountManager
+import app.oriel.data.LibraryState
 import app.oriel.ui.AppState
 import app.oriel.ui.LocalAppState
 import app.oriel.ui.components.ActionPill
@@ -76,7 +77,7 @@ fun YouScreen() {
     val signedIn by graph.account.signedIn.collectAsState()
     val account by graph.account.account.collectAsState()
     val syncing by graph.account.syncing.collectAsState()
-    val library by graph.library.state.collectAsState()
+    val library by graph.library.state.collectSlice(::youSummary)
     val expired by graph.account.sessionExpired.collectAsState()
     val haptics = rememberHaptics()
     // The bell's count, asked each time You comes into view; opening the inbox clears it on YouTube's side.
@@ -104,11 +105,11 @@ fun YouScreen() {
             }
         },
     ) {
-        if (signedIn && expired) item(key = "expired") { SessionExpiredCard(onSignIn = { app.navigate(LoginRoute) }) }
-        item(key = "account") {
+        if (signedIn && expired) item(key = "expired", contentType = "card") { SessionExpiredCard(onSignIn = { app.navigate(LoginRoute) }) }
+        item(key = "account", contentType = "account") {
             if (signedIn) {
                 Row(
-                    Modifier.fillMaxWidth().clickable { app.navigate(SettingsRoute) }.padding(horizontal = PAGE_GUTTER, vertical = 8.dp),
+                    Modifier.fillMaxWidth().clickable { haptics.play(Haptic.Tap); app.navigate(SettingsRoute) }.padding(horizontal = PAGE_GUTTER, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Avatar(account?.avatar, 64.dp, name = account?.name)
@@ -122,54 +123,73 @@ fun YouScreen() {
                 SignInCard(onSignIn = { app.navigate(LoginRoute) }, onDismiss = null, text = "Your library works on this device without an account. Sign in to sync likes, subscriptions, Watch later and playlists with YouTube.")
             }
         }
-        if (library.history.isNotEmpty()) item(key = "history") {
+        if (library.history.isNotEmpty()) item(key = "history", contentType = "shelf") {
             Column {
                 SectionHeader("History", onMore = { app.navigate(HistoryRoute) })
-                ShelfRow(library.history.take(16).map { it.video }) { v ->
-                    val video = v as Video
-                    val pos = library.positions[video.id]
-                    val withProgress = if (pos != null && (video.durationSec ?: 0) > 0) video.copy(progress = (pos / 1000f / video.durationSec!!).coerceIn(0f, 1f)) else video
-                    VideoShelfCard(withProgress, width = 200.dp)
-                }
+                ShelfRow(library.history) { v -> VideoShelfCard(v as Video, width = 200.dp) }
             }
         }
-        if (signedIn) item(key = "inbox") {
+        if (signedIn) item(key = "inbox", contentType = "group") {
             SettingsGroup(top = 14.dp) {
                 SettingsRow("Notifications", OrielIcons.Bell, chevron = true, onClick = { unseen = 0; app.navigate(NotificationsRoute) }, trailing = if (unseen > 0) ({ CountBadge(unseen) }) else null)
             }
         }
-        item(key = "library") {
+        item(key = "library", contentType = "group") {
             SettingsGroup {
-                SettingsRow("Watch later", OrielIcons.WatchLater, value = library.watchLater.size.takeIf { it > 0 }?.toString(), chevron = true, onClick = { app.navigate(WatchLaterRoute) })
+                SettingsRow("Watch later", OrielIcons.WatchLater, value = library.watchLater.takeIf { it > 0 }?.toString(), chevron = true, onClick = { app.navigate(WatchLaterRoute) })
                 RowDivider()
-                SettingsRow("Liked videos", OrielIcons.Like, value = library.liked.size.takeIf { it > 0 }?.toString(), chevron = true, onClick = { app.navigate(LikedRoute) })
+                SettingsRow("Liked videos", OrielIcons.Like, value = library.liked.takeIf { it > 0 }?.toString(), chevron = true, onClick = { app.navigate(LikedRoute) })
                 RowDivider()
                 SettingsRow("History", OrielIcons.History, chevron = true, onClick = { app.navigate(HistoryRoute) })
             }
         }
-        item(key = "library2") {
+        item(key = "library2", contentType = "group") {
             SettingsGroup {
-                SettingsRow("Playlists", OrielIcons.Playlist, value = (library.localPlaylists.size + library.savedPlaylists.size).takeIf { it > 0 }?.toString(), chevron = true, onClick = { app.navigate(PlaylistsRoute) })
+                SettingsRow("Playlists", OrielIcons.Playlist, value = library.playlistCount.takeIf { it > 0 }?.toString(), chevron = true, onClick = { app.navigate(PlaylistsRoute) })
                 RowDivider()
-                SettingsRow("Channels", OrielIcons.Subscriptions, value = library.subscriptions.size.takeIf { it > 0 }?.toString(), chevron = true, onClick = { app.navigate(ChannelsRoute) })
+                SettingsRow("Channels", OrielIcons.Subscriptions, value = library.channels.takeIf { it > 0 }?.toString(), chevron = true, onClick = { app.navigate(ChannelsRoute) })
             }
         }
-        val playlists: List<Playlist> = library.localPlaylists.map { p ->
-            Playlist(id = "local:" + p.id, title = p.name, thumbnail = p.videos.firstOrNull()?.let { Thumbnails.of(it, 480) }, countText = Plurals.count(p.videos.size, "video"))
-        } + library.savedPlaylists
-        if (playlists.isNotEmpty()) item(key = "playlists") {
+        if (library.playlists.isNotEmpty()) item(key = "playlists", contentType = "shelf") {
             Column {
                 SectionHeader("Your playlists", onMore = { app.navigate(PlaylistsRoute) })
-                ShelfRow(playlists.take(12)) { item ->
+                ShelfRow(library.playlists) { item ->
                     val p = item as Playlist
                     if (p.id.startsWith("local:")) {
-                        Column(Modifier.clip(GroupShape).clickable { app.navigate(LocalPlaylistRoute(p.id.removePrefix("local:"))) }) { PlaylistShelfCardStatic(p) }
+                        Column(Modifier.clip(GroupShape).clickable { haptics.play(Haptic.Tap); app.navigate(LocalPlaylistRoute(p.id.removePrefix("local:"))) }) { PlaylistShelfCardStatic(p) }
                     } else PlaylistShelfCard(p, width = 200.dp)
                 }
             }
         }
     }
 }
+
+/** What You shows of the library: recomposes only when one of these changes, not with every resume point saved. */
+private data class YouSummary(
+    val history: List<Video>,
+    val watchLater: Int,
+    val liked: Int,
+    val channels: Int,
+    val playlistCount: Int,
+    val playlists: List<Playlist>,
+)
+
+private fun youSummary(s: LibraryState) = YouSummary(
+    // Progress in whole percent: a resume point moving a few seconds doesn't redraw the shelf.
+    history = s.history.take(16).map { e ->
+        val v = e.video
+        val pos = s.positions[v.id]
+        val dur = v.durationSec ?: 0
+        if (pos != null && dur > 0) v.copy(progress = ((pos / 10f / dur).toInt() / 100f).coerceIn(0f, 1f)) else v
+    },
+    watchLater = s.watchLater.size,
+    liked = s.liked.size,
+    channels = s.subscriptions.size,
+    playlistCount = s.localPlaylists.size + s.savedPlaylists.size,
+    playlists = (s.localPlaylists.map { p ->
+        Playlist(id = "local:" + p.id, title = p.name, thumbnail = p.videos.firstOrNull()?.let { Thumbnails.of(it, 480) }, countText = Plurals.count(p.videos.size, "video"))
+    } + s.savedPlaylists).take(12),
+)
 
 /** Syncs the library with the account, and says so when some or all of it didn't come through. */
 fun syncLibrary(app: AppState) {

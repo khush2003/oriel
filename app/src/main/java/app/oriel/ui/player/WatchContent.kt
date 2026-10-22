@@ -71,6 +71,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -482,7 +483,8 @@ private fun RelatedSkeleton() = VideoCardSkeleton(0)
 /**
  * A panel over the page under the video, as iOS sheets are set: a grabber, the title at the
  * leading edge with its count in grey, a round grey close button, and a hairline under the
- * header only once the list has scrolled beneath it. A drag down on the header closes it.
+ * header only once the list has scrolled beneath it. A drag down on the header, or on the list
+ * once it's at its top, closes it.
  */
 @Composable
 private fun Panel(palette: ArtworkPalette, title: String, count: String? = null, scrolled: Boolean, onBack: (() -> Unit)?, onClose: () -> Unit, content: @Composable () -> Unit) {
@@ -490,25 +492,72 @@ private fun Panel(palette: ArtworkPalette, title: String, count: String? = null,
     val drag = remember { androidx.compose.animation.core.Animatable(0f) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val close by androidx.compose.runtime.rememberUpdatedState(onClose)
-    Column(Modifier.fillMaxSize().graphicsLayer { translationY = drag.value }.clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)).background(palette.background)) {
-        Column(Modifier.fillMaxWidth().pointerInput(Unit) {
+    val haptics = rememberHaptics()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val pullToClose = remember {
+        object {
+            val closeAt = with(density) { 80.dp.toPx() }
+            val back = androidx.compose.animation.core.spring<Float>(dampingRatio = 0.86f, stiffness = 520f)
+            var armed = false
+
+            fun moveTo(y: Float) {
+                // One tick as it passes the point where letting go closes it.
+                val past = y > closeAt
+                if (past && !armed) haptics.play(Haptic.Tick)
+                armed = past
+                scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { drag.snapTo(y) }
+            }
+
+            fun settle(velocity: Float) {
+                armed = false
+                if (drag.value > closeAt || (velocity > 1000f && drag.value > 0f)) close()
+                else scope.launch { drag.animateTo(0f, back, velocity) }
+            }
+
+            // The list's scroll and the panel's pull are one gesture, as in an iOS sheet: at the
+            // list's top a pull down moves the panel, and pushing back up gives that back before
+            // the list scrolls again. Flings never pull it: one that reaches the top just bounces.
+            val connection = object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+                override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                    if (source != androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput || available.y >= 0f || drag.value <= 0f) return androidx.compose.ui.geometry.Offset.Zero
+                    val used = maxOf(available.y, -drag.value)
+                    moveTo(drag.value + used)
+                    return androidx.compose.ui.geometry.Offset(0f, used)
+                }
+
+                override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                    if (source != androidx.compose.ui.input.nestedscroll.NestedScrollSource.UserInput || available.y <= 0f) return androidx.compose.ui.geometry.Offset.Zero
+                    moveTo(drag.value + available.y)
+                    return androidx.compose.ui.geometry.Offset(0f, available.y)
+                }
+
+                override suspend fun onPreFling(available: androidx.compose.ui.unit.Velocity): androidx.compose.ui.unit.Velocity {
+                    if (drag.value <= 0f) return androidx.compose.ui.unit.Velocity.Zero
+                    settle(available.y)
+                    return available
+                }
+            }
+        }
+    }
+    Column(Modifier.fillMaxSize().graphicsLayer { translationY = drag.value }.clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)).background(palette.background).nestedScroll(pullToClose.connection)) {
+        // The header moves with its drag, so the finger is followed on the screen, not in the header's own coordinates.
+        val headerScreen = remember { ScreenPosition() }
+        Column(Modifier.fillMaxWidth().screenPosition(headerScreen).pointerInput(Unit) {
             val tracker = androidx.compose.ui.input.pointer.util.VelocityTracker()
             var total = 0f
-            val back = androidx.compose.animation.core.spring<Float>(dampingRatio = 0.86f, stiffness = 520f)
-            fun settle() {
-                val v = tracker.calculateVelocity().y
-                if (drag.value > 80.dp.toPx() || (v > 1000f && total > 0f)) close()
-                else scope.launch { drag.animateTo(0f, back, v) }
-            }
+            var lastY = 0f
             detectVerticalDragGestures(
-                onDragStart = { total = 0f; tracker.resetTracking() },
-                onDragEnd = { settle() },
-                onDragCancel = { scope.launch { drag.animateTo(0f, back) } },
-            ) { change, dy ->
+                onDragStart = { at -> total = 0f; lastY = headerScreen.of(at).y; tracker.resetTracking() },
+                onDragEnd = { pullToClose.settle(tracker.calculateVelocity().y) },
+                onDragCancel = { pullToClose.armed = false; scope.launch { drag.animateTo(0f, pullToClose.back) } },
+            ) { change, _ ->
+                val y = headerScreen.of(change.position).y
+                val dy = y - lastY
+                lastY = y
                 total += dy
                 tracker.addPosition(change.uptimeMillis, androidx.compose.ui.geometry.Offset(0f, total))
                 // Not above where it rests: the header's drag only pulls the panel down.
-                scope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { drag.snapTo((drag.value + dy).coerceAtLeast(0f)) }
+                pullToClose.moveTo((drag.value + dy).coerceAtLeast(0f))
             }
         }) {
             Box(Modifier.padding(top = 7.dp, bottom = 2.dp).align(Alignment.CenterHorizontally).size(36.dp, 5.dp).clip(CircleShape).background(palette.onBackground.copy(alpha = 0.22f)))

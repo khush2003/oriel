@@ -63,9 +63,10 @@ import app.oriel.ui.components.PAGE_GUTTER
 import app.oriel.ui.components.PillAction
 import app.oriel.ui.components.RemoteImage
 import app.oriel.ui.components.SkeletonLine
+import app.oriel.ui.components.shimmer
+import androidx.compose.ui.draw.clip
 import app.oriel.ui.components.VideoRow
 import app.oriel.ui.components.VideoRowSkeleton
-import app.oriel.ui.components.topBarContentPadding
 import app.oriel.ui.theme.ArtworkPalette
 import app.oriel.ui.theme.rememberArtworkPalette
 import app.oriel.util.Thumbnails
@@ -166,11 +167,14 @@ class PlaylistModel(private val graph: AppGraph, private val id: String) : ViewM
     }
 }
 
-/** The tinted head of a playlist page: artwork, title, owner and stats, then Play all and Shuffle. */
+/**
+ * The tinted head of a playlist page: artwork, title, owner and stats, then Play all and Shuffle.
+ * With no [title] yet it's its own placeholder, laid out the same, so nothing moves when it lands.
+ */
 @Composable
 fun CollectionHeader(
     art: String?,
-    title: String,
+    title: String?,
     subtitle: String?,
     meta: String?,
     description: String?,
@@ -179,7 +183,22 @@ fun CollectionHeader(
     onShuffle: (() -> Unit)?,
 ) {
     Column(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 60.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        RemoteImage(art, Modifier.fillMaxWidth(0.78f).widthIn(max = 420.dp).aspectRatio(16f / 9f), RoundedCornerShape(16.dp))
+        val artFrame = Modifier.fillMaxWidth(0.78f).widthIn(max = 420.dp).aspectRatio(16f / 9f)
+        if (title == null) {
+            Box(artFrame.clip(RoundedCornerShape(16.dp)).shimmer())
+            Spacer(Modifier.height(16.dp))
+            LinePlaceholder(MaterialTheme.typography.headlineMedium, 0.56f)
+            LinePlaceholder(MaterialTheme.typography.titleMedium, 0.32f, Modifier.padding(top = 4.dp))
+            LinePlaceholder(MaterialTheme.typography.bodySmall, 0.44f, Modifier.padding(top = 4.dp))
+            Spacer(Modifier.height(16.dp))
+            Row(Modifier.fillMaxWidth().padding(horizontal = PAGE_GUTTER), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(Modifier.weight(1f)) { ActionPill("Play", OrielIcons.Play, {}, Modifier.fillMaxWidth(), tint = palette.accent, enabled = false) }
+                Box(Modifier.weight(1f)) { ActionPill("Shuffle", OrielIcons.Shuffle, {}, Modifier.fillMaxWidth(), tint = palette.accent, enabled = false) }
+            }
+            Spacer(Modifier.height(10.dp))
+            return@Column
+        }
+        RemoteImage(art, artFrame, RoundedCornerShape(16.dp))
         Spacer(Modifier.height(16.dp))
         Text(title, style = MaterialTheme.typography.headlineMedium, color = palette.onBackground, textAlign = TextAlign.Center, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 24.dp))
         subtitle?.let { Text(it, style = MaterialTheme.typography.titleMedium, color = palette.accent, textAlign = TextAlign.Center, maxLines = 1, modifier = Modifier.padding(top = 4.dp)) }
@@ -197,6 +216,13 @@ fun CollectionHeader(
     }
 }
 
+/** A shimmering bar one line of [style] tall, standing in for that line. */
+@Composable
+private fun LinePlaceholder(style: androidx.compose.ui.text.TextStyle, widthFraction: Float, modifier: Modifier = Modifier) {
+    val height = with(androidx.compose.ui.platform.LocalDensity.current) { style.lineHeight.toDp() }
+    Box(modifier.height(height), contentAlignment = Alignment.Center) { SkeletonLine(widthFraction, height * 0.7f) }
+}
+
 @Composable
 fun PlaylistScreen(id: String) {
     val app = LocalAppState.current
@@ -208,6 +234,7 @@ fun PlaylistScreen(id: String) {
     val playlist = page?.playlist
     val palette = rememberArtworkPalette(playlist?.thumbnail ?: page?.videos?.firstOrNull()?.let { Thumbnails.of(it, 320) })
     val context = { QueueContext(title = playlist?.title, playlistId = id) }
+    val pageKeys = remember(page?.videos) { rowKeys(page?.videos.orEmpty()) }
 
     // The whole playlist, not just the part scrolled to so far.
     fun playAll(shuffle: Boolean) = model.all { vids -> app.playPlaylist(vids, 0, context(), shuffle) }
@@ -221,21 +248,18 @@ fun PlaylistScreen(id: String) {
         refreshing = state.refreshing,
         onRefresh = { model.load(true) },
         onNearEnd = model::loadMore,
-        actions = {
-            if (playlist != null && id != "WL" && id != "LL") {
+        // None until the playlist is in: an empty pill drew as a sliver at the bar's end.
+        actions = if (playlist == null) null else ({
+            if (id != "WL" && id != "LL") {
                 val isSaved = id in saved
                 PillAction(if (isSaved) OrielIcons.Check else OrielIcons.Add, if (isSaved) "Remove from library" else "Save to library") { graph.actions.toggleSaved(playlist) }
             }
-            playlist?.let { PillAction(OrielIcons.Share, "Share") { app.share(it) } }
-        },
+            PillAction(OrielIcons.Share, "Share") { app.share(playlist) }
+        }),
     ) {
-        item(key = "header") {
+        item(key = "header", contentType = "header") {
             if (playlist == null) {
-                Column(Modifier.fillMaxWidth().padding(top = topBarContentPadding() + 40.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    SkeletonLine(0.6f, 24.dp)
-                    Spacer(Modifier.height(10.dp))
-                    SkeletonLine(0.4f)
-                }
+                CollectionHeader(null, null, null, null, null, palette, null, null)
             } else {
                 CollectionHeader(
                     art = playlist.thumbnail ?: page.videos.firstOrNull()?.let { Thumbnails.of(it, 720) },
@@ -249,12 +273,11 @@ fun PlaylistScreen(id: String) {
                 )
             }
         }
-        val pageKeys = rowKeys(page?.videos.orEmpty())
         if (page != null && state.error != null && !state.refreshing) item(key = "notice") { NoticeRow(state.error!!, action = "Try again", onAction = { model.load(true) }) }
         when {
-            state.loading -> items(8) { VideoRowSkeleton(it) }
+            state.loading -> items(8, key = { "sk$it" }, contentType = { "rowSkeleton" }) { VideoRowSkeleton(it) }
             state.error != null && page == null -> item(key = "error") { MessageState(state.error!!, action = "Try again", onAction = { model.load(true) }) }
-            page != null && page.videos.isEmpty() -> item { MessageState("This playlist is empty.") }
+            page != null && page.videos.isEmpty() -> item(key = "empty", contentType = "message") { MessageState("This playlist is empty.") }
             page != null -> itemsIndexed(page.videos, key = { i, _ -> pageKeys[i] }, contentType = { _, _ -> "row" }) { i, v ->
                 VideoRow(
                     v, index = i + 1, modifier = feedItem(), titleColor = palette.onBackground, metaColor = palette.onBackgroundVariant,
@@ -271,14 +294,13 @@ fun PlaylistScreen(id: String) {
 fun LocalPlaylistScreen(id: String) {
     val app = LocalAppState.current
     val graph = app.graph
-    val library by graph.library.state.collectAsState()
-    val playlist = library.localPlaylists.firstOrNull { it.id == id }
-    val palette = rememberArtworkPalette(playlist?.videos?.firstOrNull()?.let { Thumbnails.of(it, 320) })
-    if (playlist == null) {
-        PageScaffold(title = "Playlist", onBack = app::back) { item { MessageState("This playlist was deleted.") } }
+    val found by graph.library.state.collectSlice { s -> s.localPlaylists.firstOrNull { it.id == id } }
+    val palette = rememberArtworkPalette(found?.videos?.firstOrNull()?.let { Thumbnails.of(it, 320) })
+    val playlist = found ?: run {
+        PageScaffold(title = "Playlist", onBack = app::back) { item(key = "gone", contentType = "message") { MessageState("This playlist was deleted.") } }
         return
     }
-    val context = QueueContext(title = playlist.name)
+    val context = remember(playlist.name) { QueueContext(title = playlist.name) }
     var editing by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
     // While a row is held, the list is reordered here as the finger moves and written once on release.
@@ -289,7 +311,7 @@ fun LocalPlaylistScreen(id: String) {
     val scope = rememberCoroutineScope()
     val haptics = rememberHaptics()
     val shown = if (dragKey != null) working else playlist.videos
-    val keys = rowKeys(shown)
+    val keys = remember(shown) { rowKeys(shown) }
     PageScaffold(
         title = playlist.name,
         onBack = app::back,
@@ -299,15 +321,10 @@ fun LocalPlaylistScreen(id: String) {
         actions = {
             if (playlist.videos.size > 1) PillAction(if (editing) OrielIcons.Check else OrielIcons.Reorder, if (editing) "Done" else "Reorder") { editing = !editing }
             PillAction(OrielIcons.Edit, "Rename") { renaming = true }
-            PillAction(OrielIcons.Delete, "Delete playlist") {
-                app.alert = AlertSpec("Delete “${playlist.name}”?", "This removes the playlist from this device. The videos stay on YouTube.", listOf(
-                    AlertAction("Cancel"),
-                    AlertAction("Delete", destructive = true) { graph.library.deleteLocalPlaylist(id); app.back() },
-                ))
-            }
+            PillAction(OrielIcons.Delete, "Delete playlist") { confirmDelete(app, id, playlist.name, after = app::back) }
         },
     ) {
-        item(key = "header") {
+        item(key = "header", contentType = "header") {
             CollectionHeader(
                 art = playlist.videos.firstOrNull()?.let { Thumbnails.of(it, 720) },
                 title = playlist.name,
@@ -319,7 +336,7 @@ fun LocalPlaylistScreen(id: String) {
                 onShuffle = if (playlist.videos.isNotEmpty()) ({ app.playPlaylist(playlist.videos, 0, context, shuffle = true) }) else null,
             )
         }
-        if (playlist.videos.isEmpty()) item(key = "empty") { MessageState("Save videos here from their ⋯ menu or the watch page's Save button.") }
+        if (playlist.videos.isEmpty()) item(key = "empty", contentType = "message") { MessageState("Save videos here from their ⋯ menu or the watch page's Save button.") }
         itemsIndexed(shown, key = { i, _ -> keys[i] }, contentType = { _, _ -> "row" }) { i, v ->
             val key = keys[i]
             val held = key == dragKey

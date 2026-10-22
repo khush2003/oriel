@@ -51,10 +51,14 @@ fun RemoteImage(url: String?, modifier: Modifier = Modifier, shape: Shape = Roun
     val context = LocalContext.current
     val fade = !app.oriel.ui.theme.LocalReduceAnimation.current
     val request = remember(url, fade) { ImageRequest.Builder(context).data(url).crossfade(if (fade) 180 else 0).build() }
+    val variant = MaterialTheme.colorScheme.surfaceVariant
+    val ink = MaterialTheme.colorScheme.onSurface
+    // One placeholder brush per colour pair, not one per image per recomposition: feeds draw hundreds.
+    val placeholder = remember(variant, ink) { Brush.linearGradient(listOf(lerp(variant, ink, 0.06f), variant)) }
     Box(
         modifier
             .clip(shape)
-            .background(Brush.linearGradient(listOf(lerp(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurface, 0.06f), MaterialTheme.colorScheme.surfaceVariant)))
+            .background(placeholder)
             .then(if (border) Modifier.thumbnailBorder(shape) else Modifier),
     ) {
         if (url != null) AsyncImage(request, null, contentScale = contentScale, modifier = Modifier.fillMaxSize())
