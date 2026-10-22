@@ -18,11 +18,10 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.ContentDrawScope
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.PointerEvent
 import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.changedToDownIgnoreConsumed
-import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.positionChangeIgnoreConsumed
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.MeasureResult
@@ -32,15 +31,17 @@ import androidx.compose.ui.node.DelegatableNode
 import androidx.compose.ui.node.DrawModifierNode
 import androidx.compose.ui.node.LayoutModifierNode
 import androidx.compose.ui.node.ModifierNodeElement
-import androidx.compose.ui.node.invalidateDraw
 import androidx.compose.ui.node.PointerInputModifierNode
 import androidx.compose.ui.node.currentValueOf
+import androidx.compose.ui.node.invalidateDraw
 import androidx.compose.ui.node.invalidatePlacement
 import androidx.compose.ui.platform.InspectorInfo
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.toSize
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.hypot
@@ -49,15 +50,43 @@ import kotlin.math.min
 import kotlin.math.sign
 
 /*
- * Press feedback, ported from the mock's `pressable` (design/liquid/index.html): a pressed
- * surface dents toward the finger, scaled about the touch point by up to 7% (less along the axis
- * the finger is off-centre on) and nudged 2.5 px toward it, lit by a radial glow under it; while
- * held it stretches after the finger (a rubber band, 22%); let go, it wobbles like jelly, kicked
- * at 0.9 across and −0.63 down on Sp.Jelly (response 0.48, damping 0.3). A press that turns into
- * a scroll or a drag settles back without the kick. [strength] scales it all, as the mock's does
- * per kind (cards 0.45, chips 0.7, rows 0.25, buttons 1). Draw- or layer-only: pressing never
- * recomposes anything. Reduce motion dims instead, as the mock does.
+ * iOS's press feedback in place of Material's ripple, in two flavours, picked by LocalLiquidMotion
+ * as each press starts.
+ *
+ * Liquid motion off (the default), three kinds on the same springs (PressSpring in,
+ * ReleaseSpring out) so every control in the app answers a finger alike:
+ *  - rows wash: a flat highlight over the cell, as UITableView's ([PressHighlight.wash], the
+ *    theme's LocalIndication);
+ *  - cards and tiles give: they shrink a little under the finger ([CardPress], [TilePress]);
+ *  - glyph and text buttons dim, as UIButton's do ([GlyphPress]).
+ * A press that turns into a scroll arrives as a Cancel and springs straight back; a quick tap
+ * still shows, held for at least [MIN_SHOWN_MS].
+ *
+ * Liquid motion on, the mock's `pressable` (design/liquid/index.html): a pressed surface dents
+ * toward the finger, scaled about the touch point by up to 7% (less along the axis the finger
+ * is off-centre on) and nudged 2.5 px toward it, lit by a radial glow under it; while held it
+ * stretches after the finger (a rubber band, 22%); let go, it wobbles like jelly, kicked at 0.9
+ * across and −0.63 down on Sp.Jelly. [PressHighlight.strength] scales it all, as the mock's does
+ * per kind (cards 0.45, chips 0.7, rows 0.25, buttons 1).
+ *
+ * Either way a press starts with the clickable's Press, not the finger's down: in a scrolling
+ * list that comes a tap-timeout late (at once outside one), so the start of a scroll never
+ * squishes what it starts on. A press that becomes a scroll, or whose finger wanders past the
+ * touch slop, settles back without the kick. Draw- or layer-only: pressing never recomposes
+ * anything. Reduce motion dims instead.
  */
+
+/** How long a tap's feedback is held at the least, so a quick tap still shows. */
+private const val MIN_SHOWN_MS = 90L
+
+/** A feed card's give under the finger, liquid motion off. */
+const val CARD_PRESS_SCALE = 0.97f
+
+/** A smaller tile's (shelf cards, chips, pills): small things give a little more. */
+const val TILE_PRESS_SCALE = 0.95f
+
+/** A glass control swells a touch under the finger, as iOS 26's interactive glass does. */
+const val GLASS_PRESS_SCALE = 1.08f
 
 /** A feed card's squish, as the mock's cards. */
 const val CARD_PRESS_STRENGTH = 0.45f
@@ -74,51 +103,59 @@ const val ROW_PRESS_STRENGTH = 0.25f
 /** The mock's glow under the finger: white at 28% on dark, black at 10% on light. */
 fun pressGlow(dark: Boolean): Color = if (dark) Color.White.copy(alpha = 0.28f) else Color.Black.copy(alpha = 0.10f)
 
+/** A row's flat wash, liquid motion off: UITableView's highlight. */
+fun rowWash(dark: Boolean): Color = if (dark) Color.White.copy(alpha = 0.10f) else Color.Black.copy(alpha = 0.07f)
+
 /**
- * An indication: the squish at [strength], a radial [glow] (transparent for none) under the
- * finger clipped to [shape], and the content at [dim] alpha at full press.
+ * An indication. Liquid: the squish at [strength] and a radial [glow] (transparent for none)
+ * under the finger. Off: a flat [wash] and the content drawn at [scale]. Both clip to [shape]
+ * and draw the content at [dim] alpha at full press.
  */
 class PressHighlight(
     internal val glow: Color,
     internal val strength: Float = 1f,
     internal val dim: Float = 1f,
     internal val shape: Shape = RectangleShape,
+    internal val wash: Color = Color.Transparent,
+    internal val scale: Float = 1f,
 ) : IndicationNodeFactory {
-    override fun create(interactionSource: InteractionSource): DelegatableNode = DrawPressNode(interactionSource, glow, strength, dim, shape)
+    override fun create(interactionSource: InteractionSource): DelegatableNode = DrawPressNode(interactionSource, this, cancelOnSlop = false)
 
-    override fun equals(other: Any?) = other is PressHighlight && other.glow == glow && other.strength == strength && other.dim == dim && other.shape == shape
-    override fun hashCode() = ((glow.hashCode() * 31 + strength.hashCode()) * 31 + dim.hashCode()) * 31 + shape.hashCode()
+    override fun equals(other: Any?) = other is PressHighlight && other.glow == glow && other.strength == strength && other.dim == dim && other.shape == shape &&
+        other.wash == wash && other.scale == scale
+
+    override fun hashCode() = ((((glow.hashCode() * 31 + strength.hashCode()) * 31 + dim.hashCode()) * 31 + shape.hashCode()) * 31 + wash.hashCode()) * 31 + scale.hashCode()
 }
 
-/** Feed cards: the squish, no glow (the mock's cards have none). */
-val CardPress = PressHighlight(Color.Transparent, strength = CARD_PRESS_STRENGTH)
+/** Feed cards: the squish (or a slight give), no glow or wash (a wash would fill the gutters round the card). */
+val CardPress = PressHighlight(Color.Transparent, strength = CARD_PRESS_STRENGTH, scale = CARD_PRESS_SCALE)
 
 /** Shelf cards, chips and pills. */
-val TilePress = PressHighlight(Color.Transparent, strength = TILE_PRESS_STRENGTH)
+val TilePress = PressHighlight(Color.Transparent, strength = TILE_PRESS_STRENGTH, scale = TILE_PRESS_SCALE)
 
 /** Icon and text buttons: the full squish, and the dim iOS gives them. */
 val GlyphPress = PressHighlight(Color.Transparent, strength = 1f, dim = GLYPH_PRESS_ALPHA)
 
 /**
  * The same press as a layer around everything after it, for what an indication can't reach:
- * a glass surface, which has to squish with its content. [interactionSource] is the clickable's;
- * the finger itself is watched here, in this modifier's bounds.
+ * a glass surface, which has to squish (or, liquid motion off, scale by [scale]) with its
+ * content. [interactionSource] is the clickable's; the finger itself is watched here, in this
+ * modifier's bounds, for the stretch after it.
  */
-fun Modifier.pressEffect(interactionSource: InteractionSource, strength: Float = 1f, alpha: Float = 1f): Modifier =
-    this then PressEffectElement(interactionSource, strength, alpha)
+fun Modifier.pressEffect(interactionSource: InteractionSource, strength: Float = 1f, alpha: Float = 1f, scale: Float = 1f): Modifier =
+    this then PressEffectElement(interactionSource, strength, alpha, scale)
 
 /**
- * [highlight] as a modifier of its own rather than a clickable's indication. A clickable's
- * indication sees no pointer events, only its press interactions, and in a scrolling list those
- * come a tap-timeout late (or at the release, for a quick tap): so it can't dent at the finger's
- * down or stretch after it while held, as the mock's `pressable` does. Put before the clickable,
- * whose indication is then null; [interactionSource] is the clickable's, for keys and the like.
+ * [highlight] as a modifier of its own rather than a clickable's indication, so it can watch the
+ * finger: the liquid squish stretches after it while held, and lets go the moment it wanders
+ * past the touch slop. Put before the clickable, whose indication is then null;
+ * [interactionSource] is the clickable's, whose Press starts it.
  */
 fun Modifier.pressHighlight(interactionSource: InteractionSource, highlight: PressHighlight): Modifier =
     this then PressHighlightElement(interactionSource, highlight)
 
 private class PressHighlightElement(val source: InteractionSource, val highlight: PressHighlight) : ModifierNodeElement<DrawPressNode>() {
-    override fun create() = DrawPressNode(source, highlight.glow, highlight.strength, highlight.dim, highlight.shape)
+    override fun create() = DrawPressNode(source, highlight, cancelOnSlop = true)
 
     override fun update(node: DrawPressNode) {
         node.updateSource(source)
@@ -134,12 +171,17 @@ private class PressHighlightElement(val source: InteractionSource, val highlight
     override fun hashCode() = source.hashCode() * 31 + highlight.hashCode()
 }
 
-/** The mock's settle-back threshold for a release still counting as on the surface. */
-private const val RELEASE_SLOP_PX = 20f
-
-/** The squish's springs and where the finger is: shared by the indication and the layer. */
-private abstract class SquishNode(private var source: InteractionSource, var strength: Float) :
+/**
+ * Both presses' springs, the clickable's interactions that drive them, and (liquid) where the
+ * finger is: shared by the indication and the layer.
+ */
+private abstract class SquishNode(private var source: InteractionSource, var strength: Float, private val cancelOnSlop: Boolean) :
     Modifier.Node(), CompositionLocalConsumerModifierNode, PointerInputModifierNode {
+    /** Liquid motion off: the press's 0-to-1. */
+    val progress = Animatable(0f)
+    private var moving: Job? = null
+
+    // Liquid motion on: the squish.
     val sx = Animatable(1f)
     val sy = Animatable(1f)
     val tx = Animatable(0f)
@@ -151,8 +193,10 @@ private abstract class SquishNode(private var source: InteractionSource, var str
     private var base = floatArrayOf(1f, 1f, 0f, 0f)
     private var down = Offset.Zero
     private var pointerId = -1L
-    /** Pressed, and not yet let go (by a finger or a key). */
+    /** Pressed, and not yet let go, cancelled, or moved off. */
     private var pressing = false
+    private var pressedAt = 0L
+    private var presses = 0
     private var collecting: Job? = null
 
     override fun onAttach() = collect()
@@ -160,12 +204,16 @@ private abstract class SquishNode(private var source: InteractionSource, var str
     fun updateSource(new: InteractionSource) {
         if (new == source) return
         source = new
-        if (isAttached) collect()
+        if (isAttached) {
+            collect()
+            coroutineScope.launch { progress.snapTo(0f) }
+        }
     }
 
     private val reduce get() = currentValueOf(LocalReduceAnimation)
+    private val liquid get() = currentValueOf(LocalLiquidMotion)
 
-    /** Called when a press starts, for kinds that cache something per press (the glow's brush). */
+    /** Called when a liquid press starts, for kinds that cache something per press (the glow's brush). */
     open fun onPressAt(origin: Offset, size: Size) {}
 
     private fun collect() {
@@ -173,21 +221,52 @@ private abstract class SquishNode(private var source: InteractionSource, var str
         collecting = coroutineScope.launch {
             source.interactions.collect { i ->
                 when (i) {
-                    // A key or an accessibility action, or the first touch of a clickable whose
-                    // indication is made as it's pressed (it missed the finger's down).
-                    is PressInteraction.Press -> if (!pressing) press(i.pressPosition, fromPointer = false)
-                    is PressInteraction.Release -> if (pressing && pointerId == -1L) settle(pop = true)
-                    is PressInteraction.Cancel -> if (pressing) settle(pop = false)
+                    is PressInteraction.Press -> {
+                        pressedAt = System.nanoTime()
+                        if (liquid) {
+                            press(i.pressPosition)
+                        } else {
+                            moving?.cancel()
+                            moving = launch { toProgress(1f, PressSpring) }
+                        }
+                    }
+                    is PressInteraction.Release -> {
+                        val heldMs = (System.nanoTime() - pressedAt) / 1_000_000
+                        if (pressing) {
+                            // A quick tap (in a list, Press and Release come together) still dents before it wobbles.
+                            val press = presses
+                            if (heldMs < MIN_SHOWN_MS) launch { delay(MIN_SHOWN_MS - heldMs); if (press == presses && pressing) settle(pop = true) } else settle(pop = true)
+                        }
+                        if (progress.targetValue != 0f || progress.value != 0f) {
+                            moving?.cancel()
+                            moving = launch {
+                                if (heldMs < MIN_SHOWN_MS) delay(MIN_SHOWN_MS - heldMs)
+                                toProgress(0f, ReleaseSpring)
+                            }
+                        }
+                    }
+                    // Became a scroll, or left the bounds: no hold, straight back.
+                    is PressInteraction.Cancel -> {
+                        if (pressing) settle(pop = false)
+                        if (progress.targetValue != 0f || progress.value != 0f) {
+                            moving?.cancel()
+                            moving = launch { toProgress(0f, ReleaseSpring) }
+                        }
+                    }
                 }
             }
         }
+    }
+
+    private suspend fun toProgress(target: Float, spec: AnimationSpec<Float>) {
+        if (reduce) progress.snapTo(target) else progress.animateTo(target, spec)
     }
 
     private fun to(a: Animatable<Float, *>, target: Float, spec: AnimationSpec<Float>, velocity: Float? = null) {
         coroutineScope.launch { if (velocity == null) a.animateTo(target, spec) else a.animateTo(target, spec, velocity) }
     }
 
-    fun press(at: Offset, fromPointer: Boolean) {
+    private fun press(at: Offset) {
         val w = size.width
         val h = size.height
         val ox = at.x.coerceIn(0f, max(w, 0f))
@@ -195,7 +274,9 @@ private abstract class SquishNode(private var source: InteractionSource, var str
         origin = Offset(ox, oy)
         down = at
         pressing = true
-        if (!fromPointer) pointerId = -1L
+        presses++
+        // The finger that's down is adopted by its first move.
+        pointerId = -1L
         onPressAt(origin, size)
         if (reduce) {
             coroutineScope.launch { hl.snapTo(1f) }
@@ -228,7 +309,7 @@ private abstract class SquishNode(private var source: InteractionSource, var str
     }
 
     /** Let go: a jelly wobble seeded with a kick when it was a tap ([pop]), a plain settle when not. */
-    fun settle(pop: Boolean) {
+    private fun settle(pop: Boolean) {
         pressing = false
         pointerId = -1L
         if (reduce) {
@@ -251,51 +332,40 @@ private abstract class SquishNode(private var source: InteractionSource, var str
         // After everyone else has had it: a scroll or a drag that took the finger shows as consumed.
         if (pass != PointerEventPass.Final) return
         size = bounds.toSize()
-        for (c in pointerEvent.changes) {
-            if (c.changedToDownIgnoreConsumed()) {
-                if (pointerId == -1L && pointerEvent.changes.count { it.pressed } == 1) {
-                    pointerId = c.id.value
-                    press(c.position, fromPointer = true)
-                }
-                continue
-            }
-            if (!pressing) continue
-            // A press whose down this node missed (made as it was pressed) is adopted by its first move.
-            if (pointerId == -1L && c.pressed) pointerId = c.id.value
-            if (c.id.value != pointerId) continue
-            when {
-                c.changedToUpIgnoreConsumed() -> {
-                    val p = c.position
-                    val inside = p.x > -RELEASE_SLOP_PX && p.x < size.width + RELEASE_SLOP_PX && p.y > -RELEASE_SLOP_PX && p.y < size.height + RELEASE_SLOP_PX
-                    settle(pop = inside)
-                }
-                c.positionChangeIgnoreConsumed() != Offset.Zero -> {
-                    // Taken by a scroll or a drag: back without the kick.
-                    if (c.isConsumed) settle(pop = false) else follow(c.position)
-                }
-            }
+        if (!pressing) return
+        if (pointerId == -1L) pointerId = pointerEvent.changes.firstOrNull { it.pressed }?.id?.value ?: return
+        val c = pointerEvent.changes.firstOrNull { it.id.value == pointerId } ?: return
+        // Let go: the clickable's Release or Cancel says how.
+        if (!c.pressed || c.positionChangeIgnoreConsumed() == Offset.Zero) return
+        val slop = currentValueOf(LocalViewConfiguration).touchSlop
+        when {
+            // Taken by a scroll or a drag, or wandered off: back without the kick.
+            c.isConsumed -> settle(pop = false)
+            cancelOnSlop && (c.position - down).getDistance() > slop -> settle(pop = false)
+            else -> follow(c.position)
         }
     }
 
     override fun onCancelPointerInput() {
-        if (pressing && pointerId != -1L) settle(pop = false)
+        if (pressing) settle(pop = false)
     }
-
 }
 
-private class DrawPressNode(
-    source: InteractionSource,
-    private var glow: Color,
-    strength: Float,
-    private var dim: Float,
-    private var shape: Shape,
-) : SquishNode(source, strength), DrawModifierNode {
+private class DrawPressNode(source: InteractionSource, h: PressHighlight, cancelOnSlop: Boolean) : SquishNode(source, h.strength, cancelOnSlop), DrawModifierNode {
+    private var glow = h.glow
+    private var dim = h.dim
+    private var shape = h.shape
+    private var wash = h.wash
+    private var scale = h.scale
+
     fun update(h: PressHighlight) {
-        if (h.glow == glow && h.strength == strength && h.dim == dim && h.shape == shape) return
+        if (h.glow == glow && h.strength == strength && h.dim == dim && h.shape == shape && h.wash == wash && h.scale == scale) return
         glow = h.glow
         strength = h.strength
         dim = h.dim
         shape = h.shape
+        wash = h.wash
+        scale = h.scale
         invalidateDraw()
     }
 
@@ -312,6 +382,8 @@ private class DrawPressNode(
     override fun ContentDrawScope.draw() {
         size.let { if (it != this@DrawPressNode.size && it.width > 0f) this@DrawPressNode.size = it }
         // Read in the draw phase: the press only redraws.
+        val p = progress.value
+        if (p != 0f) return drawClassic(p)
         val g = hl.value
         val sxv = sx.value
         val syv = sy.value
@@ -323,14 +395,7 @@ private class DrawPressNode(
             translate(txv, tyv)
             scale(sxv, syv, origin)
         }) {
-            if (a < 1f) {
-                dimPaint.alpha = a
-                drawContext.canvas.saveLayer(Rect(0f, 0f, size.width, size.height), dimPaint)
-                this@draw.drawContent()
-                drawContext.canvas.restore()
-            } else {
-                this@draw.drawContent()
-            }
+            this@draw.drawDimmed(a)
             val b = brush
             if (b != null && g > 0f) {
                 val alpha = g.coerceIn(0f, 1f)
@@ -338,16 +403,41 @@ private class DrawPressNode(
             }
         }
     }
+
+    /** Liquid motion off: the give, dim and wash, as before liquid motion. */
+    private fun ContentDrawScope.drawClassic(p: Float) {
+        val s = 1f + (scale - 1f) * p
+        val a = 1f + (dim - 1f) * p
+        scale(s) {
+            this@drawClassic.drawDimmed(a)
+            if (wash.alpha > 0f) {
+                val w = wash.copy(alpha = wash.alpha * p.coerceIn(0f, 1f))
+                if (shape == RectangleShape) drawRect(w) else drawOutline(shape.createOutline(size, layoutDirection, this), w)
+            }
+        }
+    }
+
+    private fun ContentDrawScope.drawDimmed(a: Float) {
+        if (a < 1f) {
+            dimPaint.alpha = a
+            drawContext.canvas.saveLayer(Rect(0f, 0f, size.width, size.height), dimPaint)
+            drawContent()
+            drawContext.canvas.restore()
+        } else {
+            drawContent()
+        }
+    }
 }
 
-private class PressEffectElement(val source: InteractionSource, val strength: Float, val alpha: Float) : ModifierNodeElement<LayerPressNode>() {
-    override fun create() = LayerPressNode(source, strength, alpha)
+private class PressEffectElement(val source: InteractionSource, val strength: Float, val alpha: Float, val scale: Float) : ModifierNodeElement<LayerPressNode>() {
+    override fun create() = LayerPressNode(source, strength, alpha, scale)
 
     override fun update(node: LayerPressNode) {
         node.updateSource(source)
-        if (node.strength != strength || node.alpha != alpha) {
+        if (node.strength != strength || node.alpha != alpha || node.scale != scale) {
             node.strength = strength
             node.alpha = alpha
+            node.scale = scale
             node.invalidatePlacement()
         }
     }
@@ -356,23 +446,33 @@ private class PressEffectElement(val source: InteractionSource, val strength: Fl
         name = "pressEffect"
         properties["strength"] = strength
         properties["alpha"] = alpha
+        properties["scale"] = scale
     }
 
-    override fun equals(other: Any?) = other is PressEffectElement && other.source == source && other.strength == strength && other.alpha == alpha
-    override fun hashCode() = (source.hashCode() * 31 + strength.hashCode()) * 31 + alpha.hashCode()
+    override fun equals(other: Any?) = other is PressEffectElement && other.source == source && other.strength == strength && other.alpha == alpha && other.scale == scale
+    override fun hashCode() = ((source.hashCode() * 31 + strength.hashCode()) * 31 + alpha.hashCode()) * 31 + scale.hashCode()
 }
 
-private class LayerPressNode(source: InteractionSource, strength: Float, var alpha: Float) : SquishNode(source, strength), LayoutModifierNode {
+private class LayerPressNode(source: InteractionSource, strength: Float, var alpha: Float, var scale: Float) : SquishNode(source, strength, cancelOnSlop = false), LayoutModifierNode {
     // Read in the layer block: the press only updates the layer's properties.
     private val layer: GraphicsLayerScope.() -> Unit = {
-        val w = this@LayerPressNode.size.width
-        val h = this@LayerPressNode.size.height
-        transformOrigin = if (w > 0f && h > 0f) TransformOrigin(origin.x / w, origin.y / h) else TransformOrigin.Center
-        scaleX = sx.value
-        scaleY = sy.value
-        translationX = tx.value
-        translationY = ty.value
-        this.alpha = (1f + (this@LayerPressNode.alpha - 1f) * hl.value).coerceIn(0f, 1f)
+        val p = progress.value
+        if (p != 0f) {
+            val s = 1f + (scale - 1f) * p
+            scaleX = s
+            scaleY = s
+            // The release's give overshoots past rest; alpha can't go past opaque.
+            this.alpha = (1f + (this@LayerPressNode.alpha - 1f) * p).coerceIn(0f, 1f)
+        } else {
+            val w = this@LayerPressNode.size.width
+            val h = this@LayerPressNode.size.height
+            transformOrigin = if (w > 0f && h > 0f) TransformOrigin(origin.x / w, origin.y / h) else TransformOrigin.Center
+            scaleX = sx.value
+            scaleY = sy.value
+            translationX = tx.value
+            translationY = ty.value
+            this.alpha = (1f + (this@LayerPressNode.alpha - 1f) * hl.value).coerceIn(0f, 1f)
+        }
     }
 
     override fun MeasureScope.measure(measurable: Measurable, constraints: Constraints): MeasureResult {

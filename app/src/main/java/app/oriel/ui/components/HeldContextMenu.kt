@@ -68,6 +68,8 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
@@ -98,6 +100,8 @@ import app.oriel.ui.haptics.rememberHaptics
 import app.oriel.ui.theme.LocalIsDark
 import app.oriel.ui.theme.LocalReduceAnimation
 import app.oriel.ui.theme.LocalReduceBlur
+import app.oriel.ui.theme.LocalLiquidMotion
+import app.oriel.ui.theme.MenuSpring
 import app.oriel.ui.theme.PressHighlight
 import app.oriel.ui.theme.Sp
 import app.oriel.ui.theme.pressHighlight
@@ -146,6 +150,29 @@ private class HoldCapture {
     var pending: HeldItem? = null
     var requests by mutableIntStateOf(0)
     var handled = 0
+    /** This touch has wandered past the touch slop: it's a scroll or a swipe, not a tap or a hold. */
+    var wandered = false
+}
+
+/**
+ * Watches each touch without taking it, and marks [capture] once the finger has gone further
+ * than the touch slop from where it landed. The clickable only gives up a tap or a hold when
+ * someone consumes the move, and a vertical list doesn't take a sideways one (nor a nested
+ * row a vertical one), so without this a sloppy swipe across a card ended in a click or, held
+ * long enough, its menu. On the Initial pass, so the mark is set before the clickable sees the up.
+ */
+private fun Modifier.slopGuard(capture: HoldCapture): Modifier = pointerInput(capture) {
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        capture.wandered = false
+        val slop = viewConfiguration.touchSlop
+        while (true) {
+            val event = awaitPointerEvent(PointerEventPass.Initial)
+            val c = event.changes.firstOrNull { it.id == down.id } ?: break
+            if (!capture.wandered && (c.position - down.position).getDistance() > slop) capture.wandered = true
+            if (!c.pressed) break
+        }
+    }
 }
 
 /**
@@ -166,24 +193,28 @@ fun Modifier.longPressMenuClickable(onClick: () -> Unit, onLongClick: (() -> Uni
     val haptics = rememberHaptics()
     val longClick = onLongClick?.let { held ->
         {
-            capture.coordinates?.takeIf { it.isAttached }?.let { coordinates ->
+            if (!capture.wandered) capture.coordinates?.takeIf { it.isAttached }?.let { coordinates ->
                 val item = HeldItem(coordinates.boundsInWindow())
                 LongPressOrigin.record(item)
                 capture.pending = item
                 capture.requests++
             }
-            haptics.play(Haptic.Expand)
-            held()
+            if (!capture.wandered) {
+                haptics.play(Haptic.Expand)
+                held()
+            }
         }
     }
+    val click = { if (!capture.wandered) onClick() }
     val rowActions = LocalRowActions.current
     // The squish as a modifier of its own, so it has the finger from its down (see pressHighlight).
     val indication = LocalIndication.current
     val squish = indication as? PressHighlight
     return this
         .onPlaced { capture.coordinates = it }
+        .then(if (enabled) Modifier.slopGuard(capture) else Modifier)
         .then(if (squish != null && enabled) Modifier.pressHighlight(interactions, squish) else Modifier)
-        .combinedClickable(interactionSource = interactions, indication = if (squish != null) null else indication, enabled = enabled, onClick = onClick, onLongClick = longClick)
+        .combinedClickable(interactionSource = interactions, indication = if (squish != null) null else indication, enabled = enabled, onClick = click, onLongClick = longClick)
         .then(if (rowActions.isEmpty()) Modifier else Modifier.semantics { customActions = rowActions })
         .drawWithContent {
             drawContent()
@@ -238,6 +269,8 @@ fun <T : Any> HeldContextMenu(
     }
     val reduceMotion = LocalReduceAnimation.current || systemAnimationsOff
     val reduceBlur = LocalReduceBlur.current || !isGlassSupported()
+    // Off, the menu opens as it did before liquid motion: the plate pops, the menu grows from its corner.
+    val liquid = LocalLiquidMotion.current && !reduceMotion
 
     // The mock's three: the plate's lift, and the menu's width and height.
     val progress = remember { Animatable(0f) }
@@ -245,10 +278,10 @@ fun <T : Any> HeldContextMenu(
     val my = remember { Animatable(0f) }
     LaunchedEffect(open) {
         if (open) {
-            if (reduceMotion) {
+            if (!liquid) {
                 launch { mx.snapTo(1f) }
                 launch { my.snapTo(1f) }
-                progress.animateTo(1f, tween(140, easing = LinearEasing))
+                progress.animateTo(1f, if (reduceMotion) tween(140, easing = LinearEasing) else MenuSpring)
             } else {
                 launch { mx.animateTo(1f, Sp.MenuX.unit) }
                 launch { my.animateTo(1f, Sp.MenuY.unit) }
@@ -256,10 +289,10 @@ fun <T : Any> HeldContextMenu(
             }
         } else {
             // Springs, not tweens: a menu reopened mid-close carries on from where it is.
-            if (reduceMotion) {
+            if (!liquid) {
                 launch { mx.snapTo(0f) }
                 launch { my.snapTo(0f) }
-                progress.animateTo(0f, tween(110, easing = FastOutSlowInEasing))
+                progress.animateTo(0f, if (reduceMotion) tween(110, easing = FastOutSlowInEasing) else spring(dampingRatio = 1f, stiffness = 600f))
             } else {
                 launch { mx.animateTo(0f, Sp.MenuClose.unit) }
                 launch { my.animateTo(0f, Sp.MenuClose.unit) }
@@ -269,7 +302,7 @@ fun <T : Any> HeldContextMenu(
         }
     }
     val gooDensity = LocalDensity.current
-    val gooFx = remember(gooDensity) { if (reduceMotion) null else gooEffect(with(gooDensity) { 6.dp.toPx() }) }
+    val gooFx = remember(gooDensity, liquid) { if (!liquid) null else gooEffect(with(gooDensity) { 6.dp.toPx() }) }
     val gooGeometry = remember { MenuGooGeometry() }
     BackHandler(enabled = open, onBack = onDismiss)
 
@@ -333,7 +366,7 @@ fun <T : Any> HeldContextMenu(
                     .graphicsLayer {
                         // The rows come in once the menu has mostly grown, dropping the last 8 dp.
                         val a = smoothstep(0.45f, 0.85f, minOf(mx.value, my.value))
-                        if (!reduceMotion) {
+                        if (liquid) {
                             alpha = a
                             translationY = (1f - a) * -8.dp.toPx()
                         }
@@ -417,11 +450,9 @@ fun <T : Any> HeldContextMenu(
         val fromDy = itemBounds.center.y - visualCenterY
         layout(width, height) {
             backdropPlaceable.place(0, 0)
-            card.placeWithLayer(cardX, cardY) {
+            if (liquid) card.placeWithLayer(cardX, cardY) {
                 val p = progress.value
-                if (reduceMotion) {
-                    scaleX = liftScale; scaleY = liftScale; alpha = p.coerceIn(0f, 1f)
-                } else {
+                run {
                     // Lifts 3.5% past its plate size, from its bottom edge, with the spring's pop.
                     transformOrigin = TransformOrigin(0.5f, 1f)
                     val scale = lerp(1f, liftScale, p.coerceIn(0f, 1f)) * (1f + 0.035f * p)
@@ -430,6 +461,33 @@ fun <T : Any> HeldContextMenu(
                     translationY = lerp(fromDy, 0f, p)
                     alpha = (p * 3f).coerceIn(0f, 1f)
                 }
+            }
+            if (!liquid) {
+                // As before liquid motion: the plate scales up into place, the menu out of its near corner.
+                card.placeWithLayer(cardX, cardY) {
+                    val p = progress.value
+                    if (reduceMotion) {
+                        scaleX = liftScale; scaleY = liftScale; alpha = p.coerceIn(0f, 1f)
+                    } else {
+                        val scale = lerp(1f, liftScale, p)
+                        scaleX = scale; scaleY = scale
+                        translationX = lerp(fromDx, 0f, p)
+                        translationY = lerp(fromDy, 0f, p)
+                        alpha = (p * 3f).coerceIn(0f, 1f)
+                    }
+                }
+                menu.placeWithLayer(menuX, menuY) {
+                    val p = progress.value
+                    alpha = ((p - 0.1f) / 0.9f).coerceIn(0f, 1f)
+                    if (!reduceMotion) {
+                        transformOrigin = TransformOrigin(if (alignEnd) 1f else 0f, if (menuBelow) 0f else 1f)
+                        val scale = lerp(0.55f, 1f, p)
+                        scaleX = scale; scaleY = scale
+                        translationX = lerp(fromDx, 0f, p)
+                        translationY = lerp(fromDy, 0f, p)
+                    }
+                }
+                return@layout
             }
             // The mock's menu grows from 36 dp in from its near corner, at the plate's edge.
             val originX = 36.dp.toPx()
@@ -443,9 +501,7 @@ fun <T : Any> HeldContextMenu(
             }
             menu.placeWithLayer(menuX, menuY) {
                 val p = progress.value
-                if (reduceMotion) {
-                    alpha = p.coerceIn(0f, 1f)
-                } else {
+                run {
                     if (gooFx == null) {
                         // No goo to grow the fill: the menu itself scales out of its corner.
                         transformOrigin = TransformOrigin(ox / menu.width.coerceAtLeast(1), oy / menu.height.coerceAtLeast(1))
