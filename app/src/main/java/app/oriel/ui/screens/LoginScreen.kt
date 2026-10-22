@@ -153,7 +153,7 @@ fun LoginScreen() {
                             loading = false
                             canGoBack = view.canGoBack()
                             val page = url.toUri()
-                            if (finishing || page.scheme != "https" || (page.host != "www.youtube.com" && page.host != "m.youtube.com")) return
+                            if (finishing || page.scheme != "https" || page.host !in YOUTUBE_PAGES) return
                             val cookie = CookieManager.getInstance().getCookie("https://www.youtube.com") ?: return
                             if ("SAPISID" !in cookie) return
                             finishing = true
@@ -228,13 +228,18 @@ internal fun loginNavigation(url: Uri, isMainFrame: Boolean): LoginNavigation = 
     else -> LoginNavigation.BLOCK
 }
 
-private val CONSENT_HOST = Regex("""consent\.(youtube\.com|google\.[a-z]{2,3}(\.[a-z]{2})?)""")
+/** Where sign-in has landed back on YouTube, signed in. */
+private val YOUTUBE_PAGES = setOf("www.youtube.com", "m.youtube.com", "youtube.com")
 
-/** Google's sign-in and its consent pages, and YouTube, where it returns. */
-private fun isSignInHost(host: String?): Boolean = host != null && (
-    host == "accounts.google.com" || host == "google.com" || host.endsWith(".google.com") ||
-        host == "www.youtube.com" || host == "m.youtube.com" ||
-        // Where Google sets the youtube.com session on its way back.
-        host == "accounts.youtube.com" ||
-        CONSENT_HOST.matches(host)
-    )
+/** google.com and Google's country domains (google.co.th, google.com.au, google.de), and their subdomains. */
+private val GOOGLE_HOST = Regex("""(?:[a-z0-9-]+\.)*google\.(?:com|co\.[a-z]{2}|com\.[a-z]{2}|[a-z]{2,3})""")
+
+/**
+ * Google's sign-in, YouTube, and the hops between: Google sets the session on each of its domains
+ * on the way back (accounts.google.co.th, accounts.youtube.com), and then YouTube, on whichever
+ * host it redirects to. Any of these sent to the browser left the sign-in unable to finish.
+ */
+private fun isSignInHost(host: String?): Boolean {
+    val h = host?.lowercase() ?: return false
+    return GOOGLE_HOST.matches(h) || h == "youtube.com" || h.endsWith(".youtube.com")
+}

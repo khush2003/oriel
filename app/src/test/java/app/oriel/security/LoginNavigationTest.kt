@@ -24,6 +24,12 @@ class LoginNavigationTest {
             "https://m.youtube.com/",
             "https://consent.youtube.com/m",
             "https://consent.google.co.uk/",
+            // Google sets the session on its country domain and YouTube's on the way back.
+            "https://accounts.google.co.th/accounts/SetSID",
+            "https://www.google.com.au/accounts/SetSID",
+            "https://accounts.google.de/accounts/SetSID",
+            "https://youtube.com/signin?action_handle_signin=true",
+            "https://www.youtube.com/signin?action_handle_signin=true",
         ).forEach { assertEquals(it, LoginNavigation.LOAD, nav(it)) }
     }
 
@@ -39,6 +45,9 @@ class LoginNavigationTest {
             "https://evilgoogle.com/",
             "https://www.youtube.com.example.net/",
             "https://notyoutube.com/",
+            "https://google.co.th.example.net/",
+            "https://mygoogle.co.th/",
+            "https://youtube.com.example.net/",
         ).forEach { assertEquals(it, LoginNavigation.EXTERNAL, nav(it)) }
     }
 
