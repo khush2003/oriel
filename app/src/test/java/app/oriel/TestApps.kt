@@ -38,7 +38,10 @@ class TestApp : OrielApp() {
         super.onCreate()
     }
 
-    override fun startGraph(graph: AppGraph) = Unit
+    override fun startGraph(graph: AppGraph) {
+        // The first-run liquid motion question would otherwise pop up over any frame left running a few seconds.
+        graph.settings.update { it.copy(liquidMotionAsked = true) }
+    }
 
     companion object {
         @Volatile var hang = false

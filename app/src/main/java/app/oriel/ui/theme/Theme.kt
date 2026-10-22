@@ -139,6 +139,7 @@ fun OrielTheme(
     reduceAnimation: Boolean = false,
     reduceBlur: Boolean = false,
     liquidGlass: Boolean = true,
+    liquidMotion: Boolean = false,
     forceDark: Boolean = false,
     content: @Composable () -> Unit,
 ) {
@@ -151,8 +152,10 @@ fun OrielTheme(
     MaterialTheme(colorScheme = if (dark) DarkColors else LightColors, typography = OrielTypography) {
         CompositionLocalProvider(
             LocalIsDark provides dark,
-            androidx.compose.foundation.LocalIndication provides remember(dark) { PressHighlight(pressGlow(dark), strength = ROW_PRESS_STRENGTH) },
+            androidx.compose.foundation.LocalIndication provides remember(dark) { PressHighlight(pressGlow(dark), strength = ROW_PRESS_STRENGTH, wash = rowWash(dark)) },
             LocalReduceAnimation provides reduceAnimation,
+            // Never under Reduce motion, the app's or the system's (animations off in Developer options or Accessibility).
+            LocalLiquidMotion provides (liquidMotion && !reduceAnimation && !systemAnimationsOff()),
             LocalReduceBlur provides reduceBlur,
             LocalLiquidGlassEnabled provides (liquidGlass && !reduceBlur && app.oriel.ui.glass.isGlassSupported()),
             LocalOverscrollFactory provides app.oriel.ui.glass.rememberIosOverscrollFactory(),
@@ -169,10 +172,19 @@ fun DarkIsland(content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = DarkColors, typography = MaterialTheme.typography) {
         CompositionLocalProvider(
             LocalIsDark provides true,
-            androidx.compose.foundation.LocalIndication provides remember { PressHighlight(pressGlow(true), strength = ROW_PRESS_STRENGTH) },
+            androidx.compose.foundation.LocalIndication provides remember { PressHighlight(pressGlow(true), strength = ROW_PRESS_STRENGTH, wash = rowWash(true)) },
             androidx.compose.material3.LocalContentColor provides DarkColors.onBackground,
             content = content,
         )
+    }
+}
+
+/** Whether the system has animations turned off (animator duration scale 0). */
+@Composable
+private fun systemAnimationsOff(): Boolean {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    return remember(context) {
+        runCatching { android.provider.Settings.Global.getFloat(context.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f }.getOrDefault(false)
     }
 }
 

@@ -175,12 +175,18 @@ fun SettingsScreen() {
             }
         }
         item(key = "appearance") {
-            SettingsGroup(header = "Appearance") {
+            SettingsGroup(header = "Appearance", footer = LIQUID_FOOTER) {
                 Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
                     SegmentedControl(ThemeMode.entries, s.theme, { it.label }, { v -> set { it.copy(theme = v) } }, Modifier.weight(1f))
                 }
                 RowDivider(inset = false)
                 SwitchRow("Liquid glass", s.liquidGlass, { v -> set { it.copy(liquidGlass = v) } }, OrielIcons.Fill, subtitle = if (android.os.Build.VERSION.SDK_INT < 31) "Needs Android 12; frosted bars are used instead" else "Refracting glass bars and buttons")
+                RowDivider()
+                SwitchRow(
+                    "Liquid motion", s.liquidMotion && !s.reduceAnimation, { v -> set { it.copy(liquidMotion = v, liquidMotionAsked = true) } }, OrielIcons.Liquid,
+                    subtitle = if (s.reduceAnimation) "Off while Reduce motion is on" else "Interactions stretch, morph and flow like liquid. May use more battery and be slower on older phones",
+                    enabled = !s.reduceAnimation,
+                )
                 RowDivider()
                 SwitchRow("Reduce motion", s.reduceAnimation, { v -> set { it.copy(reduceAnimation = v) } }, OrielIcons.Speed)
                 RowDivider()
@@ -377,3 +383,8 @@ private val LICENCES = listOf(
     "Inter typeface, © 2016 The Inter Project Authors" to "SIL Open Font License 1.1",
     "SponsorBlock data" to "CC BY-NC-SA 4.0",
 )
+
+/** What the two liquid switches do, under the Appearance group. */
+private const val LIQUID_FOOTER = "Liquid glass is how the bars and buttons look: glass that bends what's behind it. " +
+    "Liquid motion is how things move: presses squish, selections flow from tab to tab, and sheets and menus grow out of what opened them. " +
+    "Each works without the other."

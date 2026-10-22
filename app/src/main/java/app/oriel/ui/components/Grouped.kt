@@ -59,7 +59,12 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.ui.geometry.Offset
+import app.oriel.ui.theme.GlassSpring
 import app.oriel.ui.theme.LiquidPill
+import app.oriel.ui.theme.LocalLiquidMotion
+import app.oriel.ui.theme.motion
 import app.oriel.ui.theme.LocalReduceAnimation
 import app.oriel.ui.theme.Sp
 import kotlinx.coroutines.launch
@@ -158,13 +163,39 @@ fun SwitchRow(title: String, checked: Boolean, onChange: (Boolean) -> Unit, icon
 }
 
 /**
- * iOS's switch: a 51 x 31 capsule, the track filling with primary, and the mock's knob: a blob
- * on two edge springs that widens under the finger (7 dp toward the other side) and stretches
- * along its way across, necking a little. With [onChange] the knob can be pressed, tapped and
- * dragged itself; without, it's drawing only and the row takes the tap.
+ * iOS's switch: a 51 x 31 capsule whose white knob springs across, the track filling with
+ * primary as it goes. With liquid motion it's [LiquidSwitch]. The row takes the tap.
  */
 @Composable
 fun IosSwitch(checked: Boolean, enabled: Boolean = true, onChange: ((Boolean) -> Unit)? = null) {
+    if (LocalLiquidMotion.current) return LiquidSwitch(checked, enabled, onChange)
+    val t by animateFloatAsState(if (checked) 1f else 0f, motion(GlassSpring), label = "switch")
+    val on = MaterialTheme.colorScheme.primary
+    val off = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)
+    Box(
+        Modifier
+            .size(51.dp, 31.dp)
+            .graphicsLayer { alpha = if (enabled) 1f else 0.4f }
+            .drawBehind {
+                val r = size.height / 2
+                drawRoundRect(lerp(off, on, t.coerceIn(0f, 1f)), cornerRadius = CornerRadius(r))
+                val inset = 2.dp.toPx()
+                val knob = size.height - inset * 2
+                val x = inset + (size.width - knob - inset * 2) * t
+                drawCircle(Color.Black.copy(alpha = 0.14f), knob / 2 + 0.5.dp.toPx(), Offset(x + knob / 2, size.height / 2 + 1.dp.toPx()))
+                drawCircle(if (on == Color.White && t > 0.5f) Color.Black else Color.White, knob / 2, Offset(x + knob / 2, size.height / 2))
+            },
+    )
+}
+
+/**
+ * The switch with liquid motion: the mock's knob, a blob on two edge springs that widens under
+ * the finger (7 dp toward the other side) and stretches along its way across, necking a little.
+ * With [onChange] the knob can be pressed, tapped and dragged itself; without, it's drawing only
+ * and the row takes the tap. A touch that becomes the list's scroll toggles nothing.
+ */
+@Composable
+private fun LiquidSwitch(checked: Boolean, enabled: Boolean, onChange: ((Boolean) -> Unit)?) {
     val reduce = LocalReduceAnimation.current
     val density = LocalDensity.current.density
     val scope = rememberCoroutineScope()
@@ -205,16 +236,22 @@ fun IosSwitch(checked: Boolean, enabled: Boolean = true, onChange: ((Boolean) ->
                         // Pressed, the knob widens toward where it would go.
                         if (was) pill.moveTo(scope, 15f * density, 49f * density, reduce = reduce) else pill.moveTo(scope, 2f * density, 36f * density, reduce = reduce)
                         var dragging = false
+                        var cancelled = false
                         var x = 0f
                         var moved = 0f
+                        var movedY = 0f
                         while (true) {
                             val event = awaitPointerEvent()
                             val c = event.changes.firstOrNull { it.id == down.id } ?: break
                             if (!c.pressed) {
-                                c.consume()
+                                if (!cancelled) c.consume()
                                 break
                             }
+                            // The list's scroll took it, or it went off up or down: no toggle.
+                            if (!dragging && (c.isConsumed || kotlin.math.abs(movedY) > viewConfiguration.touchSlop)) cancelled = true
+                            if (cancelled) { movedY += c.positionChange().y; continue }
                             moved += c.positionChange().x
+                            movedY += c.positionChange().y
                             if (!dragging && kotlin.math.abs(moved) > viewConfiguration.touchSlop) dragging = true
                             if (dragging) {
                                 c.consume()
@@ -224,7 +261,11 @@ fun IosSwitch(checked: Boolean, enabled: Boolean = true, onChange: ((Boolean) ->
                                 fillTo(x > 25.5f)
                             }
                         }
-                        val now = if (dragging) x > 25.5f else !was
+                        val now = when {
+                            cancelled -> was
+                            dragging -> x > 25.5f
+                            else -> !was
+                        }
                         shown[0] = now
                         rest(now)
                         fillTo(now)

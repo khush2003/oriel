@@ -31,6 +31,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
@@ -46,7 +47,9 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.navigationevent.NavigationEventTransitionState
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
+import app.oriel.ui.theme.LocalLiquidMotion
 import app.oriel.ui.theme.Sp
+import androidx.compose.animation.core.Spring
 import app.oriel.ui.theme.SmoothedVelocity
 import app.oriel.ui.theme.LiquidEdgeShape
 import app.oriel.ui.theme.liquidEdgeCurve
@@ -119,7 +122,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.snapshotFlow
 import app.oriel.ui.screens.ReportSheet
+import app.oriel.ui.screens.LiquidMotionPrompt
 import app.oriel.ui.screens.UpdateHost
+import app.oriel.ui.screens.UpdatePromptGate
 import app.oriel.util.CrashLog
 import app.oriel.util.ReportKind
 
@@ -151,14 +156,26 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
     val backdrop = rememberLayerBackdrop()
     val record = backdropWanted()
     val reduce = LocalReduceAnimation.current
+    val liquid = LocalLiquidMotion.current
     // The page underneath a push dims toward black, as UIKit's does, in light as in dark.
-    val dim = if (LocalIsDark.current) PUSH_DIM_DARK else PUSH_DIM_LIGHT
-    val backSwipe = rememberBackSwipe()
+    val dim = when {
+        liquid -> PUSH_DIM_LIQUID
+        LocalIsDark.current -> PUSH_DIM_DARK
+        else -> PUSH_DIM_LIGHT
+    }
+    val push = if (liquid) LiquidPush else ClassicPush
+    val backSwipe = rememberBackSwipe(liquid)
 
     LaunchedEffect(app) { app.graph.actions.notices.collectLatest { app.notice(it) } }
+    var askLiquid by remember { mutableStateOf(false) }
+    val updateGate = remember { UpdatePromptGate() }
+    // The update offer waits while the liquid question is up, as everything waits for an alert.
+    updateGate.held = askLiquid
     // Usage counts are opt-in: asked once, a little after the first launch settles, and only in
     // builds that can report. Either answer is kept; Settings › Privacy changes it later.
     // Then, never at the same time, a crash since last time is offered for reporting, once.
+    // Last, once (on a fresh install, and once for everyone who had the app before it), whether
+    // to try liquid motion; Settings › Appearance changes it later.
     LaunchedEffect(app) {
         val graph = app.graph
         if (graph.telemetry.available && graph.settings.current.telemetry == null) {
@@ -178,19 +195,32 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
             )
         }
         graph.crashesChecked.await()
-        val crash = withContext(Dispatchers.IO) { CrashLog.unasked(graph.context) } ?: return@LaunchedEffect
-        kotlinx.coroutines.delay(1_500)
-        snapshotFlow { app.alert == null && app.report == null }.first { it }
-        // Remembered before it's shown: if showing it went wrong too, it isn't asked again and again.
-        withContext(Dispatchers.IO) { CrashLog.markAsked(graph.context, crash.time) }
-        app.alert = AlertSpec(
-            "Oriel closed unexpectedly",
-            "A note of what went wrong is kept on this phone. Sending it helps get it fixed; you'll see everything in it first.",
-            listOf(
-                AlertAction("Not now"),
-                AlertAction("Report…", emphasized = true) { app.reportProblem(ReportKind.CRASH) },
-            ),
-        )
+        val crash = withContext(Dispatchers.IO) { CrashLog.unasked(graph.context) }
+        if (crash != null) {
+            kotlinx.coroutines.delay(1_500)
+            snapshotFlow { app.alert == null && app.report == null }.first { it }
+            // Remembered before it's shown: if showing it went wrong too, it isn't asked again and again.
+            withContext(Dispatchers.IO) { CrashLog.markAsked(graph.context, crash.time) }
+            app.alert = AlertSpec(
+                "Oriel closed unexpectedly",
+                "A note of what went wrong is kept on this phone. Sending it helps get it fixed; you'll see everything in it first.",
+                listOf(
+                    AlertAction("Not now"),
+                    AlertAction("Report…", emphasized = true) { app.reportProblem(ReportKind.CRASH) },
+                ),
+            )
+        }
+        if (graph.settings.current.liquidMotionAsked) return@LaunchedEffect
+        // Over nothing else: no alert, sheet, menu, update offer or watch page, and the app settled a moment.
+        val quiet = {
+            app.alert == null && app.report == null && app.sheetItem == null && app.saveTarget == null && app.menuItem == null &&
+                app.renameTarget == null && !app.sheet.expanded && !updateGate.showing
+        }
+        kotlinx.coroutines.delay(3_000)
+        snapshotFlow { quiet() }.first { it }
+        kotlinx.coroutines.delay(1_000)
+        snapshotFlow { quiet() }.first { it }
+        askLiquid = true
     }
     // Where a crash happens, for its report: the page on top, and whether the watch page covers it.
     val page = top?.route?.substringBefore('/')?.substringBefore('?')?.substringAfterLast('.')?.removeSuffix("Route")
@@ -220,12 +250,12 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
                     startDestination = HomeRoute,
                     modifier = Modifier.fillMaxSize(),
                     // Reduce motion snaps pages in and out, as it does every other animation.
-                    enterTransition = { if (reduce) EnterTransition.None else push(true, app.tabSwitchEntry, dim) },
-                    exitTransition = { if (reduce) ExitTransition.None else pushAway(true, app.tabSwitchEntry, dim) },
-                    popEnterTransition = { if (reduce) EnterTransition.None else push(false, app.tabSwitchEntry, dim) },
-                    popExitTransition = { if (reduce) ExitTransition.None else pushAway(false, app.tabSwitchEntry, dim) },
+                    enterTransition = { if (reduce) EnterTransition.None else push(push, true, app.tabSwitchEntry, dim) },
+                    exitTransition = { if (reduce) ExitTransition.None else pushAway(push, true, app.tabSwitchEntry, dim) },
+                    popEnterTransition = { if (reduce) EnterTransition.None else push(push, false, app.tabSwitchEntry, dim) },
+                    popExitTransition = { if (reduce) ExitTransition.None else pushAway(push, false, app.tabSwitchEntry, dim) },
                     // The edge swipe seeks these with the finger, and on release the rest plays on from there.
-                    predictivePopEnterTransition = { if (reduce) EnterTransition.None else swipeBackIn(app.tabSwitchEntry, dim) },
+                    predictivePopEnterTransition = { if (reduce) EnterTransition.None else swipeBackIn(push, app.tabSwitchEntry, dim) },
                     predictivePopExitTransition = { if (reduce) ExitTransition.None else swipeBackOut(app.tabSwitchEntry) },
                 ) {
                     composable<HomeRoute> { LiquidPage(backSwipe) { HomeScreen() } }
@@ -291,29 +321,44 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
                     app.renameTarget = null
                 }
             }
-            UpdateHost(app)
+            UpdateHost(app, updateGate)
             AlertHost(app)
+            if (askLiquid) {
+                LiquidMotionPrompt { on ->
+                    askLiquid = false
+                    app.graph.settings.update { it.copy(liquidMotion = on, liquidMotionAsked = true) }
+                }
+            }
             NoticeHost(app, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 6.dp))
         }
     }
 }
 
 /**
- * The push, as the mock's: the new page slides in whole from the right over the old one, which
- * drifts 28% of the way left and dims 40% toward the black behind it rather than fading away.
- * Push and pop share the mock's push spring (response 0.5, damping 0.88), a whisker of overshoot.
+ * How pages push: the new page slides in whole from the right over the old one, which drifts
+ * [drift] of the way left and dims toward the black behind it rather than fading away. Push and
+ * pop share one spring, as UIKit's do; the dim rides the same one so the two finish together.
  */
-private val PushSpring = Sp.Push.spec(IntOffset.VisibilityThreshold)
+private class PushStyle(val spring: androidx.compose.animation.core.FiniteAnimationSpec<IntOffset>, val dimSpring: androidx.compose.animation.core.FiniteAnimationSpec<Float>, val drift: Float, val liquid: Boolean)
 
-/** The page beneath's dim, on the same spring as the slide so the two finish together. */
-private val PushDimSpring = Sp.Push.unit
+/**
+ * iOS push: critically damped, the page beneath drifting a third of the way. Kept here rather
+ * than in Motion.kt: it's the one IntOffset spring, and only pushes use it.
+ */
+private val ClassicPush = PushStyle(
+    spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 380f, visibilityThreshold = IntOffset.VisibilityThreshold),
+    spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 380f),
+    drift = 1f / 3f,
+    liquid = false,
+)
 
-/** How far the page beneath drifts, as a fraction of the width (the mock's 0.28). */
-private const val PUSH_DRIFT = 0.28f
+/** The mock's push: its spring (response 0.5, damping 0.88, a whisker of overshoot), the page beneath drifting 28%. */
+private val LiquidPush = PushStyle(Sp.Push.spec(IntOffset.VisibilityThreshold), Sp.Push.unit, drift = 0.28f, liquid = true)
 
-/** How opaque the page beneath stays over black: the mock's 40% dim, in both modes. */
-private const val PUSH_DIM_DARK = 0.6f
-private const val PUSH_DIM_LIGHT = 0.6f
+/** How opaque the page beneath stays over black: about UIKit's dimming in each mode, and the mock's 40% in both. */
+private const val PUSH_DIM_DARK = 0.7f
+private const val PUSH_DIM_LIGHT = 0.88f
+private const val PUSH_DIM_LIQUID = 0.6f
 
 /**
  * The edge swipe's curve. It's seeked by the gesture's progress, so near the start it has to be
@@ -331,23 +376,29 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.isTabSwitch(tabSwi
  * back, with the page beneath kept opaque until it's done: fading both let the black behind
  * show through mid-way.
  */
-private fun AnimatedContentTransitionScope<NavBackStackEntry>.push(forward: Boolean, tabSwitchEntry: String?, dim: Float): EnterTransition {
-    // A tab switch crossfades as the mock's do, the incoming page growing from 97%.
-    if (isTabSwitch(tabSwitchEntry)) return if (forward) fadeIn(Sp.TabFade.unit) + scaleIn(Sp.TabFade.unit, initialScale = 0.97f) else EnterTransition.None
-    return if (forward) slideInHorizontally(PushSpring) { it }
-    else slideInHorizontally(PushSpring) { -(it * PUSH_DRIFT).toInt() } + fadeIn(PushDimSpring, initialAlpha = dim)
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.push(style: PushStyle, forward: Boolean, tabSwitchEntry: String?, dim: Float): EnterTransition {
+    if (isTabSwitch(tabSwitchEntry)) {
+        if (!forward) return EnterTransition.None
+        // Liquid, a tab switch crossfades as the mock's do, the incoming page growing from 97%.
+        return if (style.liquid) fadeIn(Sp.TabFade.unit) + scaleIn(Sp.TabFade.unit, initialScale = 0.97f) else fadeIn(tween(160))
+    }
+    return if (forward) slideInHorizontally(style.spring) { it }
+    else slideInHorizontally(style.spring) { drift(it, style) } + fadeIn(style.dimSpring, initialAlpha = dim)
 }
 
-private fun AnimatedContentTransitionScope<NavBackStackEntry>.pushAway(forward: Boolean, tabSwitchEntry: String?, dim: Float): ExitTransition {
+/** The page beneath's offset at full drift, for a page [width] wide. */
+private fun drift(width: Int, style: PushStyle): Int = if (style.liquid) -(width * style.drift).toInt() else -width / 3
+
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.pushAway(style: PushStyle, forward: Boolean, tabSwitchEntry: String?, dim: Float): ExitTransition {
     if (isTabSwitch(tabSwitchEntry)) return if (forward) ExitTransition.KeepUntilTransitionsFinished else fadeOut(tween(160))
-    return if (forward) slideOutHorizontally(PushSpring) { -(it * PUSH_DRIFT).toInt() } + fadeOut(PushDimSpring, targetAlpha = dim)
-    else slideOutHorizontally(PushSpring) { it }
+    return if (forward) slideOutHorizontally(style.spring) { drift(it, style) } + fadeOut(style.dimSpring, targetAlpha = dim)
+    else slideOutHorizontally(style.spring) { it }
 }
 
-private fun AnimatedContentTransitionScope<NavBackStackEntry>.swipeBackIn(tabSwitchEntry: String?, dim: Float): EnterTransition {
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.swipeBackIn(style: PushStyle, tabSwitchEntry: String?, dim: Float): EnterTransition {
     if (isTabSwitch(tabSwitchEntry)) return EnterTransition.None
     val spec = tween<IntOffset>(SWIPE_BACK_MS, easing = SwipeBackEasing)
-    return slideInHorizontally(spec) { -(it * PUSH_DRIFT).toInt() } + fadeIn(tween(SWIPE_BACK_MS, easing = SwipeBackEasing), initialAlpha = dim)
+    return slideInHorizontally(spec) { drift(it, style) } + fadeIn(tween(SWIPE_BACK_MS, easing = SwipeBackEasing), initialAlpha = dim)
 }
 
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.swipeBackOut(tabSwitchEntry: String?): ExitTransition {
@@ -371,11 +422,12 @@ private class BackSwipe {
 }
 
 @Composable
-private fun rememberBackSwipe(): BackSwipe {
+private fun rememberBackSwipe(enabled: Boolean): BackSwipe {
     val swipe = remember { BackSwipe() }
     val owner = LocalNavigationEventDispatcherOwner.current
     val density = LocalDensity.current.density
-    LaunchedEffect(owner) {
+    LaunchedEffect(owner, enabled) {
+        if (!enabled) return@LaunchedEffect
         val dispatcher = owner?.navigationEventDispatcher ?: return@LaunchedEffect
         coroutineScope {
             dispatcher.transitionState.collect { state ->
@@ -430,7 +482,7 @@ private class PageEdge {
  */
 @Composable
 private fun LiquidPage(swipe: BackSwipe, content: @Composable () -> Unit) {
-    if (LocalReduceAnimation.current) return content()
+    if (!LocalLiquidMotion.current) return content()
     val edge = remember { PageEdge() }
     val density = LocalDensity.current
     val maxBulge = with(density) { 40.dp.toPx() }

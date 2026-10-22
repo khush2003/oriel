@@ -35,13 +35,6 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
-
-/**
- * Whether the liquid motion is on: the "Liquid motion" setting (off by default), and never under
- * Reduce motion. Off, every interaction behaves as it did before liquid motion existed. Liquid
- * glass is a separate setting.
- */
-val LocalLiquidMotion = staticCompositionLocalOf { true }
 import kotlin.math.tanh
 
 /*
@@ -51,6 +44,13 @@ import kotlin.math.tanh
  * purpose: parity with it is the spec, so don't soften them here. Everything is meant to be read
  * in the draw or layout phase (graphicsLayer, drawBehind, layout lambdas), never to recompose.
  */
+
+/**
+ * Whether the liquid motion is on: the "Liquid motion" setting (off by default), and never under
+ * Reduce motion. Off, every interaction behaves as it did before liquid motion existed. Liquid
+ * glass is a separate setting.
+ */
+val LocalLiquidMotion = staticCompositionLocalOf { false }
 
 /**
  * One of the mock's springs, described as SwiftUI and the mock's `cfg(response, damping)` do:

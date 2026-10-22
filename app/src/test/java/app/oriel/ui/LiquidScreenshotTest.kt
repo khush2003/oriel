@@ -88,7 +88,7 @@ class LiquidScreenshotTest {
 
     @Composable
     private fun Frame(theme: ThemeMode, playing: Boolean, setup: suspend (AppState) -> Unit) {
-        OrielTheme(theme, reduceAnimation = false, liquidGlass = true) {
+        OrielTheme(theme, reduceAnimation = false, liquidGlass = true, liquidMotion = true) {
             val nav = rememberNavController()
             val scope = rememberCoroutineScope()
             val activity = androidx.activity.compose.LocalActivity.current!!

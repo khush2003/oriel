@@ -6,6 +6,7 @@ import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.automirrored.rounded.FormatListBulleted
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.WaterDrop
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.BugReport
 import androidx.compose.material.icons.rounded.Check
@@ -144,5 +145,6 @@ object OrielIcons {
     val Report = Icons.Rounded.BugReport
     val Sound = Icons.Rounded.MusicNote
     val Fill = Icons.Rounded.NorthWest
+    val Liquid = Icons.Rounded.WaterDrop
     val Person = Icons.Rounded.Person
 }

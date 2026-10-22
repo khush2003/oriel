@@ -80,6 +80,10 @@ data class SettingsState(
     // Appearance
     val theme: ThemeMode = ThemeMode.SYSTEM,
     val liquidGlass: Boolean = true,
+    // Interactions that stretch and morph like liquid: off until the person turns it on.
+    val liquidMotion: Boolean = false,
+    // Whether the first-run question about liquid motion has been answered, either way.
+    val liquidMotionAsked: Boolean = false,
     val reduceAnimation: Boolean = false,
     val reduceBlur: Boolean = false,
     val highRefreshRate: Boolean = true,

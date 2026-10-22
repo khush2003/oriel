@@ -16,6 +16,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,13 +68,20 @@ class UpdateActions(
     val openSettings: () -> Unit,
 )
 
+/** Whether the update sheet is up ([showing]), and whether it has to wait its turn ([held]) behind another first-run question. */
+@Stable
+class UpdatePromptGate {
+    var showing by mutableStateOf(false)
+    var held by mutableStateOf(false)
+}
+
 /**
  * Runs updates for the app's frame: the daily check once the UI is up, results as notices,
  * carrying on when the person comes back from "Install unknown apps", starting Android's
  * confirmation, and the sheet when there's something to offer.
  */
 @Composable
-fun UpdateHost(app: AppState) {
+fun UpdateHost(app: AppState, gate: UpdatePromptGate = remember { UpdatePromptGate() }) {
     val context = app.activity
     val updates = Updates.get(context)
     val state by updates.state.collectAsState()
@@ -98,10 +107,12 @@ fun UpdateHost(app: AppState) {
     var showing by remember { mutableStateOf(false) }
     LaunchedEffect(state.prompt) {
         if (!state.prompt) { showing = false; return@LaunchedEffect }
-        snapshotFlow { app.alert == null && app.report == null }.first { it }
+        snapshotFlow { app.alert == null && app.report == null && !gate.held }.first { it }
         showing = true
     }
-    if (showing && state.prompt && release != null && apk != null) {
+    val offering = showing && state.prompt && release != null && apk != null
+    SideEffect { gate.showing = offering }
+    if (offering) {
         UpdateSheet(
             release, apk, state.step,
             UpdateActions(

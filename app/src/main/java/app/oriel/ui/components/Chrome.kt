@@ -110,6 +110,13 @@ import app.oriel.ui.theme.project
 import app.oriel.ui.theme.rubber
 import app.oriel.ui.theme.smoothstep
 import kotlin.math.roundToInt
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.runtime.mutableIntStateOf
+import app.oriel.ui.theme.GLASS_PRESS_SCALE
+import app.oriel.ui.theme.LocalLiquidMotion
+import app.oriel.ui.theme.PressHighlight
 
 // ---- geometry ------------------------------------------------------------------------------
 
@@ -182,6 +189,181 @@ fun FloatingTabBar(
     searchSelected: Boolean,
     onSearch: () -> Unit,
     modifier: Modifier = Modifier,
+) {
+    if (LocalLiquidMotion.current) LiquidFloatingTabBar(tabs, selectedIndex, onTabSelected, searchSelected, onSearch, modifier)
+    else ClassicFloatingTabBar(tabs, selectedIndex, onTabSelected, searchSelected, onSearch, modifier)
+}
+
+/** How far the indicator draws out along its travel at full stride, and how much of that its height gives back. */
+private const val STRETCH = 0.16f
+private const val SQUASH = 0.5f
+
+/**
+ * Liquid motion off: a travelling indicator that stretches as it moves (scaled along its lag
+ * behind the target), and Search a circle that swells under the finger.
+ */
+@Composable
+private fun ClassicFloatingTabBar(
+    tabs: List<BottomTab>,
+    selectedIndex: Int,
+    onTabSelected: (Int) -> Unit,
+    searchSelected: Boolean,
+    onSearch: () -> Unit,
+    modifier: Modifier,
+) {
+    val pillShape = RoundedCornerShape(percent = 50)
+    val spec = motion(GlassSpring)
+    val haptics = rememberHaptics()
+    val density = LocalDensity.current
+    var rowSize by remember { mutableStateOf(IntSize.Zero) }
+    val gapPx = with(density) { 6.dp.toPx() }
+    val glass = LocalLiquidGlassEnabled.current
+    // Without glass, Search is a tab like the others rather than a circle of its own.
+    val items = if (glass) tabs else tabs + BottomTab("Search", OrielIcons.Search)
+    val n = items.size
+    val select = { i: Int -> if (i >= tabs.size) onSearch() else onTabSelected(i) }
+    val tabWidthPx = if (rowSize.width > 0 && n > 0) (rowSize.width - gapPx * (n - 1)) / n else 0f
+    val tabStepPx = if (rowSize.width > 0 && n > 0) (rowSize.width + gapPx) / n else 0f
+    val shownIndex = if (searchSelected) (if (glass) -1 else tabs.size) else selectedIndex
+    val restIndex = shownIndex.coerceAtLeast(0)
+    val restTargetPx = if (tabStepPx > 0f) restIndex * tabStepPx else 0f
+    // The pill's place, read only in its layer: a tab change or a drag moves it without
+    // recomposing the bar. A drag snaps it under the finger; on release it springs on from there.
+    val pill = remember { Animatable(0f) }
+    var placed by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(restTargetPx) {
+        if (tabStepPx <= 0f) return@LaunchedEffect
+        if (!placed) { pill.snapTo(restTargetPx); placed = true } else pill.animateTo(restTargetPx, spec)
+    }
+    val pillAlpha = animateFloatAsState(if (shownIndex >= 0) 1f else 0f, fade(160), label = "pillAlpha")
+    var lastHapticTab by remember { mutableIntStateOf(restIndex) }
+    val currentRest by rememberUpdatedState(restIndex)
+    val currentShown by rememberUpdatedState(shownIndex)
+    val currentStep by rememberUpdatedState(tabStepPx)
+    val currentTarget by rememberUpdatedState(restTargetPx)
+    val currentSelect by rememberUpdatedState(select)
+    val tint = if (glass) glassContentColor() else null
+    // The pill's place is kept in reading order; right to left it's drawn, and dragged, mirrored.
+    val sign = if (LocalLayoutDirection.current == LayoutDirection.Rtl) -1f else 1f
+
+    Row(
+        modifier = modifier
+            .windowInsetsPadding(floatingBarInsets)
+            .padding(horizontal = BAR_GUTTER)
+            .padding(bottom = 2.dp)
+            .widthIn(max = FLOATING_BAR_MAX_WIDTH)
+            .fillMaxWidth()
+            .height(IntrinsicSize.Max),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(
+            Modifier
+                .weight(1f)
+                .glassSurface(pillShape)
+                .padding(PILL_INSET),
+        ) {
+            if (tabWidthPx > 0f) {
+                Box(
+                    Modifier
+                        .width(with(density) { tabWidthPx.toDp() })
+                        .height(with(density) { rowSize.height.toDp() })
+                        .graphicsLayer {
+                            val lag = if (currentStep > 0f) (abs(currentTarget - pill.value) / currentStep).coerceIn(0f, 1f) else 0f
+                            translationX = pill.value * sign
+                            scaleX = 1f + lag * STRETCH
+                            scaleY = 1f - lag * STRETCH * SQUASH
+                            alpha = pillAlpha.value
+                        }
+                        .clip(pillShape)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+                )
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .selectableGroup()
+                    .onSizeChanged { rowSize = it }
+                    .pointerInput(n) {
+                        var totalDrag = 0f
+                        detectHorizontalDragGestures(
+                            onDragStart = { totalDrag = 0f },
+                            onDragCancel = { scope.launch { pill.animateTo(currentTarget, spec) } },
+                            onDragEnd = {
+                                val step = currentStep
+                                var moved = false
+                                if (step > 0f) {
+                                    val newIndex = (currentRest + totalDrag / step).coerceIn(0f, (n - 1).toFloat()).roundToInt()
+                                    if (newIndex != currentShown) { currentSelect(newIndex); moved = true }
+                                }
+                                if (!moved) scope.launch { pill.animateTo(currentTarget, spec) }
+                            },
+                            onHorizontalDrag = { _, delta ->
+                                val step = currentStep
+                                if (step <= 0f) return@detectHorizontalDragGestures
+                                totalDrag += delta * sign
+                                val f = (currentRest + totalDrag / step).coerceIn(0f, (n - 1).toFloat())
+                                scope.launch { pill.snapTo(f * step) }
+                                val approx = f.roundToInt()
+                                if (approx != lastHapticTab) {
+                                    haptics.play(Haptic.Tick)
+                                    lastHapticTab = approx
+                                }
+                            },
+                        )
+                    },
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                items.forEachIndexed { index, tab ->
+                    TabItem(
+                        tab = tab,
+                        selected = index == shownIndex,
+                        selectedTint = tint,
+                        unselectedTint = tint?.copy(alpha = 0.65f),
+                        onClick = { select(index) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+        if (glass) {
+            // Search stands apart, as a circle the bar's height.
+            val searchTint by animateColorAsState(
+                if (searchSelected) tint ?: MaterialTheme.colorScheme.primary else (tint?.copy(alpha = 0.8f) ?: MaterialTheme.colorScheme.onSurface),
+                fade(200), label = "searchTint",
+            )
+            val press = remember { MutableInteractionSource() }
+            Box(
+                Modifier
+                    .fillMaxHeight()
+                    .aspectRatio(1f)
+                    .pressEffect(press, scale = GLASS_PRESS_SCALE)
+                    .glassSurface(CircleShape)
+                    .selectable(searchSelected, press, indication = null, role = Role.Tab) {
+                        haptics.play(Haptic.Select)
+                        onSearch()
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                if (searchSelected) Box(Modifier.padding(PILL_INSET).fillMaxWidth().aspectRatio(1f).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)))
+                Icon(OrielIcons.Search, "Search", tint = searchTint, modifier = Modifier.size(26.dp))
+            }
+        }
+    }
+}
+
+/** A tab's icon and label give under the finger, the stretch of the indicator aside (liquid motion off). */
+private val TabPress = PressHighlight(Color.Transparent, strength = 0f, scale = 0.92f)
+
+@Composable
+private fun LiquidFloatingTabBar(
+    tabs: List<BottomTab>,
+    selectedIndex: Int,
+    onTabSelected: (Int) -> Unit,
+    searchSelected: Boolean,
+    onSearch: () -> Unit,
+    modifier: Modifier,
 ) {
     val pillShape = RoundedCornerShape(percent = 50)
     val reduce = LocalReduceAnimation.current
@@ -332,10 +514,25 @@ fun FloatingTabBar(
                     reachIn.animateTo(0f, Sp.SlowEdge.px)
                 }
             }
+            val searchAt = remember { arrayOfNulls<androidx.compose.ui.layout.LayoutCoordinates>(1) }
+            val recordOrigin = { SearchOrigin.record(searchAt[0]?.takeIf { it.isAttached }?.boundsInWindow()) }
+            // Left for a tab: the bar reaches back for the circle and lets it go, a drop splitting off.
+            val wasSearching = remember { booleanArrayOf(searchSelected) }
+            LaunchedEffect(searchSelected) {
+                val was = wasSearching[0]
+                wasSearching[0] = searchSelected
+                if (was && !searchSelected && !reduce) {
+                    launch { reachIn.animateTo(gap * 0.6f, Sp.FastEdge.px) }
+                    barReach.animateTo(gap * 0.75f, Sp.FastEdge.px)
+                    launch { reachIn.animateTo(0f, Sp.Jelly.px) }
+                    barReach.animateTo(0f, Sp.SlowEdge.px)
+                }
+            }
             Box(
                 Modifier
                     .fillMaxHeight()
                     .aspectRatio(1f)
+                    .onPlaced { searchAt[0] = it }
                     .graphicsLayer {
                         val w = size.width
                         if (w <= 0f) return@graphicsLayer
@@ -351,12 +548,14 @@ fun FloatingTabBar(
                     .selectable(searchSelected, remember { MutableInteractionSource() }, indication = null, role = Role.Tab) {
                         haptics.play(Haptic.Select)
                         if (!reduce) reachFor(0f)
+                        recordOrigin()
                         onSearch()
                     }
                     .pointerInput(Unit) {
                         searchDrag(reachIn, reachOut, scope, give, sign, { currentReduce }) { v ->
                             haptics.play(Haptic.Select)
                             reachFor(v)
+                            recordOrigin()
                             currentOnSearch()
                         }
                     },
@@ -370,6 +569,26 @@ fun FloatingTabBar(
 }
 
 private val BAR_SEARCH_GAP = 8.dp
+
+/**
+ * Where the Search droplet was, in the window, when it was tapped or flicked into the bar: the
+ * Search page's field grows out of it (liquid motion). Taken once, and only just after.
+ */
+object SearchOrigin {
+    private var at: androidx.compose.ui.geometry.Rect? = null
+    private var recordedAt = 0L
+
+    fun record(r: androidx.compose.ui.geometry.Rect?) {
+        at = r
+        recordedAt = System.nanoTime()
+    }
+
+    fun take(): androidx.compose.ui.geometry.Rect? {
+        val r = at?.takeIf { System.nanoTime() - recordedAt < 800_000_000L }
+        at = null
+        return r
+    }
+}
 
 /**
  * The mock's `slotDrag` (tab bar, segmented controls): a press grows the blob a little; past the
@@ -523,10 +742,16 @@ private fun TabItem(
         horizontalAlignment = Alignment.CenterHorizontally,
         // No clip: there's no ripple to bound, and a stadium clip shaves the ends off a long label.
         modifier = modifier
-            .selectable(selected, remember { MutableInteractionSource() }, indication = null, role = Role.Tab) {
-                if (!selected) haptics.play(Haptic.Select)
-                onClick()
-            }
+            // Liquid, the blob under it answers the finger instead.
+            .then(
+                if (LocalLiquidMotion.current) Modifier.selectable(selected, remember { MutableInteractionSource() }, indication = null, role = Role.Tab) {
+                    if (!selected) haptics.play(Haptic.Select)
+                    onClick()
+                } else Modifier.selectable(selected, null, TabPress, role = Role.Tab) {
+                    if (!selected) haptics.play(Haptic.Select)
+                    onClick()
+                },
+            )
             .padding(vertical = TAB_VERTICAL_PADDING, horizontal = 2.dp),
     ) {
         // The label below names the tab; the icon would only say it twice.
@@ -609,8 +834,8 @@ fun GlassCircleButton(icon: ImageVector, contentDescription: String?, onClick: (
     Box(
         modifier
             .size(size)
-            // The whole circle swells, glass and all, so the press goes before the surface.
-            .pressEffect(press)
+            // The whole circle swells (or squishes), glass and all, so the press goes before the surface.
+            .pressEffect(press, scale = GLASS_PRESS_SCALE)
             .glassSurface(CircleShape)
             .clickable(press, indication = null, role = Role.Button) {
                 haptics.play(Haptic.Tap)

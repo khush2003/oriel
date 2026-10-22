@@ -69,6 +69,8 @@ class StoredDataTest {
         assertEquals(false, s.telemetry)
         // Not in the old document: today's defaults.
         assertTrue(s.backgroundPlay)
+        assertFalse(s.liquidMotion)
+        assertFalse(s.liquidMotionAsked)
     }
 
     @Test
