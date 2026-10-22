@@ -17,6 +17,18 @@ import app.oriel.ui.components.ROW_CORNER
 import app.oriel.ui.theme.HeartRed
 import app.oriel.ui.theme.LiveRed
 import app.oriel.ui.theme.LocalReduceAnimation
+import app.oriel.ui.theme.LocalLiquidMotion
+import app.oriel.ui.theme.Sp
+import app.oriel.ui.theme.blobRectPath
+import app.oriel.ui.theme.rubber
+import app.oriel.ui.theme.smoothstep
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.util.lerp
 import app.oriel.ui.theme.motion
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -134,16 +146,37 @@ fun WatchContent(app: AppState, palette: ArtworkPalette, modifier: Modifier = Mo
     val playlist = page?.playlist
     var playlistOpen by rememberSaveable(playlist?.id) { mutableStateOf(false) }
     val current by app.connection.current.collectAsState()
+    // Liquid, a panel grows out of the card that opened it and shrinks back into it (PanelMorph).
+    val liquid = LocalLiquidMotion.current && !LocalReduceAnimation.current
+    val morph = remember { PanelMorph() }
+    morph.cardCorner = with(androidx.compose.ui.platform.LocalDensity.current) { 16.dp.toPx() }
+    fun open(p: Panel, from: String) {
+        morph.from = morph.boundsOf(from)
+        morph.fromCorner = if (from == "title") 0f else morph.cardCorner
+        panel = p
+    }
 
-    Box(modifier.fillMaxSize()) {
-        LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 32.dp)) {
-            item(key = "title") { TitleBlock(video, page, palette) { panel = Panel.Description } }
+    Box(modifier.fillMaxSize().onPlaced { morph.box = it }) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize().then(
+                // The page under a panel gives a little as it grows over it.
+                if (liquid) Modifier.graphicsLayer {
+                    val k = 1f - 0.03f * morph.progress()
+                    scaleX = k
+                    scaleY = k
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f)
+                } else Modifier,
+            ),
+            contentPadding = PaddingValues(bottom = 32.dp),
+        ) {
+            item(key = "title") { TitleBlock(video, page, palette, Modifier.onPlaced { morph.cards["title"] = it }) { open(Panel.Description, "title") } }
             item(key = "channel") { ChannelLine(app, video, page?.subscribersText, palette) }
             item(key = "actions") { ActionsRow(app, video, page?.likeCount, state.votes, palette) }
-            item(key = "details") { DetailsCard(video, page, palette) { panel = Panel.Description } }
+            item(key = "details") { DetailsCard(video, page, palette, Modifier.onPlaced { morph.cards["details"] = it }) { open(Panel.Description, "details") } }
             if (page != null && (page.commentsToken != null || page.commentsCount != null)) item(key = "comments") {
-                CommentsTeaser(page.commentsCount, page.commentTeaser, page.commentTeaserAvatar, palette) {
-                    panel = Panel.Comments
+                CommentsTeaser(page.commentsCount, page.commentTeaser, page.commentTeaserAvatar, palette, Modifier.onPlaced { morph.cards["comments"] = it }) {
+                    open(Panel.Comments, "comments")
                     if (app.watch.comments.value.page == null) app.watch.loadComments()
                 }
             }
@@ -167,8 +200,7 @@ fun WatchContent(app: AppState, palette: ArtworkPalette, modifier: Modifier = Mo
         // The last panel shown, kept through the slide-out so it doesn't turn into the other one on its way down.
         var shownPanel by remember { mutableStateOf(Panel.Comments) }
         if (panel != Panel.None && panel != shownPanel) shownPanel = panel
-        val slide = androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 420f, visibilityThreshold = androidx.compose.ui.unit.IntOffset.VisibilityThreshold)
-        AnimatedVisibility(panel != Panel.None, enter = enterMotion(slideInVertically(slide) { it }), exit = exitMotion(slideOutVertically(slide) { it }), modifier = Modifier.fillMaxSize()) {
+        val panelBody: @Composable () -> Unit = {
             val inThread = shownPanel == Panel.Comments && comments.thread != null
             // Each panel's list, kept here so the header's hairline can follow its scroll, and so
             // the comments keep their place while a reply thread is pushed over them.
@@ -187,12 +219,147 @@ fun WatchContent(app: AppState, palette: ArtworkPalette, modifier: Modifier = Mo
                 scrolled = scrolled,
                 onBack = if (inThread) app.watch::closeReplies else null,
                 onClose = { panel = Panel.None },
+                morph = if (liquid) morph else null,
             ) {
                 if (shownPanel == Panel.Comments) CommentsPanel(app, palette, commentsList, repliesList) else DescriptionPanel(app, video, page, palette, descriptionList)
             }
         }
+        if (liquid) {
+            val open = panel != Panel.None
+            LaunchedEffect(open) { morph.run(open) }
+            if (morph.shown) {
+                // The card's own fill: the page's ink at the card's veil.
+                val tint = palette.onBackground.copy(alpha = 0.065f).compositeOver(palette.background)
+                Box(Modifier.fillMaxSize().liquidPanel(morph, palette.background, tint)) {
+                    Box(
+                        Modifier.fillMaxSize().graphicsLayer {
+                            val pc = morph.progress()
+                            alpha = smoothstep(0.55f, 0.95f, pc)
+                            val k = lerp(0.94f, 1f, smoothstep(0.4f, 1f, pc))
+                            scaleX = k
+                            scaleY = k
+                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f)
+                            translationY = morph.pull()
+                        },
+                    ) { panelBody() }
+                }
+            }
+        } else {
+            val slide = androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 420f, visibilityThreshold = androidx.compose.ui.unit.IntOffset.VisibilityThreshold)
+            AnimatedVisibility(panel != Panel.None, enter = enterMotion(slideInVertically(slide) { it }), exit = exitMotion(slideOutVertically(slide) { it }), modifier = Modifier.fillMaxSize()) {
+                panelBody()
+            }
+        }
     }
 }
+
+/**
+ * The liquid panel's flight, as the mock's sheet: from the tapped card's rect and radius, the
+ * height spring (Sp.SheetH) leading the width's (Sp.SheetW), the sides and top swelling
+ * mid-flight, the card's fill turning into the page's; closed, it shrinks back into the card on
+ * Sp.SheetClose. A drag down on it shrinks it toward the card (by up to 42%) as it follows the
+ * finger; a drag up rubber-bands its top. Read only in the draw phase.
+ */
+@androidx.compose.runtime.Stable
+internal class PanelMorph {
+    val pw = androidx.compose.animation.core.Animatable(0f)
+    val ph = androidx.compose.animation.core.Animatable(0f)
+    /** The panel's drag, px: down positive, up negative (rubber-banded when drawn). */
+    val drag = androidx.compose.animation.core.Animatable(0f)
+    /** The speed it was let go at when a drag closed it, px per second. */
+    var closeVelocity = 0f
+    var shown by mutableStateOf(false)
+    var from: androidx.compose.ui.geometry.Rect? = null
+    var fromCorner = 0f
+    var cardCorner = 0f
+    var box: androidx.compose.ui.layout.LayoutCoordinates? = null
+    val cards = HashMap<String, androidx.compose.ui.layout.LayoutCoordinates>()
+    val path = androidx.compose.ui.graphics.Path()
+    var liftMax = 0f
+
+    fun boundsOf(key: String): androidx.compose.ui.geometry.Rect? {
+        val b = box?.takeIf { it.isAttached } ?: return null
+        val c = cards[key]?.takeIf { it.isAttached } ?: return null
+        return b.localBoundingBoxOf(c, clipBounds = false)
+    }
+
+    /** How far it's dragged down, which the content follows. */
+    fun pull() = drag.value.coerceAtLeast(0f)
+
+    /** How grown it is, 0 to 1, after the shrink a drag down gives it. */
+    fun progress(): Float = (minOf(pw.value, ph.value) * shrink()).coerceIn(0f, 1f)
+
+    var height = 1f
+    fun shrink() = 1f - 0.42f * smoothstep(0f, height * 1.1f, pull())
+
+    suspend fun run(open: Boolean) = kotlinx.coroutines.coroutineScope {
+        if (open) {
+            closeVelocity = 0f
+            drag.snapTo(0f)
+            pw.snapTo(0f)
+            ph.snapTo(0f)
+            shown = true
+            launch { ph.animateTo(1f, Sp.SheetH.unit) }
+            launch { pw.animateTo(1f, Sp.SheetW.unit) }
+        } else if (shown) {
+            // Flicked down, it carries the flick into the shrink, as the mock's close does.
+            val v = -closeVelocity.coerceAtLeast(0f) / height * 1.2f
+            val a = launch { ph.animateTo(0f, Sp.SheetClose.unit, v) }
+            val b = launch { pw.animateTo(0f, Sp.SheetClose.unit, v) }
+            a.join()
+            b.join()
+            shown = false
+            drag.snapTo(0f)
+            from = null
+        }
+    }
+}
+
+/** Clips to the morphing panel ([PanelMorph]) and fills it with [page], the card's [tint] fading as it grows. */
+private fun Modifier.liquidPanel(m: PanelMorph, page: Color, tint: Color): Modifier = this
+    .onPlaced { m.height = it.size.height.toFloat() }
+    .drawWithContent {
+        val w = size.width
+        val h = size.height
+        m.liftMax = 140.dp.toPx()
+        val raw = m.drag.value
+        val pull = raw.coerceAtLeast(0f)
+        val lift = if (raw < 0f) rubber(-raw, m.liftMax, 0.5f) else 0f
+        val k = m.shrink()
+        val pw = m.pw.value * k
+        val ph = m.ph.value * k
+        val p = minOf(pw, ph)
+        val pc = p.coerceIn(0f, 1f)
+        // Without a card to grow from it rises out of the bottom edge, swelling the same.
+        val src = m.from ?: androidx.compose.ui.geometry.Rect(0f, h, w, h)
+        var l = lerp(src.left, 0f, pw)
+        var r = lerp(src.right, w, pw)
+        var t = lerp(src.top, pull, ph) - lift
+        var b = lerp(src.bottom, h + pull, ph)
+        if (p < 0f) {
+            // Plops back into the card with a squash.
+            val q = minOf(0.35f, -p)
+            val cx = (l + r) / 2f
+            val cy = (t + b) / 2f
+            val hw = (r - l) / 2f * (1f + q)
+            val hh = (b - t) / 2f * (1f - q * 0.8f)
+            l = cx - hw; r = cx + hw; t = cy - hh; b = cy + hh
+        }
+        val ease = smoothstep(0f, 1f, pc)
+        val radTop = minOf(lerp(m.fromCorner, 22.dp.toPx(), ease), (r - l) / 2f, (b - t) / 2f).coerceAtLeast(0f)
+        val radBottom = minOf(lerp(m.fromCorner, 0f, ease), (r - l) / 2f, (b - t) / 2f).coerceAtLeast(0f)
+        val sw = kotlin.math.sin(pc * kotlin.math.PI.toFloat())
+        val vel = kotlin.math.abs(m.ph.velocity + m.pw.velocity) * 0.5f
+        val bs = sw * (8f + (vel * 2f).coerceIn(0f, 10f)) * density
+        val bt = sw * 18f * density
+        blobRectPath(m.path, l, t, r, b, radTop, bs, bt, radBottom)
+        clipPath(m.path) {
+            drawRect(page, topLeft = Offset(-bs * 2f, t - bt * 2f), size = Size(w + bs * 4f, h - t + bt * 3f + pull))
+            this@drawWithContent.drawContent()
+            val a = 1f - smoothstep(0.02f, 0.45f, pc)
+            if (a > 0f) drawRect(tint, topLeft = Offset(l - bs * 2f, t - bt * 2f), size = Size(r - l + bs * 4f, b - t + bt * 3f), alpha = a)
+        }
+    }
 
 /** Consecutive Shorts gathered into a shelf, the rest one by one. Keys are ids: a video YouTube lists twice must render once, not crash the list. */
 private fun groupRelated(related: List<Item>): List<List<Item>> {
@@ -228,8 +395,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.relatedItems(groups: 
 }
 
 @Composable
-private fun TitleBlock(video: Video, page: WatchPage?, palette: ArtworkPalette, onMore: () -> Unit) {
-    Column(Modifier.fillMaxWidth().clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClick = onMore).padding(horizontal = PAGE_GUTTER).padding(top = 16.dp, bottom = 4.dp)) {
+private fun TitleBlock(video: Video, page: WatchPage?, palette: ArtworkPalette, origin: Modifier, onMore: () -> Unit) {
+    Column(origin.fillMaxWidth().clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClick = onMore).padding(horizontal = PAGE_GUTTER).padding(top = 16.dp, bottom = 4.dp)) {
         if (video.title.isNotEmpty()) {
             Text(video.title, style = MaterialTheme.typography.titleLarge, color = palette.onBackground, maxLines = 3, overflow = TextOverflow.Ellipsis)
         } else {
@@ -247,7 +414,7 @@ private fun TitleBlock(video: Video, page: WatchPage?, palette: ArtworkPalette, 
  * corner 16, and a press that sinks it a little rather than a ripple.
  */
 @Composable
-private fun Modifier.watchCard(palette: ArtworkPalette, onClick: () -> Unit): Modifier {
+private fun Modifier.watchCard(palette: ArtworkPalette, origin: Modifier = Modifier, onClick: () -> Unit): Modifier {
     val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by androidx.compose.animation.core.animateFloatAsState(if (pressed) 0.975f else 1f, androidx.compose.animation.core.spring(stiffness = 900f), label = "cardPress")
@@ -255,6 +422,7 @@ private fun Modifier.watchCard(palette: ArtworkPalette, onClick: () -> Unit): Mo
     return this
         .padding(horizontal = PAGE_GUTTER, vertical = 6.dp)
         .fillMaxWidth()
+        .then(origin)
         .graphicsLayer { scaleX = scale; scaleY = scale }
         .clip(RoundedCornerShape(16.dp))
         .drawBehind { drawRect(palette.onBackground.copy(alpha = veil)) }
@@ -264,8 +432,8 @@ private fun Modifier.watchCard(palette: ArtworkPalette, onClick: () -> Unit): Mo
 
 /** Views and date in bold, then the description's first lines: tap for the whole of it. */
 @Composable
-private fun DetailsCard(video: Video, page: WatchPage?, palette: ArtworkPalette, onClick: () -> Unit) {
-    Column(Modifier.watchCard(palette, onClick)) {
+private fun DetailsCard(video: Video, page: WatchPage?, palette: ArtworkPalette, origin: Modifier, onClick: () -> Unit) {
+    Column(Modifier.watchCard(palette, origin, onClick)) {
         val meta = listOfNotNull(page?.viewCountShort ?: video.viewsText, page?.relativeDate ?: video.publishedText).joinToString("  ·  ")
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(meta.ifEmpty { "Details" }, style = MaterialTheme.typography.titleSmall, color = palette.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
@@ -389,8 +557,8 @@ private fun ActionTile(
 }
 
 @Composable
-private fun CommentsTeaser(count: String?, teaser: String?, avatar: String?, palette: ArtworkPalette, onClick: () -> Unit) {
-    Column(Modifier.watchCard(palette, onClick)) {
+private fun CommentsTeaser(count: String?, teaser: String?, avatar: String?, palette: ArtworkPalette, origin: Modifier, onClick: () -> Unit) {
+    Column(Modifier.watchCard(palette, origin, onClick)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Comments", style = MaterialTheme.typography.titleSmall, color = palette.onBackground)
             count?.let { Text("  $it", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.W500), color = palette.onBackgroundVariant) }
@@ -487,9 +655,12 @@ private fun RelatedSkeleton() = VideoCardSkeleton(0)
  * once it's at its top, closes it.
  */
 @Composable
-private fun Panel(palette: ArtworkPalette, title: String, count: String? = null, scrolled: Boolean, onBack: (() -> Unit)?, onClose: () -> Unit, content: @Composable () -> Unit) {
+private fun Panel(palette: ArtworkPalette, title: String, count: String? = null, scrolled: Boolean, onBack: (() -> Unit)?, onClose: () -> Unit, morph: PanelMorph? = null, content: @Composable () -> Unit) {
     // The panel follows a drag down on its header, and closes past 80dp or on a flick down; short of that it springs back.
-    val drag = remember { androidx.compose.animation.core.Animatable(0f) }
+    // Liquid, the drag is the morph's (which draws it) and goes up too, rubber-banded.
+    val own = remember { androidx.compose.animation.core.Animatable(0f) }
+    val drag = morph?.drag ?: own
+    val liquid = morph != null
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val close by androidx.compose.runtime.rememberUpdatedState(onClose)
     val haptics = rememberHaptics()
@@ -510,8 +681,10 @@ private fun Panel(palette: ArtworkPalette, title: String, count: String? = null,
 
             fun settle(velocity: Float) {
                 armed = false
-                if (drag.value > closeAt || (velocity > 1000f && drag.value > 0f)) close()
-                else scope.launch { drag.animateTo(0f, back, velocity) }
+                if (drag.value > closeAt || (velocity > 1000f && drag.value > 0f)) {
+                    morph?.closeVelocity = velocity
+                    close()
+                } else scope.launch { drag.animateTo(0f, if (liquid) Sp.Sheet.px else back, velocity) }
             }
 
             // The list's scroll and the panel's pull are one gesture, as in an iOS sheet: at the
@@ -539,7 +712,7 @@ private fun Panel(palette: ArtworkPalette, title: String, count: String? = null,
             }
         }
     }
-    Column(Modifier.fillMaxSize().graphicsLayer { translationY = drag.value }.clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)).background(palette.background).nestedScroll(pullToClose.connection)) {
+    Column(Modifier.fillMaxSize().graphicsLayer { if (!liquid) translationY = drag.value }.clip(RoundedCornerShape(topStart = 22.dp, topEnd = 22.dp)).background(palette.background).nestedScroll(pullToClose.connection)) {
         // The header moves with its drag, so the finger is followed on the screen, not in the header's own coordinates.
         val headerScreen = remember { ScreenPosition() }
         Column(Modifier.fillMaxWidth().screenPosition(headerScreen).pointerInput(Unit) {
@@ -549,15 +722,16 @@ private fun Panel(palette: ArtworkPalette, title: String, count: String? = null,
             detectVerticalDragGestures(
                 onDragStart = { at -> total = 0f; lastY = headerScreen.of(at).y; tracker.resetTracking() },
                 onDragEnd = { pullToClose.settle(tracker.calculateVelocity().y) },
-                onDragCancel = { pullToClose.armed = false; scope.launch { drag.animateTo(0f, pullToClose.back) } },
+                onDragCancel = { pullToClose.armed = false; scope.launch { drag.animateTo(0f, if (liquid) Sp.Sheet.px else pullToClose.back) } },
             ) { change, _ ->
                 val y = headerScreen.of(change.position).y
                 val dy = y - lastY
                 lastY = y
                 total += dy
                 tracker.addPosition(change.uptimeMillis, androidx.compose.ui.geometry.Offset(0f, total))
-                // Not above where it rests: the header's drag only pulls the panel down.
-                pullToClose.moveTo((drag.value + dy).coerceAtLeast(0f))
+                // Not above where it rests: the header's drag only pulls the panel down (liquid, up
+                // it rubber-bands, as the mock's sheet does).
+                pullToClose.moveTo(if (liquid) drag.value + dy else (drag.value + dy).coerceAtLeast(0f))
             }
         }) {
             Box(Modifier.padding(top = 7.dp, bottom = 2.dp).align(Alignment.CenterHorizontally).size(36.dp, 5.dp).clip(CircleShape).background(palette.onBackground.copy(alpha = 0.22f)))
@@ -737,6 +911,18 @@ fun linkify(text: String, color: Color, onTime: (Long) -> Unit, onLink: (String)
 private fun CommentsPanel(app: AppState, palette: ArtworkPalette, listState: androidx.compose.foundation.lazy.LazyListState, repliesState: androidx.compose.foundation.lazy.LazyListState) {
     val c by app.watch.comments.collectAsState()
     val reduceMotion = LocalReduceAnimation.current
+    // Liquid, a reply thread grows out of the comment whose replies were tapped (as the panels do
+    // out of their cards) and shrinks back into it on Back.
+    val liquid = LocalLiquidMotion.current && !reduceMotion
+    val rows = remember { HashMap<String, androidx.compose.ui.layout.LayoutCoordinates>() }
+    val container = remember { arrayOfNulls<androidx.compose.ui.layout.LayoutCoordinates>(1) }
+    val threadFrom = remember { arrayOfNulls<androidx.compose.ui.geometry.Rect>(1) }
+    val openReplies: (Comment) -> Unit = { comment ->
+        val box = container[0]?.takeIf { it.isAttached }
+        val row = rows[comment.id]?.takeIf { it.isAttached }
+        threadFrom[0] = if (box != null && row != null) box.localBoundingBoxOf(row, clipBounds = false) else null
+        app.watch.openReplies(comment)
+    }
     androidx.compose.animation.AnimatedContent(
         c.thread,
         contentKey = { it?.id },
@@ -744,12 +930,19 @@ private fun CommentsPanel(app: AppState, palette: ArtworkPalette, listState: and
             val push = targetState != null
             val slide = androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 520f, visibilityThreshold = androidx.compose.ui.unit.IntOffset.VisibilityThreshold)
             val transform = if (reduceMotion) androidx.compose.animation.EnterTransition.None togetherWith androidx.compose.animation.ExitTransition.None
+            // The morph moves it: the content leaving is only held for as long as the shrink back takes.
+            else if (liquid) androidx.compose.animation.EnterTransition.None togetherWith androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(1, delayMillis = 480))
             else (androidx.compose.animation.slideInHorizontally(slide) { if (push) it else -it / 3 } + androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(200)))
                 .togetherWith(androidx.compose.animation.slideOutHorizontally(slide) { if (push) -it / 3 else it } + androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(200)))
             transform.apply { targetContentZIndex = if (push) 1f else 0f }
         },
-        modifier = Modifier.fillMaxSize(), label = "commentsPush",
+        modifier = Modifier.fillMaxSize().onPlaced { container[0] = it }, label = "commentsPush",
     ) { thread ->
+        val morph = if (liquid && thread != null) remember { PanelMorph().also { it.from = threadFrom[0] } } else null
+        if (morph != null) {
+            val leaving = transition.targetState == androidx.compose.animation.EnterExitState.PostExit
+            LaunchedEffect(leaving) { morph.run(!leaving) }
+        }
         val state = if (thread != null) repliesState else listState
         // Held for this thread, so its replies stay put while it slides away on Back (which clears them).
         var held by remember(thread?.id) { mutableStateOf(c.replies) }
@@ -757,7 +950,13 @@ private fun CommentsPanel(app: AppState, palette: ArtworkPalette, listState: and
         LaunchedEffect(thread?.id) { if (thread != null) repliesState.scrollToItem(0) }
         val nearEnd by remember(state) { derivedStateOf { state.layoutInfo.visibleItemsInfo.lastOrNull()?.index?.let { it >= state.layoutInfo.totalItemsCount - 5 } == true } }
         LaunchedEffect(nearEnd, c.continuation, c.repliesContinuation, thread?.id) { if (nearEnd) { if (thread != null) app.watch.loadMoreReplies() else app.watch.loadMoreComments() } }
-        LazyColumn(state = state, modifier = Modifier.fillMaxSize().background(palette.background), contentPadding = PaddingValues(bottom = 40.dp)) {
+        LazyColumn(
+            state = state,
+            modifier = Modifier.fillMaxSize()
+                .then(if (morph != null) Modifier.liquidPanel(morph, palette.background, palette.background).graphicsLayer { alpha = smoothstep(0.35f, 0.9f, morph.progress()) } else Modifier)
+                .background(palette.background),
+            contentPadding = PaddingValues(bottom = 40.dp),
+        ) {
             if (thread != null) {
                 item(key = "parent") { CommentRow(app, thread, palette, onReplies = null) }
                 item(key = "divider") { Box(Modifier.fillMaxWidth().height(0.5.dp).background(palette.divider)) }
@@ -774,7 +973,9 @@ private fun CommentsPanel(app: AppState, palette: ArtworkPalette, listState: and
                 }
                 else -> {
                     val comments = c.comments.distinctBy { it.id }
-                    itemsIndexed(comments, key = { _, it -> it.id }) { i, it -> CommentRow(app, it, palette, onReplies = app.watch::openReplies, separator = i < comments.lastIndex) }
+                    itemsIndexed(comments, key = { _, it -> it.id }) { i, it ->
+                        Box(Modifier.onPlaced { co -> rows[it.id] = co }) { CommentRow(app, it, palette, onReplies = openReplies, separator = i < comments.lastIndex) }
+                    }
                 }
             }
             if (c.loadingMore) item { LoadingRow() }
