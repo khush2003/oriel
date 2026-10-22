@@ -15,6 +15,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
 import app.oriel.ui.theme.SmoothedVelocity
+import app.oriel.ui.theme.project
 import app.oriel.ui.theme.midFlight
 import app.oriel.ui.theme.smoothstep
 import androidx.compose.runtime.snapshotFlow
@@ -75,6 +76,8 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import app.oriel.ui.theme.LocalReduceAnimation
+import app.oriel.ui.theme.LocalLiquidMotion
+import androidx.compose.runtime.SideEffect
 import app.oriel.ui.theme.motion
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -98,6 +101,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import app.oriel.core.model.Video
 import app.oriel.ui.AppState
+import app.oriel.ui.VideoHandoff
 import app.oriel.ui.components.OrielIcons
 import app.oriel.ui.components.TopBarContentHeight
 import app.oriel.ui.components.TAB_BAR_HEIGHT
@@ -126,13 +130,61 @@ private data class Box4(val x: Float, val y: Float, val w: Float, val h: Float) 
  * means the whole player is growing out of it with the sheet; [ghost] that there was a window
  * playing at the dock to be absorbed as it goes.
  */
-private class Drop(val from: Box4?, val corner: Float, val art: String?, val docked: Boolean, val ghost: Boolean)
+private class Drop(val from: Box4?, val corner: Float, val art: String?, val docked: Boolean, val ghost: Boolean) {
+    /** Its own flight into a page already open, 0 to 1 (a docked drop rides the sheet's progress instead). */
+    val flight = androidx.compose.animation.core.Animatable(0f)
+    /** Shown, then faded as the picture takes over under it. */
+    val shown = androidx.compose.animation.core.Animatable(1f)
+}
 
 private val PIP_MAX_WIDTH = 232.dp
 private val PIP_MARGIN = 12.dp
 private val PIP_CORNER = 14.dp
 /** How small a pinch can make the window, relative to its default size. */
 private const val PIP_MIN_SCALE = 0.7f
+
+/**
+ * A throw this fast (per second), mostly sideways and toward the side the window is already on,
+ * puts it away. Slower, or toward the far side, it's a move: it lands in a corner.
+ */
+internal val PIP_FLING_AWAY = 1400.dp
+
+/** The share of the window that has to be past a side edge for letting go there to put it away. */
+internal const val PIP_AWAY_OVER = 0.5f
+
+/** The deceleration a throw is projected with to pick the corner it lands in (about 0.2 s of its speed). */
+private const val PIP_THROW_RATE = 0.995f
+
+internal enum class PipRelease { Land, AwayLeft, AwayRight }
+
+/** Which side's put-away zone a window at [x], [w] wide, is in on a screen [screenW] wide: -1 left, 1 right, 0 neither. */
+internal fun pipZoneAt(x: Float, w: Float, screenW: Float): Int = when {
+    -x > w * PIP_AWAY_OVER -> -1
+    x + w - screenW > w * PIP_AWAY_OVER -> 1
+    else -> 0
+}
+
+/**
+ * What letting go of the floating window does, as YouTube's and iOS's floating players decide it:
+ * put away only on an explicit intent, either released with more than half of it past a side
+ * edge (unless thrown hard back in), or thrown at [flingPx] per second or faster, mostly
+ * sideways (1.5 times its vertical speed), toward the side its centre is already on. Anything
+ * else, it lands in the corner the throw carries it to. A pinch is never a throw away.
+ */
+internal fun pipRelease(x: Float, w: Float, screenW: Float, vx: Float, vy: Float, flingPx: Float, pinched: Boolean): PipRelease {
+    if (pinched) return PipRelease.Land
+    when (pipZoneAt(x, w, screenW)) {
+        -1 -> if (vx < flingPx) return PipRelease.AwayLeft
+        1 -> if (vx > -flingPx) return PipRelease.AwayRight
+    }
+    val sideways = abs(vx) > abs(vy) * 1.5f
+    val centre = x + w / 2f
+    return when {
+        sideways && vx <= -flingPx && centre < screenW / 2f -> PipRelease.AwayLeft
+        sideways && vx >= flingPx && centre > screenW / 2f -> PipRelease.AwayRight
+        else -> PipRelease.Land
+    }
+}
 
 /**
  * The player as one surface that flies: collapsed, a picture-in-picture window floating over
@@ -202,22 +254,49 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
     // Read when a release runs: the drag handler outlives the composition that set it up.
     val reduceMotion by rememberUpdatedState(LocalReduceAnimation.current)
     val pipGone = remember { androidx.compose.animation.core.Animatable(0f) }
+    // 1 while the window is held where letting go puts it away (more than half off a side), 0 otherwise;
+    // which side it's in now (-1 left, 1 right, 0 neither) and which it was in last, for drawing it.
+    val pipZone = remember { androidx.compose.animation.core.Animatable(0f) }
+    var pipZoneSide by remember { mutableIntStateOf(0) }
+    var pipZoneEdge by remember { mutableIntStateOf(1) }
     // The liquid part of the flight: stretch with speed, squash on landing, a thumbnail that grows
-    // into the picture. All drawn; Reduce motion keeps the plain flight.
-    val liquid = !LocalReduceAnimation.current
+    // into the picture. All drawn, and only with Liquid motion on; off (or under Reduce motion)
+    // it's the plain flight.
+    val liquid = LocalLiquidMotion.current && !LocalReduceAnimation.current
+    SideEffect { sheet.liquid = liquid }
+    val liquidNow by rememberUpdatedState(liquid)
+    fun pipZoneSpring() = if (liquidNow) Sp.Bouncy.unit else androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 700f, visibilityThreshold = 0.001f)
     val dragSpeed = remember { SmoothedVelocity() }
     // The sheet's speed under the finger, in progress per second: read only while drawing.
     var dragVelocity by remember { mutableFloatStateOf(0f) }
+    // The same for fullscreen's push and pull under the finger (per second, in the push's units
+    // and in screen heights): read only while drawing.
+    val fsSpeed = remember { SmoothedVelocity() }
+    var fsDragVelocity by remember { mutableFloatStateOf(0f) }
     var drop by remember { mutableStateOf<Drop?>(null) }
-    val flight = remember { androidx.compose.animation.core.Animatable(1f) }
     // Which drag has the picture, for the droplet left at the dock: the sheet's, or the window's pan.
     var sheetDragging by remember { mutableStateOf(false) }
     var panning by remember { mutableStateOf(false) }
     // The window's speed under a pan, px per second: read only while drawing.
     val panSpeedX = remember { SmoothedVelocity() }
     val panSpeedY = remember { SmoothedVelocity() }
-    val reveal = remember { androidx.compose.animation.core.Animatable(0f) }
     val hostInWindow = remember { floatArrayOf(0f, 0f) }
+    // A tap's thumbnail is taken up here, as the tap is composed, rather than by an effect a frame
+    // later: that frame showed the picture leaving the dock (an empty one, with nothing playing)
+    // before the thumbnail appeared.
+    val seenHandoff = remember { arrayOfNulls<VideoHandoff>(1) }
+    sheet.handoff.let { h ->
+        if (h !== seenHandoff[0]) {
+            seenHandoff[0] = h
+            // Only the tap that's happening: not one replayed when the player comes back later.
+            if (h != null && liquid && !sheet.fullscreen && System.nanoTime() - h.at < 1_000_000_000L) {
+                val from = h.origin?.bounds?.let { Box4(it.left - hostInWindow[0], it.top - hostInWindow[1], it.width, it.height) }
+                // With no thumbnail to grow from (a link, a notification) it still rides the sheet,
+                // blooming where the picture lands rather than rising out of the dock.
+                drop = Drop(from, h.origin?.corner ?: 0f, h.origin?.art ?: Thumbnails.frame(h.videoId, 720), docked = h.fromDock, ghost = h.windowShowing)
+            }
+        }
+    }
     val lastVideo = remember { arrayOfNulls<String>(1) }
     BoxWithConstraints(
         Modifier.fillMaxSize()
@@ -272,25 +351,19 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
         // ---- a new video: its thumbnail hands off into the player ------------------------------
         val handoff = sheet.handoff
         LaunchedEffect(handoff) {
-            val h = handoff ?: return@LaunchedEffect
-            // Only the tap that's happening: not one replayed when the player comes back later.
-            if (!liquid || sheet.fullscreen || System.nanoTime() - h.at > 1_000_000_000L) return@LaunchedEffect
-            val from = h.origin?.bounds?.let { Box4(it.left - hostInWindow[0], it.top - hostInWindow[1], it.width, it.height) }
-            val d = Drop(from, h.origin?.corner ?: 0f, h.origin?.art ?: Thumbnails.frame(h.videoId, 720), docked = h.fromDock && from != null, ghost = h.windowShowing)
-            drop = d
-            reveal.snapTo(1f)
+            val d = drop ?: return@LaunchedEffect
+            if (handoff == null || seenHandoff[0] !== handoff) return@LaunchedEffect
             if (d.docked) {
                 // It flies with the sheet: done when the sheet lands, turns back, or a finger takes it.
                 snapshotFlow { sheet.progress.value >= 0.999f || sheet.progress.targetValue < 0.5f || drop !== d }.first { it }
             } else {
                 // Into the page already open, the picture wobbles as it's hit (the mock's jelly kick).
                 sheet.jiggle()
-                flight.snapTo(0f)
-                flight.animateTo(1f, Sp.Player.unit)
+                d.flight.animateTo(1f, Sp.Player.unit)
             }
             if (drop === d) {
-                reveal.animateTo(0f, androidx.compose.animation.core.tween(220))
-                drop = null
+                d.shown.animateTo(0f, androidx.compose.animation.core.tween(220))
+                if (drop === d) drop = null
             }
         }
         // A video that changed without a tap (the queue moving on, a link): the new picture blooms
@@ -304,13 +377,11 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
             if (drop != null) return@LaunchedEffect
             val d = Drop(null, 0f, Thumbnails.frame(video.id, 720), docked = false, ghost = false)
             drop = d
-            reveal.snapTo(1f)
             sheet.jiggle()
-            flight.snapTo(0f)
-            flight.animateTo(1f, Sp.Player.unit)
+            d.flight.animateTo(1f, Sp.Player.unit)
             if (drop === d) {
-                reveal.animateTo(0f, androidx.compose.animation.core.tween(220))
-                drop = null
+                d.shown.animateTo(0f, androidx.compose.animation.core.tween(220))
+                if (drop === d) drop = null
             }
         }
 
@@ -322,7 +393,9 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
         LaunchedEffect(fullscreen) {
             val target = if (fullscreen) 1f else 0f
             val v = fsThrow[0].also { fsThrow[0] = 0f }
-            if (reduceMotion) fsAnim.snapTo(target) else fsAnim.animateTo(target, PlayerSpring, initialVelocity = v)
+            // Liquid, on the mock's player spring: it carries past the screen's edges and back
+            // (drawn as a stretch going in and a squash landing on the page), as the flight to the mini player does.
+            if (reduceMotion) fsAnim.snapTo(target) else fsAnim.animateTo(target, if (liquidNow) Sp.Player.unit else PlayerSpring, initialVelocity = v)
         }
 
         // ---- the drag that moves the sheet ------------------------------------------------
@@ -338,15 +411,21 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
             armed = past
         }
         val latestTravel by rememberUpdatedState(travel)
+        // The drag started as a swipe up on the floating window (as opposed to one on the page).
+        var rising by remember { mutableStateOf(false) }
         fun release() {
             val v = tracker.calculateVelocity().y
             tracker.resetTracking()
             val p = progress.value
             val target = when {
+                // A swipe up on the window opens the page unless it's pulled back down: it's
+                // already a deliberate gesture, so it needn't be carried halfway.
+                rising -> if (v > px(300.dp)) 0f else if (v < -px(150.dp) || p > 0.1f) 1f else 0f
                 v < -900f -> 1f
                 v > 900f -> 0f
                 else -> if (p > 0.5f) 1f else 0f
             }
+            rising = false
             haptics.play(if (target == 1f) Haptic.Expand else Haptic.Tap)
             dragVelocity = 0f
             scope.launch { sheet.settle(target, -v / latestTravel) }
@@ -358,30 +437,19 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
             scope.launch(start = CoroutineStart.UNDISPATCHED) { progress.snapTo(p) }
         }
         // The window's throw, as iOS's PiP throws: where the flick would carry it picks the
-        // corner, and the spring starts at the finger's speed. Thrown past a side, it's put away.
+        // corner, and the spring starts at the finger's speed. Only an explicit throw away puts it
+        // away (see [pipRelease]): letting go of it anywhere else on the screen just lands it.
         fun releasePip() {
             val v = tracker.calculateVelocity().let { Offset(it.x, it.y) }
             tracker.resetTracking()
             // A pinch may have left it a size its corner can't take; settle on the size it shows.
             sheet.pipScale = sheet.pipScale.coerceIn(PIP_MIN_SCALE, pipMaxScale)
             val here = rest + pipDrag.value
-            val aim = here + v * 0.2f
-            val centre = aim + Offset(pipW / 2, pipH / 2)
-            // Put away, as YouTube's window is, when pushed a third of the way off the left or
-            // right edge and let go not pulling back, or flicked sideways hard enough that it
-            // would carry past the edge. A throw across or down the screen (more down than
-            // sideways) still lands in a corner.
-            // A pinch that grew it past an edge isn't a push.
-            val sideways = !pinched && kotlin.math.abs(v.x) >= kotlin.math.abs(v.y) * 1.5f
-            val eased = !pinched && (v.getDistance() < 600f || kotlin.math.abs(v.y) < kotlin.math.abs(v.x) * 1.5f)
-            val pushedLeft = eased && here.x < -pipW * 0.33f && v.x < 400f
-            val pushedRight = eased && here.x + pipW > W + pipW * 0.33f && v.x > -400f
-            val flungLeft = sideways && centre.x < -pipW * 0.1f
-            val flungRight = sideways && centre.x > W + pipW * 0.1f
-            val offLeft = pushedLeft || flungLeft
-            val offRight = !offLeft && (pushedRight || flungRight)
-            if (offLeft || offRight) {
+            val outcome = pipRelease(here.x, pipW, W, v.x, v.y, px(PIP_FLING_AWAY), pinched)
+            if (outcome != PipRelease.Land) {
+                val offLeft = outcome == PipRelease.AwayLeft
                 if (!armed) haptics.play(Haptic.Tap)
+                armed = false
                 scope.launch {
                     val out = Offset(if (offLeft) -W else W, v.y * 0.15f)
                     if (reduceMotion) {
@@ -394,18 +462,30 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
                     // Back in place once the player is gone, for the next video.
                     withTimeoutOrNull(1_500) { connection.current.first { it == null } }
                     pipDrag.snapTo(Offset.Zero)
+                    pipZone.snapTo(0f)
+                    pipZoneSide = 0
                     pipGone.snapTo(0f)
                 }
                 return
             }
+            armed = false
+            if (pipZoneSide != 0) {
+                pipZoneSide = 0
+                scope.launch { if (reduceMotion) pipZone.snapTo(0f) else pipZone.animateTo(0f, pipZoneSpring()) }
+            }
+            // Where the throw would carry it, as UIScrollView projects a fling at its normal rate.
+            val aim = here + Offset(project(v.x, PIP_THROW_RATE), project(v.y, PIP_THROW_RATE))
+            val centre = aim + Offset(pipW / 2, pipH / 2)
             val corner = (0..3).minBy { (cornerAt(it) + Offset(pipW / 2, pipH / 2) - centre).getDistanceSquared() }
             if (corner != sheet.pipCorner) haptics.play(Haptic.Select)
             val from = here - cornerAt(corner)
             sheet.pipCorner = corner
             scope.launch {
                 pipDrag.snapTo(from)
-                // Tuned with the throw: a little give as it lands, at the finger's speed.
+                // Tuned with the throw: a little give as it lands, at the finger's speed. Liquid, it
+                // lands on the mock's bouncy spring and squashes into its corner.
                 if (reduceMotion) pipDrag.snapTo(Offset.Zero)
+                else if (liquidNow) pipDrag.animateTo(Offset.Zero, Sp.Bouncy.spec(Offset(0.5f, 0.5f)), v)
                 else pipDrag.animateTo(Offset.Zero, androidx.compose.animation.core.spring(dampingRatio = 0.78f, stiffness = 260f), v)
             }
         }
@@ -422,10 +502,16 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
         // The drag handler outlives compositions; these read the window's geometry as it is now.
         val latestReleasePip by rememberUpdatedState({ releasePip() })
         val latestPinchPip by rememberUpdatedState({ zoom: Float -> pinchPip(zoom) })
-        // Pushed a third of the way off a side, where letting go puts the window away (as releasePip judges it).
+        // More than half of it past a side, where letting go puts the window away (as pipRelease
+        // judges it): it shrinks and dims there, with a tick as it enters, so the release isn't a surprise.
         val latestArmPip by rememberUpdatedState({ drag: Offset ->
-            val x = rest.x + drag.x
-            arm(x < -pipW * 0.33f || x + pipW > W + pipW * 0.33f)
+            val side = pipZoneAt(rest.x + drag.x, pipW, W)
+            arm(side != 0)
+            if (side != pipZoneSide) {
+                if (side != 0) pipZoneEdge = side
+                pipZoneSide = side
+                scope.launch { if (reduceMotion) pipZone.snapTo(if (side != 0) 1f else 0f) else pipZone.animateTo(if (side != 0) 1f else 0f, pipZoneSpring()) }
+            }
         })
         // In fullscreen the picture follows a finger down, and lets go of fullscreen past a
         // threshold or on a flick; short of it, it springs back.
@@ -438,7 +524,8 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
             if (leave) { if (!armed) haptics.play(Haptic.Tap); sheet.fullscreen = false }
             armed = false
             val throwV = if (cancelled) 0f else v.coerceIn(-4000f, 4000f)
-            scope.launch { if (reduceMotion) fsPull.snapTo(0f) else fsPull.animateTo(0f, SheetSpring, initialVelocity = throwV) }
+            // Liquid, the picture that stays springs back with a wobble, the mock's bouncy spring.
+            scope.launch { if (reduceMotion) fsPull.snapTo(0f) else fsPull.animateTo(0f, if (liquidNow && !leave) Sp.Bouncy.px else SheetSpring, initialVelocity = throwV) }
         }
         // Expanded, a drag up grows the picture toward fullscreen under the finger (the same
         // flight the button runs, held at the finger's place), and letting go past a quarter of
@@ -458,7 +545,7 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
             if (go) { if (!armed) haptics.play(Haptic.Expand); fsThrow[0] = flight.coerceAtLeast(0f); sheet.fullscreen = true }
             // PlayerSpring, not SheetSpring: this is a 0-to-1 value, and SheetSpring's half-unit
             // threshold ended the settle at once, so the picture jumped back.
-            else scope.launch { if (reduceMotion) fsAnim.snapTo(0f) else fsAnim.animateTo(0f, PlayerSpring, initialVelocity = flight) }
+            else scope.launch { if (reduceMotion) fsAnim.snapTo(0f) else fsAnim.animateTo(0f, if (liquidNow) Sp.Bouncy.unit else PlayerSpring, initialVelocity = flight) }
             armed = false
         }
         // The drag handler outlives compositions; these see the screen as it is now, after a resize.
@@ -478,9 +565,12 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
             detectPictureDrag(
                 screen = pictureScreen,
                 pansFreely = { progress.value < 0.01f && !sheet.fullscreen },
-                onStart = { pan ->
+                onStart = { mode ->
+                    val pan = mode == PictureDrag.Pan
+                    rising = mode == PictureDrag.Rise
                     dragTotal = 0f; panTotal = Offset.Zero; pinched = false; armed = false; tracker.resetTracking()
                     dragSpeed.reset(); dragVelocity = 0f
+                    fsSpeed.reset(); fsDragVelocity = 0f
                     // A finger takes the player from a thumbnail's flight: it's the player's again.
                     if (drop?.docked == true) drop = null
                     floating = pan
@@ -494,6 +584,7 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
                 onEnd = {
                     panning = false
                     sheetDragging = false
+                    fsDragVelocity = 0f
                     when {
                         floating -> latestReleasePip()
                         startedFullscreen -> latestReleaseFullscreen(false)
@@ -506,6 +597,7 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
                 onCancel = {
                     panning = false
                     sheetDragging = false
+                    fsDragVelocity = 0f
                     when {
                         floating -> latestReleasePip()
                         startedFullscreen -> latestReleaseFullscreen(true)
@@ -533,10 +625,18 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
                     arm(dragTotal > px(72.dp))
                     val limit = px(160.dp)
                     scope.launch(start = CoroutineStart.UNDISPATCHED) { fsPull.snapTo(if (pull < limit) pull else limit + (pull - limit) * 0.3f) }
+                    fsSpeed.add(uptime, fsPull.value / H)
+                    fsDragVelocity = fsSpeed.velocity
                     return@detectPictureDrag
                 }
                 if (sheet.fullscreen) return@detectPictureDrag
-                if (startedExpanded && dragTotal < 0 && progress.value > 0.99f) { latestPushFullscreen(-dragTotal); arm(fsAnim.value > 0.22f); return@detectPictureDrag }
+                if (startedExpanded && dragTotal < 0 && progress.value > 0.99f) {
+                    latestPushFullscreen(-dragTotal)
+                    arm(fsAnim.value > 0.22f)
+                    fsSpeed.add(uptime, fsAnim.value)
+                    fsDragVelocity = fsSpeed.velocity
+                    return@detectPictureDrag
+                }
                 if (fsAnim.value > 0f && !sheet.fullscreen) scope.launch(start = CoroutineStart.UNDISPATCHED) { fsAnim.snapTo(0f) }
                 follow(dy)
                 dragSpeed.add(uptime, progress.value)
@@ -580,20 +680,34 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
                                 val from = if (liquid) screen else sheetFrom()
                                 val sheetY = lerp(from.y, 0f, progress.value)
                                 val sheetX = lerp(from.x, 0f, progress.value)
-                                p.place((-sheetX).roundToInt(), (contentTop - sheetY + (1f - progress.value) * px(320.dp)).roundToInt())
+                                // Liquid, the mock's: the details rise 320 dp into place. Plain, 48.
+                                val rise = px(if (liquid) 320.dp else 48.dp)
+                                p.place((-sheetX).roundToInt(), (contentTop - sheetY + (1f - progress.value) * rise).roundToInt())
                             }
                         }
                         .graphicsLayer {
-                            // The mock's: the details rise 320 dp into place, fading in from a third of the way.
-                            alpha = smoothstep(0.35f, 0.95f, progress.value) * (1f - fsAnim.value)
+                            val fc = fsAnim.value.coerceIn(0f, 1f)
+                            if (liquid) {
+                                // The mock's: the details fade in from a third of the way, and grow
+                                // from 94% as the sheet body does; going fullscreen they fall away
+                                // under the picture, shrinking a little as they go.
+                                alpha = smoothstep(0.35f, 0.95f, progress.value) * (1f - fc)
+                                val k = lerp(0.94f, 1f, smoothstep(0.4f, 1f, progress.value)) * (1f - 0.06f * fc)
+                                scaleX = k
+                                scaleY = k
+                                transformOrigin = TransformOrigin(0.5f, 0f)
+                                translationY = fc * px(56.dp)
+                            } else {
+                                alpha = ((progress.value - 0.3f) / 0.7f).coerceIn(0f, 1f) * (1f - fsAnim.value)
+                            }
                             // Into a page already open, the new video's details pour in under the drop.
                             val d = drop
                             if (d != null && !d.docked) {
-                                val f = flight.value.coerceIn(0f, 1f)
+                                val f = d.flight.value.coerceIn(0f, 1f)
                                 // Gentler for a video that changed by itself than for one tapped into.
                                 val floor = if (d.from == null) 0.6f else 0.35f
                                 alpha *= floor + (1f - floor) * smoothstep(0.2f, 0.9f, f)
-                                translationY = (1f - f) * px(if (d.from == null) 16.dp else 40.dp)
+                                translationY += (1f - f) * px(if (d.from == null) 16.dp else 40.dp)
                             }
                         },
                 ) {
@@ -607,7 +721,7 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
         // the window pulled away under a finger), a droplet stays behind there, shrinking, tied
         // to the picture by a tail that thins and snaps a third of the way. Fused by the goo
         // layer on Android 12 and up; below, a metaball neck joins them. Composed only meanwhile.
-        val dockShowing by remember {
+        val dockShowing by remember(liquid) {
             derivedStateOf {
                 val e = progress.value
                 liquid && drop == null && !sheet.fullscreen &&
@@ -669,7 +783,8 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
                     // Absorbed where it floats while the new video grows out of its thumbnail.
                     val absorbing = drop?.docked == true && progress.value < 0.999f
                     val docked = if (absorbing) pipRest else pipRest.lerpTo(fullVideo, progress.value)
-                    val r = docked.lerpTo(screen, fsAnim.value)
+                    // The liquid spring's carry past either end is drawn (a stretch, a squash), not laid out.
+                    val r = docked.lerpTo(screen, fsAnim.value.coerceIn(0f, 1f))
                     val p = m.measure(Constraints.fixed(r.w.roundToInt().coerceAtLeast(1), r.h.roundToInt().coerceAtLeast(1)))
                     layout(constraints.maxWidth, constraints.maxHeight) { p.place(r.x.roundToInt(), r.y.roundToInt()) }
                 }
@@ -679,7 +794,29 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
                     val drag = pipDrag.value * (1f - p)
                     val corner = lerp(pipCorner, 0f, p) + (pull / 6f).coerceAtMost(px(20.dp))
                     val d = drop
-                    if (liquid && pull == 0f && fsAnim.value == 0f && !fullscreen && d?.docked != true) {
+                    val fs = fsAnim.value
+                    if (liquid && (pull != 0f || fs != 0f || fullscreen) && d?.docked != true) {
+                        // Into fullscreen and out, the same drop: it stretches along the way with its
+                        // speed, its corners round and its sides swell mid-way, it carries past the
+                        // screen going in (over-filling it a touch) and squashes onto the page coming
+                        // back. Pulled down out of fullscreen, it bulges at the sides as it gives.
+                        val fc = fs.coerceIn(0f, 1f)
+                        val over = fs - fc
+                        val vel = if (fsAnim.isRunning) fsAnim.velocity else if (fsPull.isRunning) fsPull.velocity / H else fsDragVelocity
+                        val st = abs((vel * 0.045f).coerceIn(-0.18f, 0.3f)) * 0.6f
+                        val land = (-over * 2.2f).coerceIn(0f, 0.35f)
+                        val stretchTop = (over * 0.4f).coerceIn(0f, 0.12f)
+                        val kx = 1f - st * 0.45f + land * 0.7f - stretchTop * 0.45f
+                        val ky = 1f + st - land + stretchTop
+                        scaleX = kx
+                        scaleY = ky
+                        transformOrigin = TransformOrigin(0.5f, if (land > 0.001f) 0f else 0.5f)
+                        val swell = midFlight(fc)
+                        val pulled = (pull / H).coerceIn(0f, 1f)
+                        val r = (corner + swell * px(22.dp)).coerceAtMost(minOf(size.width * kx, size.height * ky) / 2f)
+                        val side = swell * (px(8.dp) + (abs(vel) * 2f).coerceIn(0f, 10f) * density.density) + pulled * px(28.dp)
+                        shape = DropletShape(r / kx, r / ky, side = side / kx, ends = swell * px(18.dp) / ky)
+                    } else if (liquid && d?.docked != true) {
                         // The mock's renderPlayer: a moving drop elongates along its travel (more
                         // near the dock), a landing one squashes on its bottom, and one that flies
                         // past the top stretches up by the overshoot. Mid-flight its corners swell.
@@ -722,10 +859,26 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
                             scaleY *= 1f - 0.35f * gone
                         } else {
                             // Gives way under the drop as it arrives, and is whole again by the time it lands.
-                            val give = midFlight(flight.value)
+                            val give = midFlight(d.flight.value)
                             alpha *= 1f - 0.45f * give
                             scaleX *= 1f - 0.05f * give
                             scaleY *= 1f - 0.05f * give
+                        }
+                    }
+                    // Held where letting go puts it away: it shrinks toward the edge it's past and
+                    // dims; liquid, it also flattens against that edge like a drop pressed on glass.
+                    val zone = pipZone.value * (1f - p)
+                    if (zone > 0.001f) {
+                        val k = 1f - 0.14f * zone
+                        scaleX *= k
+                        scaleY *= k
+                        alpha *= 1f - 0.45f * zone
+                        val edgeX = if (pipZoneEdge < 0) 0f else W
+                        transformOrigin = TransformOrigin(((edgeX - (pipRest.x + drag.x)) / size.width).coerceIn(0f, 1f), 0.5f)
+                        if (liquid) {
+                            scaleX *= 1f - 0.1f * zone
+                            scaleY *= 1f + 0.06f * zone
+                            shape = DropletShape(pipCorner / scaleX, pipCorner / scaleY, side = zone * px(6.dp) / scaleX)
                         }
                     }
                 }
@@ -774,19 +927,19 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
                 d,
                 target = { if (d.docked) fullVideo else pictureAt() },
                 targetCorner = { lerp(px(PIP_CORNER), 0f, progress.value) },
-                t = { if (d.docked) progress.value else flight.value },
+                t = { if (d.docked) progress.value else d.flight.value },
                 // In the sheet's units, whichever is moving it: the sheet's own travel or the flight's.
                 speed = {
                     if (d.docked) abs(if (progress.isRunning) progress.velocity else dragVelocity)
                     else {
                         val to = pictureAt()
                         val from = d.from ?: to
-                        abs(flight.velocity) * kotlin.math.hypot(to.x - from.x, to.y - from.y) / travel
+                        abs(d.flight.velocity) * kotlin.math.hypot(to.x - from.x, to.y - from.y) / travel
                     }
                 },
                 land = { sheet.squash.value + if (d.docked && progress.targetValue < 0.5f) (-sheet.over.value * 2.2f).coerceIn(0f, 0.35f) else 0f },
                 overTop = { if (d.docked) (sheet.over.value * 0.8f).coerceIn(0f, 0.25f) else 0f },
-                alpha = { reveal.value },
+                alpha = { d.shown.value },
                 fallback = fullVideo,
             )
         }
@@ -875,16 +1028,34 @@ private fun HandoffDrop(
     }
 }
 
+/** What a drag on the picture does, decided as it starts. */
+internal enum class PictureDrag {
+    /** The floating window, moved anywhere under the finger (and pinched). */
+    Pan,
+    /** A swipe up on the floating window: the sheet rises under the finger toward the watch page. */
+    Rise,
+    /** The expanded or fullscreen picture's vertical drag. */
+    Sheet,
+}
+
+/**
+ * Whether a floating window's first movement, past the slop, is the swipe up that opens the
+ * watch page rather than a move: one finger, going up, and steeper than about 63° from the
+ * horizontal (twice as far up as across). A diagonal throw toward a top corner stays a move.
+ */
+internal fun isRise(moved: Offset, fingers: Int): Boolean = fingers == 1 && moved.y < 0f && abs(moved.y) > abs(moved.x) * 2f
+
 /**
  * The picture's drag: in [pansFreely] mode (the floating window) any direction past the touch
- * slop, with a second finger pinching (the zoom passed is that frame's, 1 for one finger);
- * otherwise only vertical ones, so a sideways swipe on the expanded picture is left to the
- * controls. The mode is fixed for the whole drag when it starts.
+ * slop, with a second finger pinching (the zoom passed is that frame's, 1 for one finger), unless
+ * it starts as a swipe up ([isRise]), which then reports only its vertical movement; otherwise
+ * only vertical ones, so a sideways swipe on the expanded picture is left to the controls. The
+ * mode is fixed for the whole drag when it starts.
  */
 private suspend fun PointerInputScope.detectPictureDrag(
     screen: ScreenPosition,
     pansFreely: () -> Boolean,
-    onStart: (pan: Boolean) -> Unit,
+    onStart: (mode: PictureDrag) -> Unit,
     onEnd: () -> Unit,
     onCancel: () -> Unit,
     onDrag: (uptimeMillis: Long, delta: Offset, zoom: Float) -> Unit,
@@ -894,6 +1065,7 @@ private suspend fun PointerInputScope.detectPictureDrag(
         // The fingers' centroid moves the window and their spread sizes it. Nothing is consumed
         // until past the slop, so a tap still reaches the window's buttons.
         var started = false
+        var rise = false
         var moved = Offset.Zero
         var spread = 1f
         // Each finger's last place on the screen: the window moves under them as they drag it.
@@ -921,8 +1093,12 @@ private suspend fun PointerInputScope.detectPictureDrag(
                 spread *= zoom
                 if (moved.getDistance() < viewConfiguration.touchSlop && kotlin.math.abs(1f - spread) < 0.04f) continue
                 started = true
-                onStart(true)
-                onDrag(event.changes.first().uptimeMillis, moved, spread)
+                rise = isRise(moved, pressed)
+                onStart(if (rise) PictureDrag.Rise else PictureDrag.Pan)
+                if (rise) onDrag(event.changes.first().uptimeMillis, Offset(0f, moved.y), 1f)
+                else onDrag(event.changes.first().uptimeMillis, moved, spread)
+            } else if (rise) {
+                onDrag(event.changes.first().uptimeMillis, Offset(0f, pan.y), 1f)
             } else {
                 onDrag(event.changes.first().uptimeMillis, pan, zoom)
             }
@@ -933,7 +1109,7 @@ private suspend fun PointerInputScope.detectPictureDrag(
     }
     var slop = 0f
     val start = awaitVerticalTouchSlopOrCancellation(down.id) { change, over -> change.consume(); slop = over } ?: return@awaitEachGesture
-    onStart(false)
+    onStart(PictureDrag.Sheet)
     onDrag(start.uptimeMillis, Offset(0f, slop), 1f)
     var lastY = screen.of(start.position).y
     while (true) {

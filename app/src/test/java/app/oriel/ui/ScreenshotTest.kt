@@ -593,11 +593,11 @@ class ScreenshotTest {
         assertEquals("still collapsed", 0f, appState!!.sheet.progress.value, 0.01f)
     }
 
-    /** A short sideways flick toward the near edge puts the window away too. */
+    /** A hard sideways flick toward the near edge puts the window away too (a slow nudge doesn't: PlayerGestureTest). */
     @Test fun pipWindowFlickedAtTheEdgeStops() {
         shoot("32_pip_flicked", setup = { it.sheet.progress.snapTo(0f) }, after = {
             val window = rule.onNodeWithContentDescription("Video window", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-            rule.onRoot().performTouchInput { swipe(window.center, Offset(window.center.x + window.width * 0.25f, window.center.y), 90) }
+            rule.onRoot().performTouchInput { swipe(window.center, Offset(window.center.x + window.width * 0.4f, window.center.y), 40) }
             settle(16)
         })
         assertEquals("playback was stopped", 1, appState!!.connection.stopRequests)
@@ -619,7 +619,8 @@ class ScreenshotTest {
         shoot("27_pip_thrown", setup = { it.sheet.progress.snapTo(0f) }, after = {
             val window = rule.onNodeWithContentDescription("Video window", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
             assertTrue("starts bottom right", window.center.x > rule.onRoot().fetchSemanticsNode().size.width / 2)
-            rule.onRoot().performTouchInput { swipe(window.center, Offset(width * 0.15f, height * 0.12f), 220) }
+            // Diagonal: a steep swipe up (twice as far up as across) would open the watch page instead.
+            rule.onRoot().performTouchInput { swipe(window.center, Offset(width * 0.02f, height * 0.3f), 220) }
             settle(16)
         })
         assertEquals("top-left corner", 0, appState!!.sheet.pipCorner)

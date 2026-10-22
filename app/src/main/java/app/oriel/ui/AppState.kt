@@ -42,6 +42,7 @@ import app.oriel.ui.navigation.isRoute
 import app.oriel.ui.navigation.tabRoot
 import app.oriel.ui.player.WatchModel
 import app.oriel.ui.theme.Sp
+import app.oriel.ui.theme.PlayerSpring
 import androidx.compose.animation.core.AnimationEndReason
 import app.oriel.ui.theme.TapOrigin
 import app.oriel.ui.theme.VideoOrigin
@@ -81,6 +82,8 @@ class PlayerSheetState(private val scope: CoroutineScope) {
     val over = Animatable(0f)
     /** The last video opened while the player was showing or about to: where from, for the hand-off. */
     var handoff by mutableStateOf<VideoHandoff?>(null)
+    /** Liquid motion is on (the player sets it as it composes): the flight overshoots on the mock's spring. Off, it's the plain one. */
+    var liquid = false
 
     fun expand() {
         scope.launch { fly(1f, 0f) }
@@ -104,6 +107,10 @@ class PlayerSheetState(private val scope: CoroutineScope) {
     // The mock's player spring (response 0.5, damping 0.72): it overshoots, and what it would have
     // carried past the bound plays on in [over], on the same spring, from the speed it hit it at.
     private suspend fun fly(target: Float, velocity: Float) {
+        if (!liquid) {
+            progress.animateTo(target, PlayerSpring, initialVelocity = velocity)
+            return
+        }
         val result = progress.animateTo(target, Sp.Player.unit, initialVelocity = velocity)
         if (result.endReason == AnimationEndReason.BoundReached) {
             over.snapTo(0f)
@@ -178,7 +185,11 @@ class AppState(
 
     /** Plays [video] and opens the watch page. */
     fun openVideo(video: Video, context: QueueContext = QueueContext(), positionMs: Long? = null, expand: Boolean = true, origin: VideoOrigin? = TapOrigin.take()) {
-        if (video.isShort) return openShort(video)
+        if (video.isShort) {
+            // The origin was taken for the player; it's the Shorts page's to grow out of.
+            TapOrigin.record(origin)
+            return openShort(video)
+        }
         watch.load(video, context.playlistId)
         if (expand) handOff(video.id, origin)
         if (expand) sheet.expand()
@@ -210,7 +221,20 @@ class AppState(
         sheet.handoff = VideoHandoff(videoId, origin, fromDock = sheet.progress.targetValue < 0.5f || !playing, windowShowing = playing && sheet.progress.targetValue < 0.5f)
     }
 
+    /** Where the last Short was tapped from, for the Shorts page to grow out of it (liquid motion). */
+    var shortOrigin: VideoOrigin? = null
+        private set
+    private var shortOriginAt = 0L
+
+    /**
+     * The tapped Short's origin while it's still the tap being handled (kept for a few seconds, not
+     * taken once: the Shorts page can be composed more than once as it's navigated to).
+     */
+    fun takeShortOrigin(): VideoOrigin? = shortOrigin?.takeIf { System.nanoTime() - shortOriginAt < 5_000_000_000L }
+
     fun openShort(video: Video, fromLink: Boolean = false) {
+        shortOrigin = if (fromLink) null else TapOrigin.take()
+        shortOriginAt = System.nanoTime()
         connection.pause()
         navigate(ShortsRoute(startId = video.id), fromLink)
     }
