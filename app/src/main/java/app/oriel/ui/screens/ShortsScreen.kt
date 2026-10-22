@@ -14,6 +14,10 @@ import app.oriel.ui.player.exitMotion
 import app.oriel.ui.player.pressClickable
 import app.oriel.ui.theme.LocalReduceAnimation
 import app.oriel.ui.theme.motion
+import app.oriel.ui.theme.Sp
+import app.oriel.ui.theme.goo
+import app.oriel.ui.theme.gooEffect
+import app.oriel.ui.theme.smoothstep
 import app.oriel.core.model.ShortSound
 import app.oriel.core.model.SoundPage
 import androidx.compose.foundation.basicMarquee
@@ -53,6 +57,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.width
@@ -154,6 +159,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.math.sin
+import kotlin.math.cos
+import kotlin.math.PI
+import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.withContext
 
 /** The endless Shorts sequence, with each short's overlay info fetched as it comes up. */
@@ -710,7 +719,7 @@ private fun ShortPage(app: AppState, id: String, info: ShortInfo?, playback: Sho
                 }
             }
             Column(Modifier.padding(end = 10.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                ShortAction(if (status == LikeStatus.LIKE) OrielIcons.Liked else OrielIcons.Like, info?.likeCount ?: "Like", description = if (status == LikeStatus.LIKE) "Liked" else "Like") {
+                ShortAction(if (status == LikeStatus.LIKE) OrielIcons.Liked else OrielIcons.Like, info?.likeCount ?: "Like", description = if (status == LikeStatus.LIKE) "Liked" else "Like", splash = status != LikeStatus.LIKE) {
                     haptics.play(Haptic.ToggleOn); graph.actions.toggleLike(video)
                 }
                 ShortAction(if (status == LikeStatus.DISLIKE) OrielIcons.Disliked else OrielIcons.Dislike, "Dislike") {
@@ -799,17 +808,63 @@ private fun ScrubTime(at: () -> Float, durationMs: Long, modifier: Modifier) {
 }
 
 @Composable
-private fun ShortAction(icon: ImageVector, label: String, description: String = label, enabled: Boolean = true, onClick: () -> Unit) {
+private fun ShortAction(icon: ImageVector, label: String, description: String = label, enabled: Boolean = true, splash: Boolean = false, onClick: () -> Unit) {
+    val reduce = LocalReduceAnimation.current
+    val scope = rememberCoroutineScope()
+    val burst = remember { Animatable(0f) }
+    var bursting by remember { mutableStateOf(false) }
+    val tap = {
+        if (splash && !reduce) scope.launch {
+            // The mock's like: droplets burst out, detach through the goo, then fall back into the button.
+            bursting = true
+            burst.snapTo(0f)
+            // The droplets fall back once the burst is at rest by the mock's measure (within 0.002,
+            // moving under 0.04 a second), which comes well before a Compose spring ends.
+            val out = launch { burst.animateTo(1f, Sp.Splash.unit, initialVelocity = 6f) }
+            androidx.compose.runtime.snapshotFlow { kotlin.math.abs(burst.value - 1f) < 0.002f && kotlin.math.abs(burst.velocity) < 0.04f || !out.isActive }.first { it }
+            out.cancel()
+            burst.animateTo(0f, Sp.SplashBack.unit)
+            // A newer tap cancels this one before here, and keeps the layer.
+            bursting = false
+        }
+        onClick()
+    }
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.graphicsLayer { alpha = if (enabled) 1f else 0.5f }.semantics(mergeDescendants = true) { contentDescription = if (description == label) label else "$description, $label" },
     ) {
-        Box(Modifier.size(48.dp).videoGlass(CircleShape, 0.32f).clip(CircleShape).clickable(enabled = enabled, role = androidx.compose.ui.semantics.Role.Button, onClick = onClick), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.matchParentSize().videoGlass(CircleShape, 0.32f).clip(CircleShape).clickable(enabled = enabled, role = androidx.compose.ui.semantics.Role.Button, onClick = tap))
+            if (bursting) LikeSplash(burst)
             Icon(icon, null, tint = Color.White, modifier = Modifier.size(25.dp))
         }
         Spacer(Modifier.height(4.dp))
         Text(label, style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W600), color = Color.White, maxLines = 1)
     }
+}
+
+/** Eight droplets on [burst], fused through the small goo, in a 120 dp square centred on the button. */
+@Composable
+private fun LikeSplash(burst: Animatable<Float, *>) {
+    val density = LocalDensity.current
+    val fx = remember(density) { gooEffect(with(density) { 4.dp.toPx() }, gain = 20f, cut = 8f) }
+    Spacer(
+        Modifier
+            .requiredSize(120.dp)
+            .goo(fx)
+            .drawBehind {
+                val x = burst.value
+                if (x <= 0.005f) return@drawBehind
+                val unit = 1.dp.toPx()
+                val d = 34f * unit * x.coerceAtLeast(0f)
+                val r = (7f * (1f - x * 0.45f)).coerceAtLeast(0f) * smoothstep(0f, 0.15f, x + 0.1f) * unit
+                if (r <= 0f) return@drawBehind
+                for (i in 0 until 8) {
+                    val a = i / 8f * 2f * PI.toFloat() + 0.3f
+                    drawCircle(Color.White, r, Offset(center.x + cos(a) * d, center.y + sin(a) * d))
+                }
+            },
+    )
 }
 
 @Composable
