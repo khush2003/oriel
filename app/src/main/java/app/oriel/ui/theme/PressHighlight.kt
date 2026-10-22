@@ -2,6 +2,8 @@ package app.oriel.ui.theme
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationSpec
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.IndicationNodeFactory
 import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
@@ -65,7 +67,7 @@ import kotlin.math.sign
  * Liquid motion on, the mock's `pressable` (design/liquid/index.html): a pressed surface dents
  * toward the finger, scaled about the touch point by up to 7% (less along the axis the finger
  * is off-centre on) and nudged 2.5 px toward it, lit by a radial glow under it; while held it
- * stretches after the finger (a rubber band, 22%); let go, it wobbles like jelly, kicked at 0.9
+ * stretches after the finger (a rubber band, 22%) and sinks a further 5% as the long press nears; let go, it wobbles like jelly, kicked at 0.9
  * across and −0.63 down on Sp.Jelly. [PressHighlight.strength] scales it all, as the mock's does
  * per kind (cards 0.45, chips 0.7, rows 0.25, buttons 1).
  *
@@ -188,6 +190,11 @@ private abstract class SquishNode(private var source: InteractionSource, var str
     val ty = Animatable(0f)
     /** The glow's (and the dim's) 0-to-1. */
     val hl = Animatable(0f)
+    /** Held: the surface keeps sinking toward the long press, 0 to 1, so the hold builds up before the menu lifts it. */
+    val charge = Animatable(0f)
+    private var charging: Job? = null
+    /** How much further a held surface sinks: cards and up the full 5%, a row less. */
+    val chargeScale get() = 1f - 0.05f * min(1f, strength / CARD_PRESS_STRENGTH) * charge.value
     var origin = Offset.Zero
     var size = Size.Zero
     private var base = floatArrayOf(1f, 1f, 0f, 0f)
@@ -291,6 +298,13 @@ private abstract class SquishNode(private var source: InteractionSource, var str
         to(tx, base[2], Sp.Press.px)
         to(ty, base[3], Sp.Press.px)
         to(hl, 1f, Sp.Press.unit)
+        charging?.cancel()
+        charging = coroutineScope.launch {
+            // Past a tap's length, sink the rest of the way to the long press.
+            delay(MIN_SHOWN_MS)
+            val hold = currentValueOf(LocalViewConfiguration).longPressTimeoutMillis - MIN_SHOWN_MS
+            charge.animateTo(1f, tween(hold.toInt().coerceAtLeast(100), easing = LinearOutSlowInEasing))
+        }
     }
 
     /** While held, the surface stretches after the finger. */
@@ -312,6 +326,8 @@ private abstract class SquishNode(private var source: InteractionSource, var str
     private fun settle(pop: Boolean) {
         pressing = false
         pointerId = -1L
+        charging?.cancel()
+        charging = coroutineScope.launch { if (reduce) charge.snapTo(0f) else charge.animateTo(0f, Sp.Jelly.unit) }
         if (reduce) {
             coroutineScope.launch { hl.snapTo(0f) }
             coroutineScope.launch { sx.snapTo(1f) }
@@ -389,11 +405,11 @@ private class DrawPressNode(source: InteractionSource, h: PressHighlight, cancel
         val syv = sy.value
         val txv = tx.value
         val tyv = ty.value
-        if (g == 0f && sxv == 1f && syv == 1f && txv == 0f && tyv == 0f) return drawContent()
+        if (g == 0f && sxv == 1f && syv == 1f && txv == 0f && tyv == 0f && charge.value == 0f) return drawContent()
         val a = 1f + (dim - 1f) * g.coerceIn(0f, 1f)
         withTransform({
             translate(txv, tyv)
-            scale(sxv, syv, origin)
+            scale(sxv * chargeScale, syv * chargeScale, origin)
         }) {
             this@draw.drawDimmed(a)
             val b = brush
@@ -467,8 +483,8 @@ private class LayerPressNode(source: InteractionSource, strength: Float, var alp
             val w = this@LayerPressNode.size.width
             val h = this@LayerPressNode.size.height
             transformOrigin = if (w > 0f && h > 0f) TransformOrigin(origin.x / w, origin.y / h) else TransformOrigin.Center
-            scaleX = sx.value
-            scaleY = sy.value
+            scaleX = sx.value * chargeScale
+            scaleY = sy.value * chargeScale
             translationX = tx.value
             translationY = ty.value
             this.alpha = (1f + (this@LayerPressNode.alpha - 1f) * hl.value).coerceIn(0f, 1f)

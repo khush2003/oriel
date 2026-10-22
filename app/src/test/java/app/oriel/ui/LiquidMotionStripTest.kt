@@ -95,6 +95,7 @@ class LiquidMotionStripTest {
     private var appState: AppState? = null
     private val state get() = appState!!
     private val density = 2f // xhdpi
+    private var liquid = true
 
     @Before fun gate() {
         assumeTrue("frame strips (-Pframes=true)", System.getProperty("oriel.frames") == "true")
@@ -145,7 +146,7 @@ class LiquidMotionStripTest {
         val base = LocalViewConfiguration.current
         val slop = with(LocalDensity.current) { 8.dp.toPx() }
         val config = remember(base, slop) { object : ViewConfiguration by base { override val touchSlop = slop } }
-        CompositionLocalProvider(LocalViewConfiguration provides config, LocalLiquidMotion provides true, content = content)
+        CompositionLocalProvider(LocalViewConfiguration provides config, LocalLiquidMotion provides liquid, content = content)
     }
 
     // --- events, in dp like the mock ---
@@ -288,6 +289,19 @@ class LiquidMotionStripTest {
         val y = card.top + card.width * 9f / 16f * 0.4f
         strip("card_hold", pad(card, 16f), 1.5f, drag(x, y, 5f, 3f, 150, 200))
     }
+
+    /** A held card: its squish under the finger, then the lift and the menu. */
+    private fun holdStrip(name: String) {
+        start(playing = false)
+        val card = feedCard(Fixtures.videos[4].title)
+        val x = card.left + card.width * 0.6f
+        val y = card.top + card.width * 9f / 16f * 0.5f
+        strip(name, full, 0.75f, listOf(down(0, x, y), up(1000)), listOf(0L, 150, 300, 450, 520, 560, 600, 650, 700, 800, 1200))
+    }
+
+    @Test fun cardLongPress() = holdStrip("card_longpress")
+
+    @Test fun cardLongPressOff() { liquid = false; holdStrip("card_longpress_off") }
 
     @Test fun chipSwitch() {
         startControls()
