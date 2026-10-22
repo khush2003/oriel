@@ -448,7 +448,7 @@ class AppState(
     /**
      * Opens a YouTube link in the app. Returns false when it isn't one it can open, for the
      * caller to say so or hand it on; one that has to be asked of YouTube first returns true
-     * and shows a notice if it leads nowhere.
+     * and opens it in the browser if YouTube has no answer the app can show.
      */
     fun openLink(url: String): Boolean {
         val uri = Uri.parse(url.trim())
@@ -489,7 +489,9 @@ class AppState(
                         resolved.playlistId != null && resolved.videoId == null -> playlist(resolved.playlistId)
                         else -> video(resolved.videoId)
                     }
-                    if (!opened) notice("Couldn't open this link")
+                    // A YouTube page the app has no screen for (Studio, Music's own pages, the terms):
+                    // the browser has it, rather than a dead end.
+                    if (!opened) openExternally(url)
                 }
                 true
             }
