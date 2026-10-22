@@ -1,6 +1,7 @@
 package app.oriel.data
 
 import android.content.Context
+import android.util.Base64
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.oriel.TestApp
@@ -59,8 +60,10 @@ class AccountStorageTest {
         assertEquals(cookie, box.open(sealed))
         // Same text, fresh IV: two seals never match.
         assertNotEquals(sealed, box.seal(cookie))
-        val flipped = sealed.dropLast(2) + if (sealed[sealed.length - 2] == 'A') "B=" else "A="
-        assertNull(box.open(flipped))
+        // Flip a whole byte of the ciphertext: editing a base64 character can land on padding bits.
+        val bytes = Base64.decode(sealed.removePrefix("v1:"), Base64.NO_WRAP)
+        bytes[bytes.size / 2] = (bytes[bytes.size / 2].toInt() xor 0x01).toByte()
+        assertNull(box.open("v1:" + Base64.encodeToString(bytes, Base64.NO_WRAP)))
         assertNull(box.open("v1:not base64!"))
         assertNull(SecretBox(key().let { k -> { k } }).open(sealed))
     }
