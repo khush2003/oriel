@@ -57,6 +57,7 @@ import app.oriel.ui.components.SegmentedControl
 import app.oriel.ui.navigation.HistoryRoute
 import app.oriel.ui.navigation.SettingsRoute
 import app.oriel.ui.theme.OrielTheme
+import app.oriel.ui.theme.LocalLiquidMotion
 import kotlinx.coroutines.flow.first
 import org.junit.Assume.assumeTrue
 import org.junit.Before
@@ -138,13 +139,13 @@ class LiquidMotionStripTest {
         } }
     }
 
-    /** Robolectric's touch slop is twice a phone's (16 dp); the mock's is a phone's 8. */
+    /** Robolectric's touch slop is twice a phone's (16 dp); the mock's is a phone's 8. Liquid motion on, as these strips are of it. */
     @Composable
     private fun DeviceSlop(content: @Composable () -> Unit) {
         val base = LocalViewConfiguration.current
         val slop = with(LocalDensity.current) { 8.dp.toPx() }
         val config = remember(base, slop) { object : ViewConfiguration by base { override val touchSlop = slop } }
-        CompositionLocalProvider(LocalViewConfiguration provides config, content = content)
+        CompositionLocalProvider(LocalViewConfiguration provides config, LocalLiquidMotion provides true, content = content)
     }
 
     // --- events, in dp like the mock ---
@@ -451,6 +452,81 @@ class LiquidMotionStripTest {
         start(setup = { it.sheet.progress.snapTo(0f); it.sheet.pipCorner = 0 })
         val card = feedCard(Fixtures.videos[5].title)
         strip("handoff", full, 0.5f, tap(card.center.x, card.top + card.width * 9f / 32f))
+    }
+
+    /** Nothing playing: the player grows out of the tapped card's thumbnail, not out of an empty dock. */
+    @Test fun handoffCold() {
+        start(playing = false)
+        val card = feedCard(Fixtures.videos[5].title)
+        strip("handoff_cold", full, 0.5f, tap(card.center.x, card.top + card.width * 9f / 32f))
+    }
+
+    /** The watch page's picture pushed up into fullscreen: 180 dp up in 200 ms and let go. */
+    @Test fun fullscreenUp() {
+        start(setup = { it.sheet.progress.snapTo(1f) })
+        strip("fullscreen_up", full, 0.5f, drag(110f, 150f, 0f, -140f, 200), CAPS + listOf(800L))
+    }
+
+    /** In fullscreen, the picture pulled down 240 dp in 200 ms and let go: back to the watch page. */
+    @Test fun fullscreenDown() {
+        start(setup = { it.sheet.progress.snapTo(1f); it.sheet.fullscreen = true })
+        strip("fullscreen_down", full, 0.5f, drag(206f, 300f, 0f, 240f, 200), CAPS + listOf(800L))
+    }
+
+    /** The fullscreen button's flight in and out, without a finger. */
+    @Test fun fullscreenButton() {
+        start(setup = { it.sheet.progress.snapTo(1f) })
+        strip("fullscreen_button", full, 0.5f, listOf(at(0) { state.sheet.fullscreen = true }, at(700) { state.sheet.fullscreen = false }), listOf(0L, 50L, 100L, 200L, 300L, 600L, 750L, 800L, 900L, 1000L, 1300L))
+    }
+
+    /** The Comments card on the watch page opens its panel out of itself, and Close shrinks it back in. */
+    @Test fun commentsPanel() {
+        start(setup = { it.sheet.progress.snapTo(1f) })
+        val card = bounds(hasText("Comments"))
+        strip("comments_panel", full, 0.5f, tap(card.center.x, card.center.y) + listOf(at(700) {
+            rule.onAllNodes(hasContentDescription("Close")).onLast().performClickSafely()
+        }), listOf(0L, 50L, 100L, 150L, 200L, 300L, 600L, 750L, 800L, 900L, 1100L))
+    }
+
+    /** In the comments, a comment's replies grow out of its row, and Back shrinks them back in. */
+    @Test fun repliesPanel() {
+        start(setup = { it.sheet.progress.snapTo(1f) })
+        top().performTouchInput { click(px(bounds(hasText("Comments")).center)) }
+        settle(14)
+        val chip = bounds(hasText("replies", substring = true))
+        strip("replies_panel", full, 0.5f, tap(chip) + listOf(at(700) { state.watch.closeReplies() }), listOf(0L, 50L, 100L, 150L, 200L, 300L, 600L, 750L, 800L, 900L, 1100L))
+    }
+
+    /** The description card's panel, dragged down from its header to close it. */
+    @Test fun descriptionPanelDrag() {
+        start(setup = { it.sheet.progress.snapTo(1f) })
+        top().performTouchInput { click(px(bounds(hasText("views", substring = true)).center)) }
+        settle(14)
+        val header = bounds(hasText("Description"))
+        strip("description_drag", full, 0.5f, drag(206f, header.center.y, 0f, 260f, 200))
+    }
+
+    /** The window dragged until more than half of it is past the right edge: it shrinks and dims there. */
+    @Test fun miniAway() {
+        start(setup = { it.sheet.progress.snapTo(0f) })
+        val r = bounds(hasContentDescription("Video window"))
+        strip("mini_away", full, 0.5f, drag(r.center.x, r.center.y, 140f, 0f, 400), CAPS + listOf(800L))
+    }
+
+    /** A Short on Home's shelf: the Shorts page grows out of its poster. */
+    @Test fun shortOpen() {
+        start(playing = false)
+        repeat(3) {
+            rule.onRoot().performTouchInput { swipe(px(Offset(206f, 700f)), px(Offset(206f, 250f)), 1500) }
+            settle(12)
+        }
+        // The card (its poster over its title), tapped on the poster.
+        val card = bounds(hasText(Fixtures.shorts[0].title))
+        strip("short_open", full, 0.5f, tap(card.center.x, card.top + 120f))
+    }
+
+    private fun androidx.compose.ui.test.SemanticsNodeInteraction.performClickSafely() {
+        performTouchInput { click() }
     }
 
     private companion object {
