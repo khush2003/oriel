@@ -39,6 +39,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -59,6 +60,18 @@ import app.oriel.core.model.Chip
 import app.oriel.core.model.Feed
 import app.oriel.ui.LocalAppState
 import app.oriel.ui.components.ActionPill
+import app.oriel.ui.components.SubscribePill
+import app.oriel.ui.components.TopBarContentHeight
+import app.oriel.ui.theme.LocalLiquidMotion
+import app.oriel.ui.theme.smoothstep
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.util.lerp
 import app.oriel.ui.components.PillSize
 import app.oriel.ui.haptics.Haptic
 import app.oriel.ui.haptics.rememberHaptics
@@ -115,6 +128,12 @@ class ChannelModel(private val graph: AppGraph, private val id: String, params: 
 
     init { load(params) }
 
+    companion object {
+        /** Frame strips: a page to show in place of the network. */
+        @androidx.annotation.VisibleForTesting
+        internal var previewPage: ChannelPage? = null
+    }
+
     /** Pull to refresh: the shown tab again from YouTube, sort and search let go. */
     fun refresh() {
         if (_state.value.page == null) return load(tabParams)
@@ -132,7 +151,7 @@ class ChannelModel(private val graph: AppGraph, private val id: String, params: 
         cancelLoads()
         _state.update { it.copy(loading = it.page == null, error = null) }
         job = viewModelScope.launch {
-            val r = withContext(Dispatchers.IO) { runCatching { graph.yt.channel(id, params) } }
+            val r = withContext(Dispatchers.IO) { runCatching { previewPage ?: graph.yt.channel(id, params) } }
             r.onSuccess { p ->
                 _state.update { it.copy(page = p, tabs = p.tabs.filter { t -> t.params != null || t.title == p.selectedTab }, selectedTab = p.selectedTab, feed = p.feed, loading = false, sortChips = p.feed.chips, selectedSort = null) }
             }.onFailure { e ->
@@ -280,6 +299,10 @@ fun ChannelScreen(id: String, params: String?) {
         },
     ) {
         item(key = "header", contentType = "header") {
+            val liquid = LocalLiquidMotion.current
+            val pull = LocalPagePull.current
+            // Where the bar's title sits, in the window: what the avatar and the name flow into.
+            val barCenter = with(LocalDensity.current) { (WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + TopBarContentHeight / 2).toPx() }
             Column {
                 val banner = state.page?.banner
                 // Most channels have a banner: its space is held while the page loads, so the
@@ -288,7 +311,20 @@ fun ChannelScreen(id: String, params: String?) {
                 if (banner == null && bannered) {
                     Box(Modifier.fillMaxWidth().aspectRatio(2.9f).shimmer())
                 } else if (banner != null) {
-                    Box(Modifier.fillMaxWidth()) {
+                    Box(
+                        Modifier.fillMaxWidth().then(
+                            if (!liquid) Modifier else Modifier.graphicsLayer {
+                                // Pulled down, the banner stretches to fill the gap from its bottom, as a rubber sheet.
+                                val p = pull()
+                                if (p > 0f && size.height > 0f) {
+                                    val k = (size.height + p) / size.height
+                                    transformOrigin = TransformOrigin(0.5f, 1f)
+                                    scaleX = k
+                                    scaleY = k
+                                }
+                            },
+                        ),
+                    ) {
                         RemoteImage(Thumbnails.sized(banner, 1280), Modifier.fillMaxWidth().aspectRatio(2.9f).graphicsLayer {
                             // A gentle parallax as the page scrolls up.
                             translationY = if (listState.firstVisibleItemIndex == 0) listState.firstVisibleItemScrollOffset * 0.4f else 0f
@@ -301,7 +337,11 @@ fun ChannelScreen(id: String, params: String?) {
                 // the page's colour where it overlaps the banner, the name and figures under it.
                 val bg = MaterialTheme.colorScheme.background
                 Box(Modifier.fillMaxWidth().offset(y = if (bannered) (-34).dp else 0.dp), contentAlignment = Alignment.Center) {
-                    Box(Modifier.clip(CircleShape).background(bg).padding(4.dp)) { Avatar(channel?.avatar, 92.dp, name = channel?.title) }
+                    Box(
+                        Modifier
+                            .then(if (liquid) Modifier.flowIntoBar(barCenter, avatar = true) else Modifier)
+                            .clip(CircleShape).background(bg).padding(4.dp),
+                    ) { Avatar(channel?.avatar, 92.dp, name = channel?.title) }
                 }
                 Column(
                     Modifier.fillMaxWidth().padding(horizontal = PAGE_GUTTER).offset(y = if (bannered) (-24).dp else 8.dp),
@@ -312,7 +352,7 @@ fun ChannelScreen(id: String, params: String?) {
                         Spacer(Modifier.height(8.dp))
                         SkeletonLine(0.36f)
                     } else {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = if (liquid) Modifier.flowIntoBar(barCenter, avatar = false) else Modifier) {
                             Text(channel.title, style = MaterialTheme.typography.headlineSmall, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, modifier = Modifier.weight(1f, fill = false))
                             if (channel.verified) VerifiedBadge()
                         }
@@ -351,11 +391,7 @@ fun ChannelScreen(id: String, params: String?) {
                         }
                         Spacer(Modifier.height(14.dp))
                         val isSub = channel.id in subscribed
-                        ActionPill(
-                            if (isSub) "Subscribed" else "Subscribe", if (isSub) OrielIcons.Bell else null, { app.toggleSubscribe(channel) },
-                            Modifier.widthIn(max = 360.dp).fillMaxWidth(), filled = !isSub, size = PillSize.Medium,
-                            haptic = if (isSub) Haptic.ToggleOff else Haptic.ToggleOn,
-                        )
+                        SubscribePill(isSub, { app.toggleSubscribe(channel) }, Modifier.widthIn(max = 360.dp).fillMaxWidth(), size = PillSize.Medium)
                     }
                 }
                 Spacer(Modifier.height(if (bannered) 0.dp else 18.dp))
@@ -444,3 +480,43 @@ private fun ChannelAboutSheet(channel: Channel, about: ChannelAbout?, failed: Bo
     }
 }
 
+/**
+ * The channel's avatar or name flowing into the bar as the page scrolls up, liquid motion on.
+ * The avatar shrinks from as soon as it moves, as a drop drawn toward the bar; at the bar's
+ * centre ([barCenter], px in the window) it stops there, spreads sideways and flattens as if
+ * merging into it, and is gone. The name rises with the page, stops at the bar and shrinks to
+ * the bar title's size as it fades, and the bar's own title takes over. Layer only: where it is
+ * comes from its placement, read as it's drawn.
+ */
+@Composable
+private fun Modifier.flowIntoBar(barCenter: Float, avatar: Boolean): Modifier {
+    // State, so the list moving the header re-runs the layer block (and only that).
+    val at = remember { mutableFloatStateOf(Float.NaN) }
+    return this
+        .onPlaced { c -> at.floatValue = c.positionInWindow().y + c.size.height / 2f }
+        .graphicsLayer {
+            val center = at.floatValue
+            if (center.isNaN()) return@graphicsLayer
+            // Its distance below the bar's centre: positive below it, negative once scrolled past.
+            val d = center - barCenter
+            if (avatar) {
+                val reach = 110.dp.toPx()
+                val t = (reach - d) / reach
+                if (t <= 0f) return@graphicsLayer
+                val k = lerp(1f, 0.28f, smoothstep(0f, 1f, t))
+                val merge = smoothstep(1f, 1.3f, t)
+                scaleX = k * (1f + 0.5f * merge)
+                scaleY = k * (1f - 0.35f * merge)
+                if (d < 0f) translationY = -d
+                alpha = 1f - smoothstep(0.95f, 1.3f, t)
+            } else {
+                if (d >= 0f) return@graphicsLayer
+                translationY = -d
+                val t = -d / 90.dp.toPx()
+                val k = lerp(1f, 0.8f, smoothstep(0f, 0.6f, t))
+                scaleX = k
+                scaleY = k
+                alpha = 1f - smoothstep(0.35f, 1f, t)
+            }
+        }
+}

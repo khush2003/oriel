@@ -111,6 +111,13 @@ import app.oriel.ui.theme.LocalReduceAnimation
 import app.oriel.ui.theme.GlyphPress
 import app.oriel.ui.theme.TilePress
 import app.oriel.ui.theme.LiquidPill
+import app.oriel.ui.theme.LocalLiquidMotion
+import app.oriel.ui.theme.Sp
+import androidx.compose.animation.core.Animatable
+import androidx.compose.ui.geometry.CornerRadius
+import app.oriel.ui.theme.TILE_PRESS_SCALE
+import app.oriel.ui.theme.pressEffect
+import androidx.compose.ui.layout.positionInParent
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.input.pointer.pointerInput
@@ -288,6 +295,14 @@ internal fun Modifier.inkUnderBlob(blob: SelectionBlob, position: () -> Rect, in
 /** BitChord's SearchFilterTabs: capsules on surfaceVariant, and the mock's blob flowing to the chosen one in the inverse colours. */
 @Composable
 fun ChipsRow(chips: List<Chip>, onSelect: (Chip) -> Unit, modifier: Modifier = Modifier, contentPadding: PaddingValues = PaddingValues(horizontal = PAGE_GUTTER), leading: (@Composable () -> Unit)? = null) {
+    if (!LocalLiquidMotion.current) {
+        // Each chosen chip fills itself, without the travelling blob.
+        Row(modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(contentPadding), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            leading?.invoke()
+            chips.forEach { chip -> FilterChip(chip.title, chip.selected) { onSelect(chip) } }
+        }
+        return
+    }
     val selected = chips.indexOfFirst { it.selected }
     val blob = rememberSelectionBlob(chips.size, selected)
     val reduce = LocalReduceAnimation.current
@@ -310,6 +325,65 @@ fun ChipsRow(chips: List<Chip>, onSelect: (Chip) -> Unit, modifier: Modifier = M
  */
 @Composable
 fun TabStrip(titles: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
+    if (LocalLiquidMotion.current) LiquidTabStrip(titles, selected, onSelect, modifier) else ClassicTabStrip(titles, selected, onSelect, modifier)
+}
+
+/** Liquid motion off: the capsule slides, its leading edge ahead of its width, and each label recolours itself. */
+@Composable
+private fun ClassicTabStrip(titles: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
+    val haptics = rememberHaptics()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    // Each title's drawn capsule (left, top, width, height) in the row, from the left edge whatever the direction.
+    val bounds = remember(titles) { mutableStateListOf<androidx.compose.ui.geometry.Rect>().apply { repeat(titles.size) { add(androidx.compose.ui.geometry.Rect.Zero) } } }
+    val target = bounds.getOrNull(selected) ?: androidx.compose.ui.geometry.Rect.Zero
+    // The leading edge leads going right and trails going left, so the capsule stretches on its way.
+    val x by animateFloatAsState(target.left, motion(spring(dampingRatio = 0.82f, stiffness = 460f)), label = "tabX")
+    val w by animateFloatAsState(target.width, motion(spring(dampingRatio = 0.82f, stiffness = 360f)), label = "tabW")
+    val shown by animateFloatAsState(if (selected in titles.indices) 1f else 0f, fade(160), label = "tabShown")
+    val ink = MaterialTheme.colorScheme.onBackground
+    val scroll = rememberScrollState()
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    val inset = PAGE_GUTTER - 4.dp
+    LaunchedEffect(selected, target) {
+        if (target.width <= 0f) return@LaunchedEffect
+        val pad = with(density) { 40.dp.toPx() }
+        val gutter = with(density) { inset.toPx() }
+        val view = scroll.viewportSize.toFloat()
+        // The scroll runs from the start edge: from the right, right to left.
+        val content = scroll.maxValue + view
+        val start = if (rtl) content - (gutter + target.left + target.width) else gutter + target.left
+        when {
+            start - pad < scroll.value -> scroll.animateScrollTo((start - pad).toInt().coerceAtLeast(0))
+            start + target.width + pad > scroll.value + view -> scroll.animateScrollTo((start + target.width + pad - view).toInt())
+        }
+    }
+    Row(
+        modifier.fillMaxWidth().horizontalScroll(scroll).padding(horizontal = inset, vertical = 1.dp)
+            .drawBehind {
+                if (w > 0f && shown > 0f) drawRoundRect(ink.copy(alpha = shown), topLeft = Offset(x, target.top), size = androidx.compose.ui.geometry.Size(w, target.height), cornerRadius = androidx.compose.ui.geometry.CornerRadius(target.height / 2))
+            },
+    ) {
+        titles.forEachIndexed { i, title ->
+            val on = i == selected
+            val color by animateColorAsState(if (on) MaterialTheme.colorScheme.background else ink.copy(alpha = 0.72f), fade(180), label = "tabInk")
+            Text(
+                title, style = MaterialTheme.typography.titleSmall, color = color, maxLines = 1,
+                modifier = Modifier
+                    .clickable(null, GlyphPress) { if (!on) { haptics.play(Haptic.Select); onSelect(i) } }
+                    .semantics { this.selected = on; role = Role.Tab }
+                    .minTouchTarget()
+                    .onGloballyPositioned { c ->
+                        val drawn = androidx.compose.ui.geometry.Rect(c.positionInParent(), c.size.toSize())
+                        if (i < bounds.size && bounds[i] != drawn) bounds[i] = drawn
+                    }
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun LiquidTabStrip(titles: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier) {
     val haptics = rememberHaptics()
     val density = androidx.compose.ui.platform.LocalDensity.current
     val blob = rememberSelectionBlob(titles.size, selected)
@@ -457,15 +531,93 @@ fun ActionPill(
 
 /** Subscribe: the filled inverse pill; Subscribed: the quiet veil with a bell. */
 @Composable
-fun SubscribeButton(subscribed: Boolean, onClick: () -> Unit) {
-    ActionPill(
-        text = if (subscribed) "Subscribed" else "Subscribe",
-        icon = if (subscribed) OrielIcons.Bell else null,
-        onClick = onClick,
-        filled = !subscribed,
-        size = PillSize.Compact,
-        haptic = if (subscribed) Haptic.ToggleOff else Haptic.ToggleOn,
-    )
+fun SubscribeButton(subscribed: Boolean, onClick: () -> Unit) = SubscribePill(subscribed, onClick)
+
+/**
+ * Subscribe or Subscribed as an [ActionPill]. With liquid motion the inverse fill is a drop
+ * ([LiquidSubscribePill]): subscribing drains it into the middle, its two edges on their own
+ * springs so it necks on the way and pinches off; unsubscribing wells it back up from there,
+ * past full and back.
+ */
+@Composable
+fun SubscribePill(subscribed: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, size: PillSize = PillSize.Compact) {
+    val haptic = if (subscribed) Haptic.ToggleOff else Haptic.ToggleOn
+    if (!LocalLiquidMotion.current) {
+        ActionPill(if (subscribed) "Subscribed" else "Subscribe", if (subscribed) OrielIcons.Bell else null, onClick, modifier, filled = !subscribed, size = size, haptic = haptic)
+        return
+    }
+    LiquidSubscribePill(subscribed, onClick, modifier, size, haptic)
+}
+
+@Composable
+private fun LiquidSubscribePill(subscribed: Boolean, onClick: () -> Unit, modifier: Modifier, size: PillSize, haptic: Haptic) {
+    val haptics = rememberHaptics()
+    val dark = LocalIsDark.current
+    val veil = MaterialTheme.colorScheme.onSurface.copy(alpha = if (dark) 0.09f else 0.06f)
+    val drop = MaterialTheme.colorScheme.primary
+    val hairline = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
+    val content by animateColorAsState(if (subscribed) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onPrimary, fade(180), label = "subInk")
+    val scope = rememberCoroutineScope()
+    val pill = remember { LiquidPill(0f, 0f, 0f, neckK = 0.22f, squash = 0.2f) }
+    val filled = remember { Animatable(if (subscribed) 0f else 1f) }
+    var box by remember { mutableStateOf(IntSize.Zero) }
+    val path = remember { Path() }
+    val placed = remember { booleanArrayOf(false) }
+    LaunchedEffect(subscribed, box) {
+        val w = box.width.toFloat()
+        val h = box.height.toFloat()
+        if (w <= 0f || h <= 0f) return@LaunchedEffect
+        if (!placed[0]) {
+            placed[0] = true
+            if (subscribed) pill.setNow(this, w / 2f, w / 2f) else pill.setNow(this, 0f, w)
+            pill.h.snapTo(if (subscribed) 0f else h)
+            return@LaunchedEffect
+        }
+        if (subscribed) {
+            // Drains toward the middle, the leading edge first, and pinches off.
+            pill.moveTo(scope, w * 0.5f, w * 0.5f)
+            launch { filled.animateTo(0f, Sp.Snappy.unit) }
+            pill.h.animateTo(0f, Sp.Bouncy.px)
+        } else {
+            // Wells up from the middle as a drop and spreads past its ends before it settles.
+            if (pill.h.value <= 0.5f) {
+                pill.setNow(this, w * 0.5f - h * 0.3f, w * 0.5f + h * 0.3f)
+                pill.h.snapTo(h * 0.6f)
+            }
+            pill.moveTo(scope, 0f, w)
+            launch { filled.animateTo(1f, Sp.Snappy.unit) }
+            pill.heightTo(scope, h)
+        }
+    }
+    val large = size != PillSize.Compact
+    Row(
+        modifier
+            .clickable(null, TilePress, role = Role.Button) {
+                haptics.play(haptic)
+                onClick()
+            }
+            .minTouchTarget()
+            .heightIn(min = size.height)
+            .clip(CircleShape)
+            .background(veil)
+            .onSizeChanged { box = it }
+            .drawBehind {
+                val h = this.size.height
+                drawRoundRect(hairline.copy(alpha = hairline.alpha * (1f - filled.value).coerceIn(0f, 1f)), cornerRadius = CornerRadius(h / 2f), style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
+                if (pill.h.value <= 0.5f) return@drawBehind
+                pill.path(path, h / 2f)
+                drawPath(path, drop)
+            }
+            .padding(horizontal = if (large) 24.dp else 14.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        if (subscribed) {
+            Icon(OrielIcons.Bell, null, tint = content, modifier = Modifier.size(if (large) 18.dp else 19.dp))
+            Spacer(Modifier.width(if (large) 8.dp else 6.dp))
+        }
+        Text(if (subscribed) "Subscribed" else "Subscribe", style = if (large) MaterialTheme.typography.titleMedium else MaterialTheme.typography.labelLarge, color = content, maxLines = 1)
+    }
 }
 
 /** BitChord's Search "Clear" pill and other text buttons: titleMedium in primary, on a 44dp target. */
@@ -538,6 +690,50 @@ fun <T> SegmentedControl(
     thumb: Color = if (LocalIsDark.current) SegmentThumbDark else Color.White,
     ink: Color = MaterialTheme.colorScheme.onSurface,
 ) {
+    if (LocalLiquidMotion.current) LiquidSegmentedControl(options, selected, label, onSelect, modifier, track, thumb, ink)
+    else ClassicSegmentedControl(options, selected, label, onSelect, modifier, track, thumb, ink)
+}
+
+/** Liquid motion off: the raised thumb slides (with a little stretch) to the chosen segment. */
+@Composable
+private fun <T> ClassicSegmentedControl(options: List<T>, selected: T, label: (T) -> String, onSelect: (T) -> Unit, modifier: Modifier, track: Color, thumb: Color, ink: Color) {
+    val haptics = rememberHaptics()
+    val index = options.indexOf(selected).coerceAtLeast(0)
+    val at by animateFloatAsState(index.toFloat(), motion(spring(dampingRatio = 0.78f, stiffness = 520f)), label = "segThumb")
+    // The layer's offset doesn't mirror, so right to left the thumb steps the other way.
+    val sign = if (LocalLayoutDirection.current == LayoutDirection.Rtl) -1f else 1f
+    // Each segment's presses: the chosen one's shrinks the thumb, as iOS's does; the others dim their label.
+    val presses = remember(options.size) { List(options.size) { MutableInteractionSource() } }
+    // At least 34dp, and as tall as the labels at a large font size.
+    Box(modifier.fillMaxWidth().heightIn(min = 34.dp).height(IntrinsicSize.Min).clip(RoundedCornerShape(9.dp)).background(track).padding(2.dp)) {
+        // The thumb, with the soft shadow iOS gives it in light mode.
+        Box(
+            Modifier
+                .fillMaxWidth(1f / options.size.coerceAtLeast(1)).fillMaxHeight()
+                .graphicsLayer { translationX = at * size.width * sign }
+                .then(presses.getOrNull(index)?.let { Modifier.pressEffect(it, scale = TILE_PRESS_SCALE) } ?: Modifier)
+                .shadow(if (LocalIsDark.current) 0.dp else 3.dp, RoundedCornerShape(7.dp), clip = false, ambientColor = Color.Black.copy(alpha = 0.12f), spotColor = Color.Black.copy(alpha = 0.12f))
+                .clip(RoundedCornerShape(7.dp))
+                .background(thumb),
+        )
+        Row(Modifier.fillMaxSize()) {
+            options.forEachIndexed { i, option ->
+                val on = i == index
+                Box(
+                    Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(7.dp))
+                        .clickable(presses[i], if (on) null else SegmentPress) { if (!on) { haptics.play(Haptic.Select); onSelect(option) } }
+                        .semantics { this.selected = on; role = Role.RadioButton },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(label(option), style = MaterialTheme.typography.labelLarge.copy(fontWeight = if (on) FontWeight.W600 else FontWeight.W500), color = ink, maxLines = 1, modifier = Modifier.padding(vertical = 4.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun <T> LiquidSegmentedControl(options: List<T>, selected: T, label: (T) -> String, onSelect: (T) -> Unit, modifier: Modifier, track: Color, thumb: Color, ink: Color) {
     val haptics = rememberHaptics()
     val index = options.indexOf(selected).coerceAtLeast(0)
     val n = options.size.coerceAtLeast(1)

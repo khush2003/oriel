@@ -8,6 +8,11 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import app.oriel.ui.theme.LocalLiquidMotion
+import app.oriel.ui.glass.iosPullY
+import androidx.compose.foundation.rememberOverscrollEffect
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import app.oriel.ui.theme.Sp
 import app.oriel.ui.theme.goo
 import app.oriel.ui.theme.gooEffect
@@ -91,6 +96,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
+
+/**
+ * How far the page's list is pulled down past its top right now, in px after the rubber band
+ * (0 at rest), for headers that stretch with it. Liquid motion only; read in the draw phase.
+ */
+val LocalPagePull = androidx.compose.runtime.staticCompositionLocalOf<() -> Float> { { 0f } }
 
 /** Whether the docked player is showing, so pages leave room for it above the tab bar. */
 val LocalMiniPlayerVisible = compositionLocalOf { false }
@@ -232,19 +243,32 @@ fun PageScaffold(
     // so sampling it from inside would draw the layer into itself.
     val glass = backdropWanted()
     val pageBackdrop = rememberLayerBackdrop()
+    val liquid = LocalLiquidMotion.current
+    val overscroll = rememberOverscrollEffect()
+    val pull = remember(overscroll) { { iosPullY(overscroll).coerceAtLeast(0f) } }
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     Box(Modifier.fillMaxSize().animatedBackground(background)) {
         Box(Modifier.fillMaxSize().then(if (glass) Modifier.layerBackdrop(pageBackdrop) else Modifier).animatedBackground(background)) {
             val list = @Composable { listModifier: Modifier ->
-                LazyColumn(state = state, modifier = listModifier.fillMaxSize(), contentPadding = padding) {
+                LazyColumn(state = state, modifier = listModifier.fillMaxSize(), contentPadding = padding, overscrollEffect = overscroll) {
                     if (hasLargeTitle) item(key = "large-title", contentType = "title") {
-                        LargeTitle(title!!, Modifier.graphicsLayer { alpha = largeTitleAlpha() }, trailing = titleTrailing)
+                        LargeTitle(
+                            title!!,
+                            Modifier.graphicsLayer {
+                                alpha = largeTitleAlpha()
+                                if (liquid) liquidTitleStretch(pull(), rtl)
+                            },
+                            trailing = titleTrailing,
+                        )
                     }
                     content()
                 }
             }
-            if (onRefresh != null) {
-                IosPullToRefresh(refreshing, onRefresh, spinnerTop = top) { offset -> list(Modifier.graphicsLayer { translationY = offset() }) }
-            } else list(Modifier)
+            CompositionLocalProvider(LocalPagePull provides if (liquid) pull else NO_PULL) {
+                if (onRefresh != null) {
+                    IosPullToRefresh(refreshing, onRefresh, spinnerTop = top) { offset -> list(Modifier.graphicsLayer { translationY = offset() }) }
+                } else list(Modifier)
+            }
             overlay()
         }
         TopFadeScrim(Modifier.align(Alignment.TopCenter), pageColor = background)
@@ -256,6 +280,22 @@ fun PageScaffold(
             ScaffoldBar(back, Modifier.align(Alignment.TopCenter), title, showTitle, collapse, leading, actions)
         }
     }
+}
+
+private val NO_PULL = { 0f }
+
+/**
+ * The large title pulled down past the top, as liquid: it swells from its leading edge, giving
+ * less the further it's pulled (never past 12%), and stretches a little taller than wide, so it reads as
+ * something soft being drawn out rather than zoomed.
+ */
+private fun androidx.compose.ui.graphics.GraphicsLayerScope.liquidTitleStretch(pull: Float, rtl: Boolean) {
+    if (pull <= 0f) return
+    val reach = 160.dp.toPx()
+    val s = app.oriel.ui.theme.rubber(pull, reach) / reach * 0.12f
+    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(if (rtl) 1f else 0f, 1f)
+    scaleX = 1f + s * 0.8f
+    scaleY = 1f + s * 1.25f
 }
 
 /** The bar, in a scope of its own: the title showing or not, for accessibility, recomposes only this. */
@@ -293,6 +333,7 @@ private val REFRESH_THRESHOLD = 80.dp
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun IosPullToRefresh(refreshing: Boolean, onRefresh: () -> Unit, spinnerTop: Dp, content: @Composable (offset: () -> Float) -> Unit) {
+    if (!LocalLiquidMotion.current) return ClassicPullToRefresh(refreshing, onRefresh, spinnerTop, content)
     val state = rememberPullToRefreshState()
     val density = LocalDensity.current
     val thresholdPx = with(density) { REFRESH_THRESHOLD.toPx() }
@@ -327,6 +368,32 @@ private fun IosPullToRefresh(refreshing: Boolean, onRefresh: () -> Unit, spinner
         content(offset)
         if (reduce) RefreshSpinner(refreshing, { state.distanceFraction }, offset, Modifier.align(Alignment.TopCenter).padding(top = top))
         else RefreshDropCanvas(drop, refreshing, offset, Modifier.align(Alignment.TopCenter).padding(top = top))
+    }
+}
+
+/** Liquid motion off: where it holds the content while it loads, and how far it has to be pulled (twice this, under the finger). */
+private val CLASSIC_REFRESH_HOLD = 60.dp
+
+/** Liquid motion off: the spokes fill in as it's pulled, the content held 60 dp down while it loads. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ClassicPullToRefresh(refreshing: Boolean, onRefresh: () -> Unit, spinnerTop: Dp, content: @Composable (offset: () -> Float) -> Unit) {
+    val state = rememberPullToRefreshState()
+    val holdPx = with(LocalDensity.current) { CLASSIC_REFRESH_HOLD.toPx() }
+    val haptics = rememberHaptics()
+    val loading by rememberUpdatedState(refreshing)
+    LaunchedEffect(state) {
+        snapshotFlow { state.distanceFraction >= 1f }.distinctUntilChanged().filter { it }.collect {
+            // The pull caught; a refresh started from elsewhere opens without one.
+            if (!loading) haptics.play(Haptic.Tap)
+        }
+    }
+    val offset = remember(state, holdPx) { { pullOffset(state.distanceFraction, holdPx) } }
+    // A page that starts under the status bar still shows the indicator below it.
+    val top = maxOf(spinnerTop, WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 4.dp)
+    Box(Modifier.fillMaxSize().pullToRefresh(refreshing, state, threshold = CLASSIC_REFRESH_HOLD, onRefresh = onRefresh)) {
+        content(offset)
+        RefreshSpinner(refreshing, { state.distanceFraction }, offset, Modifier.align(Alignment.TopCenter).padding(top = top))
     }
 }
 

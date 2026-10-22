@@ -55,18 +55,28 @@ private fun rubberBand(rawDistance: Float, containerPx: Float): Float {
     return banded * sign(rawDistance)
 }
 
+/** How far an iOS overscroll is pulled past the edge right now, in px after the rubber band (positive pulled down). Read it in the draw phase. */
+interface IosPull {
+    val pullY: Float
+}
+
+/** [effect]'s pull, or none if it isn't the iOS one. */
+fun iosPullY(effect: OverscrollEffect?): Float = (effect as? IosPull)?.pullY ?: 0f
+
 /**
  * An iOS-style overscroll effect for Compose scroll containers.
  *
  * It replaces Android's stretch/glow with a UIScrollView-like rubber band during a
  * drag, then critically damps the content back to its resting position on release.
  */
-private class IosOverscrollEffect(private val scope: CoroutineScope) : OverscrollEffect {
+private class IosOverscrollEffect(private val scope: CoroutineScope) : OverscrollEffect, IosPull {
     private val rawPullX = mutableFloatStateOf(0f)
     private val rawPullY = mutableFloatStateOf(0f)
     private var containerWidthPx = 0f
     private var containerHeightPx = 0f
     private var settling: Job? = null
+
+    override val pullY: Float get() = rubberBand(rawPullY.floatValue, containerHeightPx)
 
     override val isInProgress: Boolean
         get() = rawPullX.floatValue != 0f || rawPullY.floatValue != 0f

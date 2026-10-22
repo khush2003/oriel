@@ -1,5 +1,13 @@
 package app.oriel.ui.screens
 
+import app.oriel.ui.components.SearchOrigin
+import androidx.compose.ui.util.lerp
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.rememberScrollState
@@ -357,6 +365,8 @@ fun SearchScreen(initial: String?) {
         if (!heard.isNullOrEmpty()) { model.type(heard); submit(heard, voice = true) }
     }
     val haptics = rememberHaptics()
+    // The tab bar's Search droplet, when that's what opened this: the field grows out of it.
+    val droplet = remember { SearchOrigin.take() }
 
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Row(
@@ -364,7 +374,7 @@ fun SearchScreen(initial: String?) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             SearchField(
-                state.query, model::type, ::submit, Modifier.weight(1f), focusRequester = focus, onFocus = { focused = it },
+                state.query, model::type, ::submit, Modifier.weight(1f).growOutOfDroplet(droplet), focusRequester = focus, onFocus = { focused = it },
                 idleTrailing = if (!canListen) null else {
                     {
                         Box(
@@ -508,4 +518,54 @@ private fun SuggestionRow(text: AnnotatedString, icon: androidx.compose.ui.graph
         if (onRemove != null) Icon(OrielIcons.Close, "Remove", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(44.dp).clip(RoundedCornerShape(50)).clickable { haptics.play(Haptic.Tap); onRemove() }.padding(13.dp))
         if (onFill != null) Icon(OrielIcons.Fill, "Use", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(44.dp).clip(RoundedCornerShape(50)).clickable { haptics.play(Haptic.Tap); onFill() }.padding(12.dp))
     }
+}
+
+/**
+ * Liquid motion: the field grows out of the tab bar's Search droplet ([origin], in the window)
+ * as the mock's search flows out of its circle: the same round drop at the start, its width on
+ * the sheet's width spring and its height on the quicker one, the sides bowing out mid-flight,
+ * the corners easing from round to the field's; the field's own text comes in once it has mostly
+ * arrived. Nothing without an origin or with liquid motion off. Draw phase only.
+ */
+@Composable
+private fun Modifier.growOutOfDroplet(origin: androidx.compose.ui.geometry.Rect?): Modifier {
+    if (origin == null || !app.oriel.ui.theme.LocalLiquidMotion.current) return this
+    val pw = remember { androidx.compose.animation.core.Animatable(0f) }
+    val ph = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(Unit) {
+        launch { pw.animateTo(1f, app.oriel.ui.theme.Sp.SheetW.unit) }
+        ph.animateTo(1f, app.oriel.ui.theme.Sp.SheetH.unit)
+    }
+    val fill = MaterialTheme.colorScheme.surfaceVariant
+    val at = remember { floatArrayOf(Float.NaN, Float.NaN) }
+    val path = remember { androidx.compose.ui.graphics.Path() }
+    val fade = remember { androidx.compose.ui.graphics.Paint() }
+    return this
+        .onPlaced { c -> c.positionInWindow().let { at[0] = it.x; at[1] = it.y } }
+        .drawWithContent {
+            val w = pw.value
+            val h = ph.value
+            if (at[0].isNaN() || (w == 1f && h == 1f && !pw.isRunning && !ph.isRunning)) return@drawWithContent drawContent()
+            val p = minOf(w, h).coerceIn(0f, 1f)
+            val src = origin.translate(-at[0], -at[1])
+            val l = lerp(src.left, 0f, w)
+            val r = lerp(src.right, size.width, w)
+            val t = lerp(src.top, 0f, h)
+            val b = lerp(src.bottom, size.height, h)
+            val radius = lerp(src.height / 2f, 11.dp.toPx(), app.oriel.ui.theme.smoothstep(0f, 1f, p))
+            val swell = kotlin.math.sin(p * kotlin.math.PI.toFloat())
+            val bs = swell * 10.dp.toPx()
+            val bt = swell * 8.dp.toPx()
+            app.oriel.ui.theme.blobRectPath(path, minOf(l, r), minOf(t, b), maxOf(l, r), maxOf(t, b), radius, bs, bt)
+            clipPath(path) {
+                drawRect(fill, topLeft = Offset(minOf(l, r) - bs * 2f, minOf(t, b) - bt * 2f), size = Size(kotlin.math.abs(r - l) + bs * 4f, kotlin.math.abs(b - t) + bt * 4f))
+                val a = app.oriel.ui.theme.smoothstep(0.55f, 0.95f, p)
+                if (a > 0f) {
+                    fade.alpha = a
+                    drawContext.canvas.saveLayer(androidx.compose.ui.geometry.Rect(0f, 0f, size.width, size.height), fade)
+                    this@drawWithContent.drawContent()
+                    drawContext.canvas.restore()
+                }
+            }
+        }
 }

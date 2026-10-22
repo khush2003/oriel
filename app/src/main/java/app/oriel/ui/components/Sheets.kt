@@ -2,6 +2,7 @@ package app.oriel.ui.components
 
 import app.oriel.ui.AlertAction
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.material3.SheetValue
@@ -25,6 +26,7 @@ import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.util.lerp
+import app.oriel.ui.theme.LocalLiquidMotion
 import app.oriel.ui.theme.LocalReduceAnimation
 import app.oriel.ui.theme.Sp
 import app.oriel.ui.theme.blobRectPath
@@ -157,6 +159,7 @@ object SheetOrigins {
 /** Marks a button as the place the sheet it opens grows out of: its bounds, [corner] and [tint] are recorded as it's pressed. */
 @Composable
 fun Modifier.sheetOrigin(corner: Dp, tint: Color? = null): Modifier {
+    if (!LocalLiquidMotion.current) return this
     val coordinates = remember { arrayOfNulls<LayoutCoordinates>(1) }
     val radius = with(LocalDensity.current) { corner.toPx() }
     val fill by rememberUpdatedState(tint)
@@ -298,7 +301,8 @@ fun OrielSheet(
     origin: SheetOrigin? = remember { SheetOrigins.take() },
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val reduce = LocalReduceAnimation.current
+    // M3's plain slide, as before liquid motion, unless it's on.
+    val reduce = LocalReduceAnimation.current || !LocalLiquidMotion.current
     val scope = rememberCoroutineScope()
     val dismiss by rememberUpdatedState(onDismiss)
     val morph = remember { SheetMorph(origin) }
@@ -734,25 +738,65 @@ fun NewPlaylistDialog(signedIn: Boolean, onDismiss: () -> Unit, onCreate: (name:
 private fun alertFieldFill(): Color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (LocalIsDark.current) 0.10f else 0.06f)
 
 @Composable
-private fun AlertCard(visible: MutableTransitionState<Boolean>, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+internal fun AlertCard(visible: MutableTransitionState<Boolean>, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    val liquid = LocalLiquidMotion.current
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         // iOS's alert: blooms in from a touch larger with a soft spring, and on the way out
-        // shrinks a touch and fades quickly. Kept composed until the exit has played.
+        // shrinks a touch and fades quickly. Kept composed until the exit has played. Liquid,
+        // it blooms out of a drop at the centre instead ([alertBloom]).
         AnimatedVisibility(
             visible,
-            enter = fadeIn(motion(spring(stiffness = 900f))) + scaleIn(motion(spring(dampingRatio = 0.78f, stiffness = 520f)), initialScale = 1.14f),
-            exit = fadeOut(fade(140)) + scaleOut(fade(160), targetScale = 0.94f),
+            enter = if (liquid) fadeIn(Sp.Fade.unit) else fadeIn(motion(spring(stiffness = 900f))) + scaleIn(motion(spring(dampingRatio = 0.78f, stiffness = 520f)), initialScale = 1.14f),
+            exit = if (liquid) fadeOut(Sp.FadeOut.unit) else fadeOut(fade(140)) + scaleOut(fade(160), targetScale = 0.94f),
         ) {
+            val fill = MaterialTheme.colorScheme.surfaceContainerHigh
             Column(
-                Modifier.widthIn(max = 290.dp).fillMaxWidth(0.76f).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                Modifier.widthIn(max = 290.dp).fillMaxWidth(0.76f)
+                    .then(if (liquid) Modifier.alertBloom(this, fill) else Modifier.clip(RoundedCornerShape(16.dp)).background(fill)),
                 content = content,
             )
         }
     }
 }
 
+/**
+ * The liquid alert's way in: a drop at the centre that swells into the card, its width on the
+ * bouncy spring and its height on a slower one so it spreads, then drops open, the sides
+ * bowing out mid-flight (blobRect) and the whole a touch past full size before it settles; the
+ * text comes in once it's mostly open. Out, it draws back in quickly. Draw phase only.
+ */
 @Composable
-private fun AlertButtons(actions: List<AlertAction>) {
+private fun Modifier.alertBloom(scope: androidx.compose.animation.AnimatedVisibilityScope, fill: Color): Modifier {
+    val shown = androidx.compose.animation.EnterExitState.Visible
+    val pw = scope.transition.animateFloat({ if (targetState == shown) Sp.Bouncy.unit else Sp.MenuClose.unit }, label = "bloomW") { if (it == shown) 1f else 0f }
+    val ph = scope.transition.animateFloat({ if (targetState == shown) Sp.SheetW.unit else Sp.MenuClose.unit }, label = "bloomH") { if (it == shown) 1f else 0f }
+    return this
+        .graphicsLayer {
+            val w = pw.value
+            val h = ph.value
+            val p = minOf(w, h).coerceIn(0f, 1f)
+            val s = lerp(0.82f, 1f, minOf(w, h))
+            scaleX = s
+            scaleY = s
+            val drop = minOf(size.width, size.height) * 0.34f
+            val cx = size.width / 2f
+            val cy = size.height / 2f
+            val hw = lerp(drop / 2f, size.width / 2f, w.coerceAtLeast(0f))
+            val hh = lerp(drop / 2f, size.height / 2f, h.coerceAtLeast(0f))
+            val radius = lerp(drop / 2f, 16.dp.toPx(), smoothstep(0f, 1f, p))
+            val swell = kotlin.math.sin(p * kotlin.math.PI.toFloat())
+            val bs = swell * 10.dp.toPx()
+            val bt = swell * 8.dp.toPx()
+            shape = app.oriel.ui.theme.PathShape { out, _ -> blobRectPath(out, cx - hw, cy - hh, cx + hw, cy + hh, radius, bs, bt) }
+            clip = true
+        }
+        .background(fill)
+        // The text, once the drop has mostly opened.
+        .graphicsLayer { alpha = smoothstep(0.55f, 0.9f, minOf(pw.value, ph.value)) }
+}
+
+@Composable
+internal fun AlertButtons(actions: List<AlertAction>) {
     val divider = MaterialTheme.colorScheme.outlineVariant
     Box(Modifier.fillMaxWidth().height(0.5.dp).background(divider))
     if (actions.size == 2) {
