@@ -5,6 +5,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.SpringSpec
 import androidx.compose.animation.core.spring
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
@@ -34,6 +35,13 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
+
+/**
+ * Whether the liquid motion is on: the "Liquid motion" setting (off by default), and never under
+ * Reduce motion. Off, every interaction behaves as it did before liquid motion existed. Liquid
+ * glass is a separate setting.
+ */
+val LocalLiquidMotion = staticCompositionLocalOf { true }
 import kotlin.math.tanh
 
 /*
