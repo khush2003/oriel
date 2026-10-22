@@ -2,8 +2,6 @@ package app.oriel.core.stream
 
 import app.oriel.core.YouTube
 import com.metrolist.innertubex.InnerTubeLogger
-import com.metrolist.innertubex.cipher.PlayerConfigRepository
-import com.metrolist.innertubex.cipher.RemotePlayerConfigStore
 import com.metrolist.innertubex.cipher.YouTubeCipherService
 import com.metrolist.innertubex.extraction.AudioQuality
 import com.metrolist.innertubex.extraction.ContentHints
@@ -202,29 +200,18 @@ class StreamResolver(
             dropStreams()
         }
 
-    private val repository = object : PlayerConfigRepository {
-        override val enabled: Boolean get() = store != null
-        override val sourceUrl: String = PLAYER_CONFIG_URL
-        override val defaultSourceUrl: String = PLAYER_CONFIG_URL
-        override var cachedJson: String
-            get() = store?.getString("cipher.json").orEmpty()
-            set(value) { store?.putString("cipher.json", value) }
-        override var cachedAtMs: Long
-            get() = store?.getLong("cipher.cached_at") ?: 0L
-            set(value) { store?.putLong("cipher.cached_at", value) }
-        override var cachedSourceUrl: String
-            get() = store?.getString("cipher.source").orEmpty()
-            set(value) { store?.putString("cipher.source", value) }
-        override var cachedEtag: String
-            get() = store?.getString("cipher.etag").orEmpty()
-            set(value) { store?.putString("cipher.etag", value) }
-    }
-
-    private val configStore = RemotePlayerConfigStore(yt.http, repository, logger)
-    private val cipher = YouTubeCipherService(yt.http, configStore, logger)
+    /**
+     * The cipher runs on YouTube's own player script alone, never on code or configs from
+     * anyone else. InnerTubeX can also take a "player config" table and, from it, a ready-made
+     * preprocessed player fetched from a third party's GitHub repository (via jsDelivr), which it
+     * runs in QuickJS and caches on disk: whoever controls that repository or CDN would have
+     * their JavaScript run in the app's process next to the sign-in cookie. Passing no config
+     * store turns all of that off; the bundled yt-dlp solver preprocesses YouTube's player here.
+     */
+    private val cipher = YouTubeCipherService(yt.http, remotePlayerConfigStore = null, logger = logger)
     private val health = ClientHealth()
     /** One for the resolver's life, wrapped in a disk copy of the watch page's config. */
-    private val configParser = YtConfigParserImpl(yt.http, yt.innerTube, configStore, logger).let { parser ->
+    private val configParser = YtConfigParserImpl(yt.http, yt.innerTube, logger = logger, cipherService = cipher).let { parser ->
         if (store == null) parser else DiskCachedConfigParser(parser, store, ::configIdentity)
     }
 
@@ -248,17 +235,28 @@ class StreamResolver(
     init {
         if (playerDir != null) {
             scope.launch {
+                forgetUntrustedPlayers(playerDir)
                 cipher.setPreprocessedPlayerCache(
-                    read = { key -> File(playerDir, key).takeIf { it.isFile }?.readText() },
+                    read = { key -> playerFile(playerDir, key)?.takeIf { it.isFile }?.readText() },
                     write = { key, value -> writePlayer(key, value) },
                 )
             }
         }
     }
 
+    /**
+     * Earlier versions cached preprocessed players fetched from a third party next to the ones
+     * made here, under the same names. They're deleted once, so none of them is ever run again.
+     */
+    private fun forgetUntrustedPlayers(dir: File) {
+        if (store == null || store.getLong(KEY_PLAYERS_LOCAL_ONLY) != null) return
+        dir.listFiles()?.forEach { it.delete() }
+        store.putLong(KEY_PLAYERS_LOCAL_ONLY, 1L)
+    }
+
     private fun writePlayer(key: String, value: String?) {
         val dir = playerDir ?: return
-        val file = File(dir, key)
+        val file = playerFile(dir, key) ?: return
         if (value == null) { file.delete(); return }
         val tmp = File(dir, "$key.tmp")
         tmp.writeText(value)
@@ -542,8 +540,12 @@ class StreamResolver(
         private val BOT_WORDS = listOf("not a bot", "confirm you're not", "confirm you\u2019re not")
         private val REMOVED_WORDS = listOf("removed", "terminated", "deleted")
 
-        private const val PLAYER_CONFIG_URL =
-            "https://raw.githubusercontent.com/ZemerTeam/zemer-cipher/master/library/src/main/assets/player_configs.json"
+        private const val KEY_PLAYERS_LOCAL_ONLY = "players.local_only"
+        private val PLAYER_KEY = Regex("[A-Za-z0-9_-]{1,128}")
+
+        /** [key]'s file in [dir]; null for a name that isn't a plain file name, so none can reach outside it. */
+        internal fun playerFile(dir: File, key: String): File? = if (PLAYER_KEY.matches(key)) File(dir, key) else null
+
         private const val EXCLUDE_MS = 10 * 60_000L
         private const val DEFAULT_TTL_MS = 5 * 60 * 60_000L
         private const val EXPIRY_MARGIN_MS = 10 * 60_000L

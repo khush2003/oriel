@@ -4,25 +4,45 @@ on:
   push:
     tags: ["v*"]
 
-permissions:
-  contents: write
+# Nothing by default; each job asks for what it needs.
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    # Runs as bash -eo pipefail.
+    shell: bash
 
 jobs:
-  release:
+  # Builds and signs. Holds the signing key, so it gets a read-only token and publishes nothing.
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # Its protection rules (only v* tags, the maintainer's approval) gate the signing secrets.
     environment: release
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
-      - uses: gradle/actions/wrapper-validation@v4
+          persist-credentials: false
+      - uses: gradle/actions/wrapper-validation@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
+      - name: Tag is on main
+        run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+            || { echo "Tag $GITHUB_REF_NAME points at a commit that isn't on main"; exit 1; }
       - name: Tag matches versionName
+        id: version
         run: |
           version=$(sed -nE 's/^\s*versionName = "([^"]+)".*/\1/p' app/build.gradle.kts)
           [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "Tag $GITHUB_REF_NAME doesn't match versionName $version"; exit 1; }
-          echo "VERSION=$version" >> "$GITHUB_ENV"
-          case "$version" in *-*) echo "PRERELEASE=--prerelease" >> "$GITHUB_ENV" ;; *) echo "PRERELEASE=" >> "$GITHUB_ENV" ;; esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: versionCode is higher than the last release's
         run: |
           code=$(sed -nE 's/^\s*versionCode = ([0-9]+).*/\1/p' app/build.gradle.kts)
@@ -32,19 +52,22 @@ jobs:
             [ "$code" -gt "$prev" ] || { echo "versionCode $code isn't higher than $last's $prev"; exit 1; }
           fi
       - run: scripts/check-guardrails.sh
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: temurin
           java-version: |
             21
             17
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3.2.2
         with:
           packages: "platforms;android-37.0 build-tools;36.0.0"
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
         with:
+          # No cache: a release is built only from what this commit says.
           cache-disabled: true
-      - name: Keystore
+      - name: Test
+        run: ./gradlew --no-daemon :core:test :app:testDebugUnitTest
+      - name: Signing key
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -52,31 +75,87 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           [ -n "$KEYSTORE_BASE64" ] || { echo "KEYSTORE_BASE64 is not set; refusing to publish a debug-signed release"; exit 1; }
-          echo "$KEYSTORE_BASE64" | base64 -d > release.jks
-          printf 'storeFile=release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
-            "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > keystore.properties
-      - name: Test
-        run: ./gradlew --no-daemon :core:test :app:testDebugUnitTest
+          # Outside the checkout, readable only by this user, so nothing can pick it up as a build input or artifact.
+          umask 077
+          dir="$RUNNER_TEMP/signing"
+          mkdir -p "$dir"
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$dir/release.jks"
+          printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$dir/release.jks" "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > "$dir/keystore.properties"
+          echo "ORIEL_SIGNING_PROPERTIES=$dir/keystore.properties" >> "$GITHUB_ENV"
       - name: Build
         env:
           APTABASE_KEY: ${{ secrets.APTABASE_KEY }}
         run: ./gradlew --no-daemon :app:assembleRelease
+      - name: Remove the signing key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/signing"
+      - name: Signed with the release key
+        env:
+          # SHA-256 of the release signing certificate (public; every published APK carries it).
+          RELEASE_CERT_SHA256: 6e462a636f6f0abfc24f7811ed20fb80af9b1771a131da6a3cb9cc785e01586f
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          apksigner="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools/36.0.0/apksigner"
+          mkdir dist
+          for abi in universal arm64-v8a armeabi-v7a x86_64 x86; do
+            apk="dist/Oriel-$VERSION-$abi.apk"
+            cp "app/build/outputs/apk/release/app-$abi-release.apk" "$apk"
+            certs=$("$apksigner" verify --print-certs "$apk")
+            signers=$(grep -c '^Signer #[0-9]* certificate SHA-256 digest:' <<< "$certs" || true)
+            grep -qx "Signer #1 certificate SHA-256 digest: $RELEASE_CERT_SHA256" <<< "$certs" && [ "$signers" -eq 1 ] \
+              || { echo "$apk isn't signed with the release key alone"; exit 1; }
+          done
+          (cd dist && sha256sum *.apk) > dist/SHA256SUMS.txt
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: release
+          path: dist/
+          if-no-files-found: error
+          retention-days: 1
+
+  # Attests and drafts the release. Runs no build code, so its write token and OIDC token never
+  # meet a Gradle plugin.
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: release
+          path: dist
+      - name: Checksums match what was built
+        run: cd dist && sha256sum -c SHA256SUMS.txt
+      - name: Build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*.apk
       - name: Draft the release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
-          mkdir dist
-          for abi in universal arm64-v8a armeabi-v7a x86_64 x86; do
-            cp "app/build/outputs/apk/release/app-$abi-release.apk" "dist/Oriel-$VERSION-$abi.apk"
-          done
-          (cd dist && sha256sum *.apk) > dist/SHA256SUMS.txt
+          prerelease=()
+          case "$VERSION" in *-*) prerelease=(--prerelease) ;; esac
           notes="Most phones: **arm64-v8a**. Older 32-bit phones: armeabi-v7a. Not sure: **universal** runs on any device.
+
+          SHA-256 of each file:
 
           \`\`\`
           $(cat dist/SHA256SUMS.txt)
-          \`\`\`"
-          gh release create "$GITHUB_REF_NAME" dist/*.apk dist/SHA256SUMS.txt --draft $PRERELEASE \
+          \`\`\`
+
+          To check a file was built from this tag by this repository's release workflow:
+          \`gh attestation verify Oriel-$VERSION-arm64-v8a.apk -R $GH_REPO\`
+
+          Every Oriel APK is signed with the same certificate, SHA-256
+          \`6e:46:2a:63:6f:6f:0a:bf:c2:4f:78:11:ed:20:fb:80:af:9b:17:71:a1:31:da:6a:3c:b9:cc:78:5e:01:58:6f\`
+          (\`apksigner verify --print-certs\`). Don't install one signed with anything else."
+          gh release create "$GITHUB_REF_NAME" dist/*.apk dist/SHA256SUMS.txt --draft "${prerelease[@]}" \
             --title "Oriel $VERSION" --notes "$notes"
-      - name: Remove the keystore
-        if: always()
-        run: rm -f release.jks keystore.properties

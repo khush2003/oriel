@@ -15,6 +15,16 @@ object Thumbnails {
     private val SQUARE = Regex("""=s\d+(?=[^/]*$)""")
     private val VIDEO_ID = Regex("""i\.ytimg\.com/(?:vi|vi_webp)/([\w-]{11})/""")
 
+    /**
+     * [url] as it may be fetched: image URLs come from responses, and a plain-http one (or a
+     * protocol-relative `//host/...`) is asked for over HTTPS instead, as cleartext is never sent.
+     */
+    fun secure(url: String): String = when {
+        url.startsWith("//") -> "https:$url"
+        url.regionMatches(0, "http://", 0, 7, ignoreCase = true) -> "https://" + url.substring(7)
+        else -> url
+    }
+
     fun sized(url: String?, px: Int): String? {
         if (url == null) return null
         return when {

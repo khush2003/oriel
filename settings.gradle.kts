@@ -16,8 +16,11 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven("https://jitpack.io") {
-            content { includeGroupByRegex("com\\.github\\..*") }
+        // JitPack builds anyone's GitHub repo on demand, so it serves InnerTubeX and nothing else,
+        // and InnerTubeX comes from nowhere else. Its files are pinned in gradle/verification-metadata.xml.
+        exclusiveContent {
+            forRepository { maven("https://jitpack.io") }
+            filter { includeGroup("com.github.MetrolistGroup.innertubex") }
         }
     }
 }

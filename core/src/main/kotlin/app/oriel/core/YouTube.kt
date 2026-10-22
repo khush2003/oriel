@@ -573,6 +573,8 @@ class YouTube(
 
     /** Cues of [track], optionally machine-translated to [translateTo]. */
     suspend fun captionCues(track: CaptionTrack, translateTo: String? = null): List<Cue> {
+        // The track's URL comes from the player response; it's only ever fetched from YouTube.
+        require(isYouTubeHttps(track.url)) { "Caption track URL isn't YouTube's" }
         val url = buildString {
             append(track.url.replace(Regex("[&?]fmt=[^&]*"), ""))
             append("&fmt=json3")
@@ -736,6 +738,13 @@ class YouTube(
          * knowing at launch, before the client (and its HTTP stack) has been built.
          */
         fun isSignedInCookie(cookie: String?): Boolean = sapisidOf(cookie?.let(::sanitizeCookieString)) != null
+
+        internal fun isYouTubeHttps(url: String): Boolean {
+            val parsed = runCatching { java.net.URI(url) }.getOrNull() ?: return false
+            val host = parsed.host?.lowercase() ?: return false
+            return parsed.scheme.equals("https", ignoreCase = true) && parsed.userInfo == null &&
+                (parsed.port == -1 || parsed.port == 443) && (host == "youtube.com" || host.endsWith(".youtube.com"))
+        }
 
         private fun sapisidOf(cookie: String?): String? =
             cookie?.split(';')?.map { it.trim() }?.associate { it.substringBefore('=') to it.substringAfter('=', "") }?.let {

@@ -3,7 +3,13 @@
 /core/                    @khush2003
 /app/src/main/java/app/oriel/data/   @khush2003
 /app/build.gradle.kts     @khush2003
+# Build and supply chain: repositories, wrapper, dependency checksums, ProGuard rules.
+/*.gradle.kts              @khush2003
+/gradle/                  @khush2003
+/gradle.properties        @khush2003
+/app/proguard-rules.pro   @khush2003
 /.github/                 @khush2003
 /scripts/                 @khush2003
 /docs/SCOPE.md            @khush2003
 /PRIVACY.md               @khush2003
+/SECURITY.md              @khush2003

@@ -559,15 +559,21 @@ class PlaybackService : MediaLibraryService() {
         }
 
         override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo, customCommand: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
-            if (customCommand.customAction == ACTION_LIKE) {
+            // Media3 already refuses commands a controller wasn't granted; liking acts on the account, so check again.
+            if (customCommand.customAction == ACTION_LIKE && canBrowse(session, controller)) {
                 toggleLike()
                 return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
             return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
         }
 
-        override fun onAddMediaItems(mediaSession: MediaSession, controller: MediaSession.ControllerInfo, mediaItems: MutableList<MediaItem>): ListenableFuture<MutableList<MediaItem>> =
-            Futures.immediateFuture(mediaItems.map { MediaItems.restore(it, queue.height()) }.toMutableList())
+        override fun onAddMediaItems(mediaSession: MediaSession, controller: MediaSession.ControllerInfo, mediaItems: MutableList<MediaItem>): ListenableFuture<MutableList<MediaItem>> {
+            val trusted = canBrowse(mediaSession, controller)
+            val items = mediaItems.mapNotNull { controllerItem(it, trusted, queue.height()) }
+            // An empty answer to a non-empty request would quietly clear the queue; refuse it instead.
+            if (items.isEmpty() && mediaItems.isNotEmpty()) return Futures.immediateFailedFuture(IllegalArgumentException("No playable items"))
+            return Futures.immediateFuture(items.toMutableList())
+        }
 
         override fun onPlaybackResumption(mediaSession: MediaSession, controller: MediaSession.ControllerInfo, isForPlayback: Boolean): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
             val saved = queue.savedQueue() ?: return Futures.immediateFailedFuture(UnsupportedOperationException("Nothing to resume"))
@@ -614,6 +620,21 @@ class PlaybackService : MediaLibraryService() {
 
     companion object {
         const val ACTION_LIKE = "oriel.LIKE"
+        private val VIDEO_ID = Regex("[A-Za-z0-9_-]{11}")
+
+        /**
+         * An item a controller asked to play, rebuilt as one of Oriel's own. Anything that isn't a
+         * YouTube video id is dropped, so no controller can make the player open another URI. Other
+         * apps get the bare id only: their titles and extras would otherwise land in the watch
+         * history as if the person had chosen them.
+         */
+        @androidx.annotation.VisibleForTesting
+        internal fun controllerItem(item: MediaItem, trusted: Boolean, height: Int?): MediaItem? {
+            if (trusted && item.localConfiguration?.uri?.scheme == "oriel") return item
+            val video = (if (trusted) MediaItems.video(item) else Video(item.mediaId, "")) ?: return null
+            if (!VIDEO_ID.matches(video.id)) return null
+            return MediaItems.build(video, height)
+        }
         private const val ROOT = "root"
         private const val LIKED = "liked"
         private const val HISTORY = "history"

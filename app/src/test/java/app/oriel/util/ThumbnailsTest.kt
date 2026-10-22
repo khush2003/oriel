@@ -15,6 +15,13 @@ class ThumbnailsTest {
         assertEquals(signed, Thumbnails.sized(signed, 1080))
     }
 
+    @Test fun imageUrlsGoOverHttps() {
+        assertEquals("https://i.ytimg.com/vi/x/hq.jpg", Thumbnails.secure("http://i.ytimg.com/vi/x/hq.jpg"))
+        assertEquals("https://yt3.ggpht.com/a=s88", Thumbnails.secure("//yt3.ggpht.com/a=s88"))
+        assertEquals("https://yt3.ggpht.com/a=s88", Thumbnails.secure("HTTP://yt3.ggpht.com/a=s88"))
+        assertEquals("https://i.ytimg.com/vi/x/hq.jpg", Thumbnails.secure("https://i.ytimg.com/vi/x/hq.jpg"))
+    }
+
     @Test fun formatHelpers() {
         assertEquals("1.2K", Format.compact(1234))
         assertEquals("446", Format.compact(446))

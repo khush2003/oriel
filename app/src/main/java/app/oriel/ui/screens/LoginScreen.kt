@@ -1,8 +1,14 @@
 package app.oriel.ui.screens
 
 import android.annotation.SuppressLint
+import android.net.Uri
+import android.net.http.SslError
+import android.view.WindowManager
 import android.webkit.CookieManager
+import android.webkit.SslErrorHandler
 import android.webkit.WebResourceRequest
+import android.webkit.WebSettings
+import android.webkit.WebStorage
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.background
@@ -22,7 +28,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import androidx.annotation.VisibleForTesting
 import androidx.compose.ui.viewinterop.AndroidView
 import app.oriel.ui.components.ActivityIndicator
 import app.oriel.ui.components.OrielIcons
@@ -58,10 +66,30 @@ fun LoginScreen() {
     // Once the cookie is in, the sign-in is finishing on its own: leaving now would only confuse it.
     BackHandler(enabled = finishing) {}
 
+    // Google's pages show the account's email and the password field: keep them out of
+    // screenshots, screen recordings and the recents thumbnail while this screen is up.
+    val context = LocalView.current.context
+    val window = remember(context) {
+        generateSequence(context) { (it as? android.content.ContextWrapper)?.baseContext }
+            .filterIsInstance<android.app.Activity>().firstOrNull()?.window
+    }
+    DisposableEffect(window) {
+        window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
+    }
+
     DisposableEffect(Unit) {
         onDispose {
-            webView?.destroy()
-            CookieManager.getInstance().removeAllCookies(null)
+            webView?.apply {
+                clearHistory()
+                clearCache(true)
+                clearFormData()
+                destroy()
+            }
+            // Nothing from the sign-in pages outlives them: the session lives in the app's own
+            // storage, not in the WebView's cookies, local storage or cache.
+            WebStorage.getInstance().deleteAllData()
+            CookieManager.getInstance().apply { removeAllCookies(null); flush() }
         }
     }
 
@@ -76,16 +104,36 @@ fun LoginScreen() {
                     settings.domStorageEnabled = true
                     settings.allowContentAccess = false
                     settings.allowFileAccess = false
+                    @Suppress("DEPRECATION")
+                    settings.allowFileAccessFromFileURLs = false
+                    @Suppress("DEPRECATION")
+                    settings.allowUniversalAccessFromFileURLs = false
+                    settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                    settings.safeBrowsingEnabled = true
+                    settings.setGeolocationEnabled(false)
+                    // window.open loads in this WebView, through the same host check, never a new one.
+                    settings.setSupportMultipleWindows(false)
+                    settings.javaScriptCanOpenWindowsAutomatically = false
+                    // An overlay from another app mustn't be able to steer taps on the sign-in page.
+                    filterTouchesWhenObscured = true
                     // Google refuses sign-in in WebViews it recognises; "; wv" is the marker it looks for.
                     settings.userAgentString = settings.userAgentString.replace("; wv", "")
                     CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
                     webViewClient = object : WebViewClient() {
                         // Only Google's sign-in and YouTube load here; any other link opens in the browser.
-                        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                            val url = request.url
-                            if (url.scheme == "https" && isSignInHost(url.host)) return false
-                            if (url.scheme == "https" || url.scheme == "http") app.openExternally(url.toString())
-                            return true
+                        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
+                            when (loginNavigation(request.url, request.isForMainFrame)) {
+                                LoginNavigation.LOAD -> false
+                                LoginNavigation.EXTERNAL -> { app.openExternally(request.url.toString()); true }
+                                LoginNavigation.BLOCK -> true
+                            }
+
+                        // A certificate that doesn't check out is never clicked through: the page fails.
+                        @SuppressLint("WebViewClientOnReceivedSslError")
+                        override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
+                            handler.cancel()
+                            failed = true
+                            loading = false
                         }
 
                         override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
@@ -162,6 +210,22 @@ fun LoginScreen() {
             )
         }
     }
+}
+
+@VisibleForTesting
+internal enum class LoginNavigation { LOAD, EXTERNAL, BLOCK }
+
+/**
+ * Where a navigation inside the sign-in WebView goes: Google's sign-in and YouTube load there;
+ * another web page the person opens goes to the browser; anything else (intent:, javascript:,
+ * data:, file:, plain http, or a frame inside the page heading off-site) is dropped, so a page
+ * can't launch other apps or the browser on its own.
+ */
+@VisibleForTesting
+internal fun loginNavigation(url: Uri, isMainFrame: Boolean): LoginNavigation = when {
+    url.scheme == "https" && isSignInHost(url.host) -> LoginNavigation.LOAD
+    isMainFrame && (url.scheme == "https" || url.scheme == "http") && !url.host.isNullOrEmpty() -> LoginNavigation.EXTERNAL
+    else -> LoginNavigation.BLOCK
 }
 
 private val CONSENT_HOST = Regex("""consent\.(youtube\.com|google\.[a-z]{2,3}(\.[a-z]{2})?)""")

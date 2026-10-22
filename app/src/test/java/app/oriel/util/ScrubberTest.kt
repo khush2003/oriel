@@ -70,8 +70,35 @@ class ScrubberTest {
         assertTrue(out, out.startsWith("POST https://www.youtube.com/youtubei/v1/player?…"))
     }
 
+    @Test fun headersPrintedAsJsonAreRemoved() {
+        val out = scrub("""{"Cookie":"PREF=hl=en; OSID=fake","Authorization":"SAPISIDHASH 1_fake"}""")
+        assertFalse(out, out.contains("fake"))
+        assertTrue(out, out.startsWith("""{"Cookie":[removed]"""))
+    }
+
+    @Test fun googlevideoPathParametersAreCut() {
+        // Manifests carry the signature and the device's IP as path segments, not a query.
+        assertEquals(
+            "manifest https://manifest.googlevideo.com/api/… failed",
+            scrub("manifest https://manifest.googlevideo.com/api/manifest/hls_variant/expire/1/ip/203.0.113.9/sig/fake.sig/lsig/fake.lsig/file/index.m3u8 failed"),
+        )
+        assertEquals(
+            "https://rr1---sn-fake.googlevideo.com/videoplayback/…",
+            scrub("https://rr1---sn-fake.googlevideo.com/videoplayback/id/fake/itag/251/ip/203.0.113.9/sig/fake"),
+        )
+    }
+
+    @Test fun identifiersAndAddressesAreRemoved() {
+        assertEquals("""{"visitorData":"[removed]"}""", scrub("""{"visitorData":"CgtShortFake"}"""))
+        assertEquals("dataSyncId=[removed] next", scrub("dataSyncId=fake12345 next"))
+        assertEquals("from [ip] via [ip]", scrub("from 203.0.113.9 via 198.51.100.200"))
+        assertEquals("NID=[removed]; SMSV=[removed]", scrub("NID=fake; SMSV=fake"))
+        // Versions aren't addresses.
+        assertEquals("Oriel 1.0.0-beta.3, WEB 2.20260708.05.00", scrub("Oriel 1.0.0-beta.3, WEB 2.20260708.05.00"))
+    }
+
     @Test fun scrubbingTwiceChangesNothing() {
-        val once = scrub("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=3 Cookie: SID=fake.sid someone@example.com " + "A".repeat(80))
+        val once = scrub("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=3 visitorData=fake 203.0.113.9 https://manifest.googlevideo.com/api/manifest/ip/1 Cookie: SID=fake.sid someone@example.com " + "A".repeat(80))
         assertEquals(once, scrub(once))
     }
 }

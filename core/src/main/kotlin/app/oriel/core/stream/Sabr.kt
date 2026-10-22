@@ -322,7 +322,9 @@ class SegmentIndex(private val timesMs: LongArray, private val offsets: LongArra
                 if (size == 1L) { size = u64(b, pos + 8); header = 16 }
                 if (size == 0L) size = (b.size - pos).toLong()
                 if (type == "sidx") return parseSidx(b, pos + header, pos + size)
-                if (size < header) return null
+                // A box can't be smaller than its header or run past the bytes there are; a size of
+                // exactly 2^32 would otherwise wrap to a step of 0 and loop forever.
+                if (size < header || size > b.size - pos) return null
                 pos += size.toInt()
             }
             return null

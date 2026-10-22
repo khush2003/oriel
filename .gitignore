@@ -7,3 +7,7 @@ local.properties
 captures/
 keystore.properties
 *.jks
+*.keystore
+*.p12
+*.pem
+.env

@@ -15,6 +15,8 @@ CI (`scripts/check-guardrails.sh`) as well as in review.
    share-as-file, and any use of `DownloadManager`, Media3's `offline`/`DownloadService` APIs or
    writing stream bytes to user-visible storage. The normal playback cache (bytes kept privately
    so seeking back and replaying don't re-download) is fine; it's never exposed as files.
+   Oriel's own updates, fetched from its GitHub releases and verified before installing, aren't
+   downloads in this sense and are allowed (still without `DownloadManager`).
 2. **Getting around YouTube's technical protections.** No proof-of-origin (PO) token or BotGuard
    generation, no running Google's anti-bot or integrity programs, no attestation spoofing, no
    cookie or account sharing, no proxying to dodge region locks, rate limits or bot checks.

@@ -46,7 +46,8 @@ class ChunkedDataSource(
         chunkSize = size
         openChunk()
         if (end == UNSET) {
-            totalFromContentRange(upstream.responseHeaders)?.let { end = it }
+            // A total that doesn't lie past where reading starts is a bad header, not a length.
+            totalFromContentRange(upstream.responseHeaders)?.takeIf { it > dataSpec.position }?.let { end = it }
         }
         return if (end != UNSET) end - dataSpec.position else C.LENGTH_UNSET.toLong()
     }

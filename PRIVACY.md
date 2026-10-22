@@ -9,8 +9,9 @@ everything it sends, and to whom.
   channels and settings. They stay in the app's private storage and are excluded from
   Android backups and device-to-device transfers. Pausing or clearing history is in
   Settings › Privacy & storage.
-- If you sign in: your YouTube session cookie, in the app's private storage. It's never logged,
-  and it's sent only to YouTube's own servers.
+- If you sign in: your YouTube session cookie, in the app's private storage, encrypted
+  (AES-256-GCM) with a key that stays in the Android Keystore and can't be exported. It's never
+  logged, and it never leaves the phone except to YouTube's and Google's own servers.
 - Problem reports: the last five crashes and the last forty errors (playback errors and failed
   page loads), in the app's private storage, until newer ones replace them or you clear them in
   Settings › About › Report a problem. URL queries, cookies, auth headers, email addresses and
@@ -33,6 +34,17 @@ history). Google's [privacy policy](https://policies.google.com/privacy) applies
   its dislike count.
 
 These services see your IP address, as any server you connect to does.
+
+## Update checks (can be turned off in Settings)
+
+Official builds look for a newer version of Oriel once a day when the app starts, and when you
+tap Settings › Updates › Check for updates. They ask GitHub's API (api.github.com) for the list
+of Oriel's releases; if you choose to update, the app's file and its checksums are fetched from
+GitHub's download hosts (github.com and objects.githubusercontent.com). These are ordinary
+requests with no cookies, no account and no identifiers: the only thing they carry about you is
+the app's version, in the User-Agent (`Oriel/1.0.0`). GitHub sees your IP address, as any server
+does. Turn off Settings › Updates › Check automatically to stop the daily check. Builds made from
+source in debug mode never check.
 
 ## Anonymous usage counts (opt-in)
 

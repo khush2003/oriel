@@ -10,7 +10,8 @@ fail() { echo "✗ $1"; failed=1; }
 pass() { echo "✓ $1"; }
 
 # Source and build files only: docs and this script are allowed to name what's forbidden.
-code_files() { git ls-files -- 'app/**' 'core/**' '*.gradle.kts' 'gradle/**' ':!**/*.md'; }
+# Untracked files count too, so a local run catches what's about to be committed.
+code_files() { git ls-files --cached --others --exclude-standard -- 'app/**' 'core/**' '*.gradle.kts' 'gradle/**' ':!**/*.md'; }
 
 # check <description> <extended regex> [extra grep flags]
 check() {
@@ -44,6 +45,46 @@ check "Cookies and auth headers are never logged" \
   '(Log\.[dviwe]|println|Timber\.[dviwe])\(.*(cookie|authorization|sapisid)' -i
 check "No analytics or ad SDKs" \
   'com\.google\.firebase|crashlytics|play-services-(ads|analytics|measurement)|com\.appsflyer|com\.adjust\.sdk|com\.facebook\.android|com\.mixpanel|com\.amplitude|io\.sentry|com\.segment|admob' -i
+
+echo "Android hardening"
+check "No debuggable builds" 'android:debuggable="true"|isDebuggable *= *true'
+check "No cleartext HTTP" 'usesCleartextTraffic="true"|cleartextTrafficPermitted="true"'
+# User-installed CAs may only be trusted in debug builds (app/src/debug), never in what ships.
+userCa=$(git ls-files --cached --others --exclude-standard -- 'app/src/main/res/xml/*.xml' | xargs -r grep -nIE 'certificates +src="user"' 2>/dev/null)
+if [ -n "$userCa" ]; then fail "Release builds trust only system CAs"; echo "$userCa" | sed 's/^/    /'; else pass "Release builds trust only system CAs"; fi
+check "No TLS certificate or hostname checks switched off" \
+  'X509TrustManager|TrustAllCerts|trustAll|ALLOW_ALL_HOSTNAME_VERIFIER|NoopHostnameVerifier|hostnameVerifier *[({] *[_a-z]+ *, *[_a-z]+ *-> *true|SslErrorHandler.*\.proceed\(|handler\.proceed\(' -i
+check "No WebView JavaScript bridges or file access" \
+  'addJavascriptInterface|allowFileAccess(FromFileURLs)? *= *true|allowUniversalAccessFromFileURLs *= *true|setAllowFileAccess(FromFileURLs)?\(true\)|setAllowUniversalAccessFromFileURLs\(true\)'
+check "WebView debugging only in debug builds" 'setWebContentsDebuggingEnabled\( *true *\)'
+check "No world-readable or world-writable files" 'MODE_WORLD_(READABLE|WRITEABLE)'
+# The updater installs code from the internet: it must keep checking the release's SHA256SUMS.txt
+# and that the APK is signed like the installed app (docs/RELEASING.md).
+update=$(git ls-files --cached --others --exclude-standard -- 'app/src/main/java/app/oriel/update/*.kt')
+if [ -n "$update" ]; then
+  if grep -q 'SHA256SUMS' $update && grep -q 'MessageDigest' $update && grep -q 'GET_SIGNING_CERTIFICATES' $update; then
+    pass "Updates are checked against SHA256SUMS.txt and the app's signing certificate"
+  else
+    fail "Updates are checked against SHA256SUMS.txt and the app's signing certificate"
+  fi
+fi
+
+echo "Workflows"
+workflows=$(git ls-files --cached --others --exclude-standard -- '.github/workflows/*.yml' '.github/workflows/*.yaml')
+# pull_request_target runs with a write token and secrets; it must never check out or run PR code.
+prt=$(for f in $workflows; do grep -q 'pull_request_target' "$f" && grep -nHE 'actions/checkout|github\.event\.pull_request\.head\.(sha|ref)|github\.head_ref' "$f"; done)
+if [ -n "$prt" ]; then fail "pull_request_target workflows don't touch PR code"; echo "$prt" | sed 's/^/    /'; else pass "pull_request_target workflows don't touch PR code"; fi
+# Third-party code runs with the job's token and, in release, the signing key: pin it to a commit.
+unpinned=$(for f in $workflows; do grep -nHE '^[[:space:]-]*uses:' "$f" | grep -vE 'uses: *(\./|[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}( |$))'; done)
+if [ -n "$unpinned" ]; then fail "Actions are pinned to full commit SHAs"; echo "$unpinned" | sed 's/^/    /'; else pass "Actions are pinned to full commit SHAs"; fi
+# ${{ }} inside run: is pasted into the script before it runs, so a crafted title or branch name
+# becomes code. Pass values through env: instead.
+injected=$(for f in $workflows; do awk -v f="$f" '
+  match($0, /^[[:space:]]*(-[[:space:]]+)?run:/) { inrun = 1; indent = RLENGTH - 4; if ($0 ~ /\$\{\{/) print f ":" NR ": " $0; next }
+  inrun && /^[[:space:]]*$/ { next }
+  inrun { match($0, /^[[:space:]]*/); if (RLENGTH <= indent) inrun = 0; else if ($0 ~ /\$\{\{/) print f ":" NR ": " $0 }
+' "$f"; done)
+if [ -n "$injected" ]; then fail "No \${{ }} expressions inside run: scripts"; echo "$injected" | sed 's/^/    /'; else pass "No \${{ }} expressions inside run: scripts"; fi
 
 echo "Repository hygiene"
 emails=$(git ls-files -z | xargs -0 grep -IhoE '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' 2>/dev/null \

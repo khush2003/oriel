@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Dependency verification, scoped to what JitPack serves. JitPack builds artifacts from GitHub
+  tags on demand, so unlike Maven Central and Google Maven a published version can change under
+  us; these checksums pin the exact files. Everything else is trusted (pinned versions from
+  repositories that don't allow republishing), so Dependabot bumps of those still pass.
+  Bumping InnerTubeX: update the checksums below to the new files, after checking them, or see
+  docs/RELEASING.md.
+-->
+<verification-metadata xmlns="https://schema.gradle.org/dependency-verification" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="https://schema.gradle.org/dependency-verification https://schema.gradle.org/dependency-verification/dependency-verification-1.4.xsd">
+   <configuration>
+      <verify-metadata>true</verify-metadata>
+      <verify-signatures>false</verify-signatures>
+      <trusted-artifacts>
+         <trust file=".*-(sources|javadoc)[.]jar" regex="true"/>
+         <trust group="^(?!com[.]github[.]).*$" regex="true"/>
+      </trusted-artifacts>
+   </configuration>
+   <components>
+      <component group="com.github.MetrolistGroup.innertubex" name="innertubex" version="v0.10.0">
+         <artifact name="innertubex-v0.10.0.module">
+            <sha256 value="c2a8ddb0f0a2a80fe8f58ce9e72dd7b915b8ac5966e3f8f782e09c9a4d5e594f" origin="JitPack, checked against the Gradle cache"/>
+         </artifact>
+         <artifact name="innertubex-v0.10.0.pom">
+            <sha256 value="88f351a3c4cddebb4575caede19618488003ae1f7c64411eec31d098e30c01e8" origin="JitPack, checked against the Gradle cache"/>
+         </artifact>
+      </component>
+      <component group="com.github.MetrolistGroup.innertubex" name="innertubex-android" version="v0.10.0">
+         <artifact name="innertubex-android-v0.10.0.aar">
+            <sha256 value="43717b92f3c3965b0eb172db4404776ea90e8565eff298e2d784e2981f8fd23b" origin="JitPack, checked against the Gradle cache"/>
+         </artifact>
+         <artifact name="innertubex-android-v0.10.0.module">
+            <sha256 value="d410827273b9a313af60c1eb190b37e9b1ca5afae28d8187cfdf8eff20bac8c4" origin="JitPack, checked against the Gradle cache"/>
+         </artifact>
+         <artifact name="innertubex-android-v0.10.0.pom">
+            <sha256 value="b6fb0324d21326616b81aa68627c18a5dc913489da283339559a1f474bbabe9a" origin="JitPack, checked against the Gradle cache"/>
+         </artifact>
+      </component>
+      <component group="com.github.MetrolistGroup.innertubex" name="innertubex-desktop" version="v0.10.0">
+         <artifact name="innertubex-desktop-v0.10.0.jar">
+            <sha256 value="1578616d973031bb8a14e0757600917da09b74865ce4bdf779142d232e5f316e" origin="JitPack, checked against the Gradle cache"/>
+         </artifact>
+         <artifact name="innertubex-desktop-v0.10.0.module">
+            <sha256 value="3dab55dc0eb6d2e739d2ee3e6a527fda0994cae6e3a9b2c3b5e0181aa1b30ed6" origin="JitPack, checked against the Gradle cache"/>
+         </artifact>
+         <artifact name="innertubex-desktop-v0.10.0.pom">
+            <sha256 value="a22bafc40283bc3ece5de84c04368ff294c407aa9ed2b98da0d1f85c59f919bd" origin="JitPack, checked against the Gradle cache"/>
+         </artifact>
+      </component>
+   </components>
+</verification-metadata>

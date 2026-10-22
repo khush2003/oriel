@@ -74,7 +74,11 @@ scripts/check-guardrails.sh                   # scope, privacy and repo hygiene 
   (`git config user.email <id>+<login>@users.noreply.github.com`).
 - Fill in the PR template completely: what changed, why, how you tested it, screenshots, and the
   scope checklist. PRs with the template deleted are closed.
-- Keep PRs as drafts until CI is green and you've tested on a phone.
+- Keep PRs as drafts until CI is green and you've tested on a phone. CI on a PR from a fork waits
+  for the maintainer to approve the run.
+- Workflow changes: pin every action to a full commit SHA with the version in a comment, give jobs
+  only the `permissions:` they need, and pass untrusted values (titles, branch names) through
+  `env:`, never `${{ }}` inside `run:`. The guardrails check all three.
 - The maintainer, @khush2003, reviews within about a week and is the only one who merges.
   Address review by pushing new commits (don't force-push during review); PRs are squashed on merge.
 

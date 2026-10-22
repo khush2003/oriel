@@ -7,6 +7,7 @@ import androidx.core.content.edit
 import app.oriel.core.YouTube
 import app.oriel.core.extras.ReturnDislike
 import app.oriel.core.extras.SponsorBlock
+import app.oriel.core.net.CredentialGuard
 import app.oriel.core.stream.KeyValueStore
 import app.oriel.core.stream.StreamResolver
 import app.oriel.data.AccountManager
@@ -79,6 +80,8 @@ class AppGraph(val context: Context) {
         // A dead HTTP/2 connection is noticed within seconds, not at the end of a 20 s read.
         .pingInterval(20, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
+        // On every hop of every request (redirects included): the session goes to YouTube and Google only.
+        .addNetworkInterceptor(CredentialGuard)
         .apply { testInterceptor?.let(::addInterceptor) }
         .build()
     }
@@ -93,11 +96,13 @@ class AppGraph(val context: Context) {
     }
 
     private val logger = InnerTubeLogger { event ->
-        if (event.level == InnerTubeLogLevel.DEBUG && !BuildConfig.DEBUG) return@InnerTubeLogger
+        // Release builds keep warnings alone: the rest narrates every request, video ids included.
+        if (event.level != InnerTubeLogLevel.WARN && event.level != InnerTubeLogLevel.ERROR && !BuildConfig.DEBUG) return@InnerTubeLogger
         // Details can carry request headers and URLs, so the session cookie and auth with them;
-        // logcat is readable on a user's device, so release builds log the message alone, scrubbed.
-        val line = if (BuildConfig.DEBUG) "${event.tag}: ${event.message}" + if (event.details.isEmpty()) "" else " ${event.details}"
-        else Scrubber.scrub("${event.tag}: ${event.message}")
+        // logcat is readable on a user's device, so release builds log the message alone. Debug
+        // builds get the details too, and both are scrubbed: a debug build is signed in as well.
+        val text = if (BuildConfig.DEBUG && event.details.isNotEmpty()) "${event.tag}: ${event.message} ${event.details}" else "${event.tag}: ${event.message}"
+        val line = Scrubber.scrub(text)
         when (event.level) {
             InnerTubeLogLevel.DEBUG -> Log.d(TAG, line)
             InnerTubeLogLevel.INFO -> Log.i(TAG, line)

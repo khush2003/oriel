@@ -56,4 +56,5 @@ checks or protections ([`SCOPE.md`](SCOPE.md) rule 2).
 Oriel has one maintainer, @khush2003, who triages, merges, releases and decides scope. Regular
 contributors may be invited as collaborators to help with triage or review; that's the
 maintainer's call, and their permissions are adjusted as trust builds. Nobody else merges to
-`main` or publishes releases.
+`main` or publishes releases: a ruleset lets only the maintainer create `v*` tags, and the
+`release` environment that holds the signing key needs his approval for each run.

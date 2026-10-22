@@ -101,6 +101,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.snapshotFlow
 import app.oriel.ui.screens.ReportSheet
+import app.oriel.ui.screens.UpdateHost
 import app.oriel.util.CrashLog
 import app.oriel.util.ReportKind
 
@@ -271,6 +272,7 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
                     app.renameTarget = null
                 }
             }
+            UpdateHost(app)
             AlertHost(app)
             NoticeHost(app, Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 6.dp))
         }

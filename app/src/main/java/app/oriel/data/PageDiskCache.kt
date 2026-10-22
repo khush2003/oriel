@@ -48,11 +48,14 @@ class PageDiskCache(
     }
 
     fun <T> read(key: String, serializer: KSerializer<T>): T? = runCatching {
-        AtomicJson.read(File(dir, "$key.json"))?.let { AppJson.decodeFromString(serializer, it) }
+        AtomicJson.read(file(key))?.let { AppJson.decodeFromString(serializer, it) }
     }.getOrNull()
 
     /** When [key] was last written, or null if it never was. */
-    fun savedAt(key: String): Long? = File(dir, "$key.json").takeIf { it.isFile }?.lastModified()
+    fun savedAt(key: String): Long? = file(key).takeIf { it.isFile }?.lastModified()
+
+    /** [key]'s file, inside [dir] whatever the key holds: one that isn't a plain name is hashed. */
+    internal fun file(key: String): File = File(dir, fileName(key))
 
     /** Saves [value] unless the cache was cleared since [generation] (by default, now). */
     fun <T> write(key: String, serializer: KSerializer<T>, value: T, generation: Long = this.generation) {
@@ -61,7 +64,7 @@ class PageDiskCache(
             synchronized(lock) {
                 if (generation != gen.get()) return@synchronized
                 dir.mkdirs()
-                AtomicJson.write(File(dir, "$key.json"), text)
+                AtomicJson.write(file(key), text)
             }
         }
     }
@@ -74,5 +77,11 @@ class PageDiskCache(
     companion object {
         /** Bump when [app.oriel.core.model.Feed] or another cached page changes in a way old pages can't decode into. */
         const val VERSION = 1
+
+        private val PLAIN = Regex("[A-Za-z0-9_-]{1,100}")
+
+        internal fun fileName(key: String): String =
+            if (PLAIN.matches(key)) "$key.json"
+            else "h-" + java.security.MessageDigest.getInstance("SHA-256").digest(key.toByteArray()).joinToString("") { "%02x".format(it) } + ".json"
     }
 }

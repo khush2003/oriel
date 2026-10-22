@@ -4,11 +4,13 @@ import android.app.Application
 import android.content.Context
 import android.content.res.Configuration
 import app.oriel.util.CrashLog
+import app.oriel.util.Thumbnails
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.disk.DiskCache
 import coil3.disk.directory
+import coil3.map.Mapper
 import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
@@ -35,7 +37,11 @@ open class OrielApp : Application(), SingletonImageLoader.Factory {
 
     override fun newImageLoader(context: PlatformContext): ImageLoader =
         ImageLoader.Builder(context)
-            .components { add(OkHttpNetworkFetcherFactory(callFactory = { graph.okHttp })) }
+            .components {
+                // Before Coil's own mapping, so every image URL from a response goes out over HTTPS.
+                add(Mapper<String, String> { data, _ -> Thumbnails.secure(data).takeIf { it != data } })
+                add(OkHttpNetworkFetcherFactory(callFactory = { graph.okHttp }))
+            }
             .memoryCache { MemoryCache.Builder().maxSizePercent(context, 0.25).build() }
             .diskCache { DiskCache.Builder().directory(cacheDir.resolve("images")).maxSizeBytes(256L * 1024 * 1024).build() }
             .crossfade(220)

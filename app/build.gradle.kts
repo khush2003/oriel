@@ -33,9 +33,12 @@ android {
     }
 
     signingConfigs {
-        // A release keystore is optional: without one, release builds are signed with the
-        // debug key so they still install. See keystore.properties.example.
-        val props = rootProject.file("keystore.properties")
+        // Release builds need keystore.properties (see keystore.properties.example); debug builds,
+        // tests and lint don't. The release workflow points ORIEL_SIGNING_PROPERTIES at a file
+        // outside the checkout, so no secret is ever in it.
+        val env = System.getenv("ORIEL_SIGNING_PROPERTIES")
+        val props = env?.let(::File) ?: rootProject.file("keystore.properties")
+        if (env != null && !props.exists()) throw GradleException("ORIEL_SIGNING_PROPERTIES points at $env, which doesn't exist")
         if (props.exists()) {
             val p = Properties().apply { props.inputStream().use { load(it) } }
             create("release") {
@@ -67,7 +70,8 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
+            // Never the debug key: a debug-signed "release" installs, but can't be updated by the real one.
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 
@@ -113,6 +117,16 @@ android {
                 // InnerTubeX is Java 21 bytecode; D8 handles it for the APK, but Robolectric loads it on the host JVM.
                 it.javaLauncher.set(project.extensions.getByType<JavaToolchainService>().launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) })
             }
+        }
+    }
+}
+
+// Without a release key the release APKs would come out unsigned; stop at packaging, with the fix.
+val hasReleaseSigning = android.signingConfigs.findByName("release") != null
+tasks.matching { it.name == "packageRelease" || it.name == "signReleaseBundle" }.configureEach {
+    doFirst {
+        if (!hasReleaseSigning) {
+            throw GradleException("No release signing key: copy keystore.properties.example to keystore.properties and fill it in (docs/RELEASING.md).")
         }
     }
 }

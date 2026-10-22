@@ -45,6 +45,7 @@ import app.oriel.ui.components.SettingsRow
 import app.oriel.ui.components.SwitchRow
 import app.oriel.ui.navigation.LoginRoute
 import app.oriel.ui.player.speedLabel
+import app.oriel.update.Updates
 import app.oriel.util.CrashLog
 import app.oriel.util.Format
 import coil3.SingletonImageLoader
@@ -78,6 +79,8 @@ fun SettingsScreen() {
     androidx.compose.runtime.LaunchedEffect(app.report) { if (app.report == null) crashes = withContext(Dispatchers.IO) { CrashLog.crashCount(context) } }
     androidx.compose.runtime.LaunchedEffect(Unit) { cacheBytes = withContext(Dispatchers.IO) { runCatching { graph.caches.stream.cacheSpace }.getOrNull() } }
     fun set(t: (SettingsState) -> SettingsState) = graph.settings.update(t)
+    val updates = remember(context) { Updates.get(context) }
+    val update by updates.state.collectAsState()
 
     PageScaffold(title = "Settings", onBack = app::back) {
         if (signedIn && expired) item(key = "expired") { SessionExpiredCard(onSignIn = { app.navigate(LoginRoute) }) }
@@ -246,11 +249,34 @@ fun SettingsScreen() {
                 })
             }
         }
+        item(key = "updates") {
+            if (!update.supported) {
+                SettingsGroup(header = "Updates") { SettingsRow("Updates are off in debug builds", OrielIcons.Download) }
+                return@item
+            }
+            SettingsGroup(header = "Updates", footer = "Oriel looks for new releases on its GitHub page (api.github.com) once a day; only the app's version is sent. An update is installed only if it matches the release's checksums and is signed with the same key as this copy of Oriel.") {
+                SettingsRow(
+                    "Check for updates", OrielIcons.Repeat,
+                    subtitle = if (update.lastChecked > 0) "Last checked ${android.text.format.DateUtils.getRelativeTimeSpanString(update.lastChecked, System.currentTimeMillis(), android.text.format.DateUtils.MINUTE_IN_MILLIS)}" else null,
+                    value = if (update.checking) "Checking…" else null,
+                    enabled = !update.checking,
+                    onClick = updates::checkNow,
+                )
+                RowDivider()
+                SwitchRow("Check automatically", update.autoCheck, updates::setAutoCheck, OrielIcons.History)
+                RowDivider()
+                SwitchRow("Beta updates", update.betaUpdates, updates::setBetaUpdates, OrielIcons.Insights, subtitle = "Get test versions before they're released")
+            }
+        }
         item(key = "about") {
             SettingsGroup(
                 header = "About",
                 footer = "$COPYRIGHT. Free software under the GNU GPL v3 with attribution terms (see NOTICE in the source). Its interface is adapted from BitChord (GPL-3.0). Oriel isn't affiliated with or endorsed by YouTube or Google; using it may not comply with YouTube's Terms of Service.",
             ) {
+                update.available?.takeIf { update.supported }?.let { r ->
+                    SettingsRow("Update available", OrielIcons.Download, value = r.version, chevron = true, onClick = updates::open)
+                    RowDivider()
+                }
                 SettingsRow("Version", OrielIcons.Settings, value = BuildConfig.VERSION_NAME)
                 RowDivider()
                 // Credit required by NOTICE (GPL-3.0 section 7(b)); forks must keep it.

@@ -94,10 +94,6 @@ object MediaItems {
         )
     }
 
-    /** Rebuilds an item that arrived without its URI (from a controller, Android Auto, resumption). */
-    fun restore(item: MediaItem, height: Int?): MediaItem =
-        if (item.localConfiguration != null) item else video(item)?.let { build(it, height) } ?: item
-
     fun kind(item: MediaItem?): String? = item?.localConfiguration?.uri?.host
 
     fun hasPicture(item: MediaItem?): Boolean = kind(item).let { it == KIND_AV || it == KIND_HLS || it == KIND_ABR }

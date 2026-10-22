@@ -2,6 +2,7 @@ package app.oriel.playback
 
 import android.util.Log
 import app.oriel.AppGraph
+import app.oriel.BuildConfig
 import app.oriel.core.PlaybackTracking
 import app.oriel.core.WatchReport
 import kotlinx.coroutines.Deferred
@@ -88,8 +89,9 @@ class WatchReporter(private val graph: AppGraph, private val clock: () -> Long =
     }
 
     // Statuses only: never a URL, which carries the session's identifiers.
+    // Debug builds only: the ids are a watch history, and logcat isn't the place for one.
     private fun log(videoId: String, line: String) {
-        Log.d(TAG, "$videoId $line")
+        if (BuildConfig.DEBUG) Log.d(TAG, "$videoId $line")
     }
 
     private companion object {

@@ -228,8 +228,18 @@ class AppState(
         notice(if (now) "Subscribed to ${channel.title}" else "Unsubscribed from ${channel.title}")
     }
 
+    /**
+     * Hands a web link to the browser. Links come from descriptions and channel pages, which
+     * anyone can write, so only http(s) goes out, and only to apps that open web links.
+     */
     fun openExternally(url: String) {
-        runCatching { activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+        val uri = Uri.parse(url.trim())
+        if (!isWebLink(uri)) {
+            notice("Couldn't open this link")
+            return
+        }
+        val intent = Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE)
+        runCatching { activity.startActivity(intent) }
     }
 
     // ---- navigation --------------------------------------------------------------------
@@ -363,8 +373,9 @@ class AppState(
      * and shows a notice if it leads nowhere.
      */
     fun openLink(url: String): Boolean {
-        val uri = Uri.parse(url)
-        val host = uri.host?.removePrefix("www.")?.removePrefix("m.") ?: return false
+        val uri = Uri.parse(url.trim())
+        if (!isWebLink(uri)) return false
+        val host = uri.host?.lowercase()?.removePrefix("www.")?.removePrefix("m.") ?: return false
         val start = (uri.getQueryParameter("t") ?: uri.getQueryParameter("start"))?.let(::parseTime)
         val segments = uri.pathSegments
         val list = uri.getQueryParameter("list")
@@ -375,7 +386,7 @@ class AppState(
         }
         fun playlist(id: String?): Boolean = id?.takeIf { it.isNotBlank() }?.let { openPlaylist(it, fromLink = true); true } ?: false
         if (host == "youtu.be") return video(segments.firstOrNull())
-        if (!host.endsWith("youtube.com")) return false
+        if (!isYouTubeHost(host)) return false
         val first = segments.firstOrNull() ?: return false
         return when {
             first == "watch" -> video(uri.getQueryParameter("v")) || playlist(list)
@@ -422,10 +433,12 @@ class AppState(
     }
 
     private fun parseTime(t: String): Long? {
-        t.toLongOrNull()?.let { return it * 1000 }
+        // Capped: a crafted ?t= mustn't overflow into a negative position.
+        t.toLongOrNull()?.let { return it.coerceIn(0, MAX_START_S) * 1000 }
         val m = Regex("""(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?""").matchEntire(t) ?: return null
         val (h, mi, s) = m.destructured
-        return ((h.toLongOrNull() ?: 0) * 3600 + (mi.toLongOrNull() ?: 0) * 60 + (s.toLongOrNull() ?: 0)) * 1000
+        val total = (h.toLongOrNull() ?: 0).coerceAtMost(MAX_START_S) * 3600 + (mi.toLongOrNull() ?: 0).coerceAtMost(MAX_START_S) * 60 + (s.toLongOrNull() ?: 0).coerceAtMost(MAX_START_S)
+        return total.coerceIn(0, MAX_START_S) * 1000
     }
 
     private companion object {
@@ -433,10 +446,22 @@ class AppState(
         /** What ends a sentence or closes a bracket around a link, never part of a YouTube URL's end. */
         const val TRAILING = ".,)]}>!?\"'»”"
         val VIDEO_ID = Regex("[A-Za-z0-9_-]{11}")
+        /** A start time past any real video (a year), so the arithmetic can't overflow. */
+        const val MAX_START_S = 365L * 24 * 3600
 
         fun isYouTubeUrl(url: String): Boolean {
             val host = url.toUri().host?.removePrefix("www.")?.removePrefix("m.") ?: return false
-            return host == "youtu.be" || host == "youtube.com" || host.endsWith(".youtube.com")
+            return host == "youtu.be" || isYouTubeHost(host)
         }
     }
 }
+
+/** youtube.com or one of its subdomains, never a lookalike such as notyoutube.com. */
+internal fun isYouTubeHost(host: String): Boolean {
+    val h = host.lowercase()
+    return h == "youtube.com" || h.endsWith(".youtube.com")
+}
+
+/** A link a browser should open: http(s) with a host, nothing that reaches into other apps. */
+internal fun isWebLink(uri: Uri): Boolean =
+    (uri.scheme.equals("https", ignoreCase = true) || uri.scheme.equals("http", ignoreCase = true)) && !uri.host.isNullOrBlank()
