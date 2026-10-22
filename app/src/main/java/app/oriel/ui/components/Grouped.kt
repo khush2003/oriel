@@ -81,6 +81,21 @@ fun RowDivider(inset: Boolean = true) {
     Box(Modifier.padding(start = if (inset) TEXT_INSET else 16.dp).fillMaxWidth().height(0.5.dp).background(MaterialTheme.colorScheme.outline))
 }
 
+/**
+ * One row of a group card drawn on its own, for groups too long to compose at once (a lazy
+ * list's items): the card's corners on the [first] and [last], and a hairline under the
+ * others from [dividerStart], where the row's text begins.
+ */
+@Composable
+fun GroupedItem(first: Boolean, last: Boolean, dividerStart: Dp = 16.dp, fill: Color = MaterialTheme.colorScheme.surfaceVariant, content: @Composable ColumnScope.() -> Unit) {
+    val top = if (first) GROUP_CORNER else 0.dp
+    val bottom = if (last) GROUP_CORNER else 0.dp
+    Column(Modifier.padding(horizontal = GROUP_INSET).fillMaxWidth().clip(RoundedCornerShape(top, top, bottom, bottom)).background(fill)) {
+        content()
+        if (!last) Box(Modifier.padding(start = dividerStart).fillMaxWidth().height(0.5.dp).background(MaterialTheme.colorScheme.outline))
+    }
+}
+
 /** A row: optional leading icon, title and subtitle, a trailing value and chevron. Disabled at α0.45. */
 @Composable
 fun SettingsRow(

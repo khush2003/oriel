@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.MutableTransitionState
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.shape.CircleShape
@@ -106,19 +107,28 @@ import androidx.compose.ui.input.pointer.pointerInput
  */
 val LocalSheetClose = staticCompositionLocalOf<(after: () -> Unit) -> Unit> { { it() } }
 
+/** Raises the sheet it's read inside from its medium detent to its full height, as a drag up would. */
+val LocalSheetExpand = staticCompositionLocalOf<() -> Unit> { {} }
+
 /**
  * BitChord's sheet: the page colour, a 28dp top radius and iOS's grabber, a 36 x 5 capsule.
  * Every sheet in the app is one of these. [scrollable] wraps the content in a scroll; sheets
- * that bring their own list (chapters, comments) pass false.
+ * that bring their own list (chapters, comments) pass false. [medium] gives a tall sheet iOS's
+ * medium detent: it opens at half the screen and is dragged, or scrolled, up to its full height.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun OrielSheet(onDismiss: () -> Unit, scrollable: Boolean = true, maxHeight: Dp = 680.dp, content: @Composable ColumnScope.() -> Unit) {
-    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+fun OrielSheet(onDismiss: () -> Unit, scrollable: Boolean = true, maxHeight: Dp = 680.dp, medium: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
+    val state = rememberModalBottomSheetState(skipPartiallyExpanded = !medium)
     val scope = rememberCoroutineScope()
     val dismiss by rememberUpdatedState(onDismiss)
     val close: (() -> Unit) -> Unit = remember(state) {
         { after -> scope.launch { state.hide() }.invokeOnCompletion { dismiss(); after() } }
+    }
+    // Asked for while the sheet is still opening, it waits for the rise to begin and carries it
+    // on up; started sooner, the opening would take over and stop at the medium detent.
+    val expand: () -> Unit = remember(state) {
+        { scope.launch { snapshotFlow { state.targetValue }.first { it != androidx.compose.material3.SheetValue.Hidden }; state.expand() } }
     }
     val scroll = rememberScrollState()
     val page = MaterialTheme.colorScheme.background
@@ -136,6 +146,7 @@ fun OrielSheet(onDismiss: () -> Unit, scrollable: Boolean = true, maxHeight: Dp 
         // A scrolling sheet stretches as a whole past its top, rather than its content inside it.
         CompositionLocalProvider(
             LocalSheetClose provides close,
+            LocalSheetExpand provides expand,
             androidx.compose.foundation.LocalOverscrollFactory provides if (scrollable) null else androidx.compose.foundation.LocalOverscrollFactory.current,
         ) {
             val body = Modifier.fillMaxWidth().heightIn(max = maxHeight)
