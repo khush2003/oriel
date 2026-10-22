@@ -145,43 +145,66 @@ private const val PIP_MIN_SCALE = 0.7f
 
 /**
  * A throw this fast (per second), mostly sideways and toward the side the window is already on,
- * puts it away. Slower, or toward the far side, it's a move: it lands in a corner.
+ * or mostly down from the bottom half onto the tab bar, puts it away. Slower, or toward the far
+ * side, it's a move: it lands in a corner.
  */
 internal val PIP_FLING_AWAY = 1400.dp
 
-/** The share of the window that has to be past a side edge for letting go there to put it away. */
+/** The share of the window that has to be past a side edge (or down over the tab bar) for letting go there to put it away. */
 internal const val PIP_AWAY_OVER = 0.5f
 
 /** The deceleration a throw is projected with to pick the corner it lands in (about 0.2 s of its speed). */
 private const val PIP_THROW_RATE = 0.995f
 
-internal enum class PipRelease { Land, AwayLeft, AwayRight }
+internal enum class PipRelease { Land, AwayLeft, AwayRight, AwayDown }
 
-/** Which side's put-away zone a window at [x], [w] wide, is in on a screen [screenW] wide: -1 left, 1 right, 0 neither. */
-internal fun pipZoneAt(x: Float, w: Float, screenW: Float): Int = when {
-    -x > w * PIP_AWAY_OVER -> -1
-    x + w - screenW > w * PIP_AWAY_OVER -> 1
-    else -> 0
+/** Down: the put-away zone over the tab bar, as [pipZoneAt] reports it. */
+internal const val PIP_ZONE_DOWN = 2
+
+/**
+ * Which put-away zone a window at ([x], [y]), [w] by [h], is in on a screen [screenW] wide whose
+ * tab bar starts at [bottomEdge]: -1 left, 1 right, [PIP_ZONE_DOWN] down, 0 none. Past two at
+ * once, the one it's further into.
+ */
+internal fun pipZoneAt(x: Float, y: Float, w: Float, h: Float, screenW: Float, bottomEdge: Float): Int {
+    val left = -x / w
+    val right = (x + w - screenW) / w
+    val down = (y + h - bottomEdge) / h
+    val most = maxOf(left, right, down)
+    return when {
+        most <= PIP_AWAY_OVER -> 0
+        most == down -> PIP_ZONE_DOWN
+        most == left -> -1
+        else -> 1
+    }
 }
 
 /**
  * What letting go of the floating window does, as YouTube's and iOS's floating players decide it:
  * put away only on an explicit intent, either released with more than half of it past a side
- * edge (unless thrown hard back in), or thrown at [flingPx] per second or faster, mostly
- * sideways (1.5 times its vertical speed), toward the side its centre is already on. Anything
- * else, it lands in the corner the throw carries it to. A pinch is never a throw away.
+ * edge or down over the tab bar (unless thrown hard back in), or thrown at [flingPx] per second
+ * or faster, mostly sideways (1.5 times its vertical speed) toward the side its centre is
+ * already on, or mostly down from the bottom half of the screen ([screenH] tall). Anything else,
+ * it lands in the corner the throw carries it to: thrown down from a top corner, it moves to a
+ * bottom one. A pinch is never a throw away.
  */
-internal fun pipRelease(x: Float, w: Float, screenW: Float, vx: Float, vy: Float, flingPx: Float, pinched: Boolean): PipRelease {
+internal fun pipRelease(
+    x: Float, y: Float, w: Float, h: Float, screenW: Float, screenH: Float, bottomEdge: Float,
+    vx: Float, vy: Float, flingPx: Float, pinched: Boolean,
+): PipRelease {
     if (pinched) return PipRelease.Land
-    when (pipZoneAt(x, w, screenW)) {
+    when (pipZoneAt(x, y, w, h, screenW, bottomEdge)) {
         -1 -> if (vx < flingPx) return PipRelease.AwayLeft
         1 -> if (vx > -flingPx) return PipRelease.AwayRight
+        PIP_ZONE_DOWN -> if (vy > -flingPx) return PipRelease.AwayDown
     }
     val sideways = abs(vx) > abs(vy) * 1.5f
+    val downward = vy > abs(vx) * 1.5f
     val centre = x + w / 2f
     return when {
         sideways && vx <= -flingPx && centre < screenW / 2f -> PipRelease.AwayLeft
         sideways && vx >= flingPx && centre > screenW / 2f -> PipRelease.AwayRight
+        downward && vy >= flingPx && y + h / 2f > screenH / 2f -> PipRelease.AwayDown
         else -> PipRelease.Land
     }
 }
@@ -445,13 +468,16 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
             // A pinch may have left it a size its corner can't take; settle on the size it shows.
             sheet.pipScale = sheet.pipScale.coerceIn(PIP_MIN_SCALE, pipMaxScale)
             val here = rest + pipDrag.value
-            val outcome = pipRelease(here.x, pipW, W, v.x, v.y, px(PIP_FLING_AWAY), pinched)
+            val outcome = pipRelease(here.x, here.y, pipW, pipH, W, H, H - px(barsBottom), v.x, v.y, px(PIP_FLING_AWAY), pinched)
             if (outcome != PipRelease.Land) {
-                val offLeft = outcome == PipRelease.AwayLeft
                 if (!armed) haptics.play(Haptic.Tap)
                 armed = false
                 scope.launch {
-                    val out = Offset(if (offLeft) -W else W, v.y * 0.15f)
+                    val out = when (outcome) {
+                        PipRelease.AwayLeft -> Offset(-W, v.y * 0.15f)
+                        PipRelease.AwayRight -> Offset(W, v.y * 0.15f)
+                        else -> Offset(v.x * 0.15f, H - here.y)
+                    }
                     if (reduceMotion) {
                         pipGone.snapTo(1f)
                     } else {
@@ -505,7 +531,7 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
         // More than half of it past a side, where letting go puts the window away (as pipRelease
         // judges it): it shrinks and dims there, with a tick as it enters, so the release isn't a surprise.
         val latestArmPip by rememberUpdatedState({ drag: Offset ->
-            val side = pipZoneAt(rest.x + drag.x, pipW, W)
+            val side = pipZoneAt(rest.x + drag.x, rest.y + drag.y, pipW, pipH, W, H - px(barsBottom))
             arm(side != 0)
             if (side != pipZoneSide) {
                 if (side != 0) pipZoneEdge = side
@@ -870,12 +896,22 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
                         scaleX *= k
                         scaleY *= k
                         alpha *= 1f - 0.45f * zone
-                        val edgeX = if (pipZoneEdge < 0) 0f else W
-                        transformOrigin = TransformOrigin(((edgeX - (pipRest.x + drag.x)) / size.width).coerceIn(0f, 1f), 0.5f)
-                        if (liquid) {
-                            scaleX *= 1f - 0.1f * zone
-                            scaleY *= 1f + 0.06f * zone
-                            shape = DropletShape(pipCorner / scaleX, pipCorner / scaleY, side = zone * px(6.dp) / scaleX)
+                        if (pipZoneEdge == PIP_ZONE_DOWN) {
+                            val edgeY = H - px(barsBottom)
+                            transformOrigin = TransformOrigin(0.5f, ((edgeY - (pipRest.y + drag.y)) / size.height).coerceIn(0f, 1f))
+                            if (liquid) {
+                                scaleX *= 1f + 0.06f * zone
+                                scaleY *= 1f - 0.1f * zone
+                                shape = DropletShape(pipCorner / scaleX, pipCorner / scaleY, ends = zone * px(6.dp) / scaleY)
+                            }
+                        } else {
+                            val edgeX = if (pipZoneEdge < 0) 0f else W
+                            transformOrigin = TransformOrigin(((edgeX - (pipRest.x + drag.x)) / size.width).coerceIn(0f, 1f), 0.5f)
+                            if (liquid) {
+                                scaleX *= 1f - 0.1f * zone
+                                scaleY *= 1f + 0.06f * zone
+                                shape = DropletShape(pipCorner / scaleX, pipCorner / scaleY, side = zone * px(6.dp) / scaleX)
+                            }
                         }
                     }
                 }

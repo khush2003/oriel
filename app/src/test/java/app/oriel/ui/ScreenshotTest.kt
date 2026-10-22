@@ -607,7 +607,8 @@ class ScreenshotTest {
     @Test fun pipWindowDiagonalThrowLandsInACorner() {
         shoot("27b_pip_diagonal", setup = { it.sheet.progress.snapTo(0f); it.sheet.pipCorner = 1 }, after = {
             val window = rule.onNodeWithContentDescription("Video window", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-            rule.onRoot().performTouchInput { swipe(window.center, Offset(width * 0.02f, height * 0.9f), 180) }
+            // Let go above the tab bar: dragged half onto it, letting go puts the window away.
+            rule.onRoot().performTouchInput { swipe(window.center, Offset(width * 0.02f, height * 0.6f), 180) }
             settle(16)
         })
         assertEquals("bottom-left corner", 2, appState!!.sheet.pipCorner)

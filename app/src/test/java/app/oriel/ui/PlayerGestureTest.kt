@@ -195,11 +195,17 @@ class PlayerGestureTest {
         assertEquals("the watch page", 1f, state.sheet.progress.value, 0.01f)
     }
 
-    /** A swipe down on it at the bottom does nothing destructive: it lands back where it was. */
-    @Test fun swipeDownAtTheBottomStays() {
+    /** A swipe down on it at the bottom, onto the tab bar, puts it away, as YouTube's does. */
+    @Test fun swipeDownAtTheBottomPutsAway() {
         start()
-        val w = window()
-        gesture(w.center, line(Offset(0f, dp(90f)), 8), stepMs = 16)
+        gesture(window().center, line(Offset(0f, dp(90f)), 8), stepMs = 16)
+        assertEquals("put away", 1, stops)
+    }
+
+    /** A slow nudge down that doesn't reach the tab bar only lands it back in its corner. */
+    @Test fun nudgeDownStays() {
+        start()
+        gesture(window().center, line(Offset(0f, dp(24f)), 12), stepMs = 40)
         assertEquals("not put away", 0, stops)
         assertEquals("back in its corner", 3, state.sheet.pipCorner)
         assertEquals("still the window", 0f, state.sheet.progress.value, 0.01f)
@@ -230,16 +236,28 @@ class PlayerGestureTest {
         val w = dp(206f)
         val fling = dp(PIP_FLING_AWAY.value)
         val right = sw - w - dp(12f)
-        assertEquals("resting", PipRelease.Land, pipRelease(right, w, sw, 0f, 0f, fling, false))
-        assertEquals("half past, let go", PipRelease.AwayRight, pipRelease(right + dp(116f), w, sw, 0f, 0f, fling, false))
-        assertEquals("just under half past", PipRelease.Land, pipRelease(sw - w * 0.52f, w, sw, 0f, 0f, fling, false))
-        assertEquals("half past, thrown back in hard", PipRelease.Land, pipRelease(right + dp(116f), w, sw, -fling * 1.2f, 0f, fling, false))
-        assertEquals("flung right on the right", PipRelease.AwayRight, pipRelease(right, w, sw, fling * 1.1f, 0f, fling, false))
-        assertEquals("flung left from the right: a move", PipRelease.Land, pipRelease(right, w, sw, -fling * 2f, 0f, fling, false))
-        assertEquals("flung right, too slow", PipRelease.Land, pipRelease(right, w, sw, fling * 0.8f, 0f, fling, false))
-        assertEquals("flung down and right: a move", PipRelease.Land, pipRelease(right, w, sw, fling * 1.2f, fling * 1.2f, fling, false))
-        assertEquals("pinched past the edge", PipRelease.Land, pipRelease(right + dp(116f), w, sw, 0f, 0f, fling, true))
-        assertEquals("flung left on the left", PipRelease.AwayLeft, pipRelease(dp(12f), w, sw, -fling * 1.1f, 0f, fling, false))
+        val sh = dp(915f)
+        val h = w * 9f / 16f
+        val bar = sh - dp(84f)
+        val low = bar - h - dp(12f)
+        val high = dp(120f)
+        fun release(x: Float, y: Float, vx: Float, vy: Float, pinched: Boolean = false) = pipRelease(x, y, w, h, sw, sh, bar, vx, vy, fling, pinched)
+        assertEquals("resting", PipRelease.Land, release(right, low, 0f, 0f))
+        assertEquals("half past, let go", PipRelease.AwayRight, release(right + dp(116f), low, 0f, 0f))
+        assertEquals("just under half past", PipRelease.Land, release(sw - w * 0.52f, low, 0f, 0f))
+        assertEquals("half past, thrown back in hard", PipRelease.Land, release(right + dp(116f), low, -fling * 1.2f, 0f))
+        assertEquals("flung right on the right", PipRelease.AwayRight, release(right, low, fling * 1.1f, 0f))
+        assertEquals("flung left from the right: a move", PipRelease.Land, release(right, low, -fling * 2f, 0f))
+        assertEquals("flung right, too slow", PipRelease.Land, release(right, low, fling * 0.8f, 0f))
+        assertEquals("flung down and right: a move", PipRelease.Land, release(right, high, fling * 1.2f, fling * 1.2f))
+        assertEquals("pinched past the edge", PipRelease.Land, release(right + dp(116f), low, 0f, 0f, pinched = true))
+        assertEquals("flung left on the left", PipRelease.AwayLeft, release(dp(12f), low, -fling * 1.1f, 0f))
+        assertEquals("half over the tab bar, let go", PipRelease.AwayDown, release(right, bar - h * 0.4f, 0f, 0f))
+        assertEquals("just short of half over the tab bar", PipRelease.Land, release(right, bar - h * 0.52f, 0f, 0f))
+        assertEquals("over the tab bar, thrown back up hard", PipRelease.Land, release(right, bar - h * 0.4f, 0f, -fling * 1.2f))
+        assertEquals("flung down at the bottom", PipRelease.AwayDown, release(right, low, 0f, fling * 1.1f))
+        assertEquals("flung down from the top: a move", PipRelease.Land, release(right, high, 0f, fling * 2f))
+        assertEquals("flung down, too slow", PipRelease.Land, release(right, low, 0f, fling * 0.8f))
         assertTrue("straight up rises", isRise(Offset(0f, -10f), 1))
         assertTrue("steeply up rises", isRise(Offset(4f, -10f), 1))
         assertFalse("up toward a corner is a move", isRise(Offset(6f, -10f), 1))
