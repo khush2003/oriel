@@ -59,11 +59,11 @@ class OrielMediaSourceFactory(
         if (uri?.scheme != "oriel") return progressive.createMediaSource(mediaItem)
         val id = uri.pathSegments.first()
         return when (uri.host) {
-            "hls" -> hls.createMediaSource(mediaItem)
-            "abr" -> adaptive.createMediaSource(mediaItem)
-            "av" -> {
-                val height = uri.getQueryParameter("h") ?: "720"
-                val audio = progressive.createMediaSource(mediaItem.buildUpon().setUri("oriel://audio/$id?vh=$height".toUri()).build())
+            MediaItems.KIND_HLS -> hls.createMediaSource(mediaItem)
+            MediaItems.KIND_ABR -> adaptive.createMediaSource(mediaItem)
+            MediaItems.KIND_AV -> {
+                val height = uri.getQueryParameter("h") ?: MediaItems.DEFAULT_HEIGHT.toString()
+                val audio = progressive.createMediaSource(mediaItem.buildUpon().setUri("oriel://${MediaItems.KIND_AUDIO}/$id?vh=$height".toUri()).build())
                 val video = progressive.createMediaSource(MediaItem.Builder().setMediaId("$id#video").setUri("oriel://video/$id?h=$height".toUri()).build())
                 MergingMediaSource(true, true, audio, video)
             }

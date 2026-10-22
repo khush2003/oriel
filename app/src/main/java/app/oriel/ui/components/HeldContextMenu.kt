@@ -75,6 +75,10 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.isTraversalGroup
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalGraphicsContext
@@ -91,6 +95,7 @@ import app.oriel.ui.haptics.rememberHaptics
 import app.oriel.ui.theme.LocalIsDark
 import app.oriel.ui.theme.LocalReduceAnimation
 import app.oriel.ui.theme.LocalReduceBlur
+import app.oriel.ui.theme.MenuSpring
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -153,9 +158,11 @@ fun Modifier.longPressMenuClickable(onClick: () -> Unit, onLongClick: (() -> Uni
             held()
         }
     }
+    val rowActions = LocalRowActions.current
     return this
         .onPlaced { capture.coordinates = it }
         .combinedClickable(interactionSource = interactions, indication = LocalIndication.current, enabled = enabled, onClick = onClick, onLongClick = longClick)
+        .then(if (rowActions.isEmpty()) Modifier else Modifier.semantics { customActions = rowActions })
         .drawWithContent {
             drawContent()
             val request = capture.requests
@@ -212,7 +219,7 @@ fun <T : Any> HeldContextMenu(
     val progress = remember { Animatable(0f) }
     LaunchedEffect(open) {
         if (open) {
-            progress.animateTo(1f, if (reduceMotion) tween(140, easing = LinearEasing) else spring(dampingRatio = 0.72f, stiffness = 420f))
+            progress.animateTo(1f, if (reduceMotion) tween(140, easing = LinearEasing) else MenuSpring)
         } else {
             // A spring, not a tween: a menu reopened mid-close carries on from where it is.
             progress.animateTo(0f, if (reduceMotion) tween(110, easing = FastOutSlowInEasing) else spring(dampingRatio = 1f, stiffness = 600f))
@@ -223,7 +230,7 @@ fun <T : Any> HeldContextMenu(
 
     val dark = LocalIsDark.current
     val plate = (if (dark) Color.Black else Color.White).copy(alpha = if (reduceBlur) 0.85f else 0.5f)
-    val menuFill = if (dark) Color(0xFF1C1C1E).copy(alpha = if (reduceBlur) 0.98f else 0.86f) else Color.White.copy(alpha = if (reduceBlur) 0.98f else 0.86f)
+    val menuFill = if (dark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (reduceBlur) 0.98f else 0.86f) else Color.White.copy(alpha = if (reduceBlur) 0.98f else 0.86f)
     val hairline = if (dark) Color.White.copy(alpha = 0.10f) else Color.Black.copy(alpha = 0.06f)
     val scrimColor = when {
         reduceBlur && dark -> Color.Black.copy(alpha = 0.62f)
@@ -243,6 +250,7 @@ fun <T : Any> HeldContextMenu(
         modifier = Modifier
             .fillMaxSize()
             .onGloballyPositioned { overlayOffset = it.positionInWindow() }
+            .semantics { paneTitle = "Actions"; isTraversalGroup = true }
             .then(if (open) Modifier else Modifier.pointerInput(Unit) { swallowAll() }),
         content = {
             Spacer(
@@ -255,7 +263,7 @@ fun <T : Any> HeldContextMenu(
                         } else Modifier,
                     )
                     .background(scrimColor)
-                    .clickable(remember { MutableInteractionSource() }, indication = null, enabled = open, onClick = onDismiss),
+                    .clickable(remember { MutableInteractionSource() }, indication = null, enabled = open, onClickLabel = "Dismiss", onClick = onDismiss),
             )
             Box(
                 Modifier
@@ -378,9 +386,4 @@ fun MenuRow(label: String, icon: ImageVector, onClick: () -> Unit, destructive: 
 @Composable
 fun MenuGroupBand() {
     Spacer(Modifier.fillMaxWidth().height(6.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)))
-}
-
-@Composable
-fun MenuDivider() {
-    Spacer(Modifier.fillMaxWidth().height(0.5.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)))
 }

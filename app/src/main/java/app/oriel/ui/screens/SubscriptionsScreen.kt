@@ -43,6 +43,8 @@ import app.oriel.core.model.ShelfKind
 import app.oriel.core.model.Video
 import app.oriel.data.HomeComposer
 import app.oriel.ui.LocalAppState
+import app.oriel.ui.haptics.Haptic
+import app.oriel.ui.haptics.rememberHaptics
 import app.oriel.ui.components.Avatar
 import app.oriel.ui.components.OrielIcons
 import app.oriel.ui.components.MessageState
@@ -70,9 +72,11 @@ fun SubscriptionsScreen() {
     val app = LocalAppState.current
     val graph = app.graph
     val signedIn by graph.account.signedIn.collectAsState()
+    val account by graph.account.account.collectAsState()
     val library by graph.library.state.collectAsState()
     val channels = library.subscriptions
-    val model: FeedModel = viewModel(key = "subs:$signedIn") {
+    // One model per account: signing out and in as someone else never shows the last one's feed.
+    val model: FeedModel = viewModel(key = "subs:$signedIn:${accountOwner(account)?.hashCode()}") {
         FeedModel(graph, cacheKey = "subs-$signedIn", load = { fresh ->
             if (signedIn) graph.yt.browse(YouTube.SUBSCRIPTIONS, fresh = fresh) else localSubscriptionFeed(graph, fresh = fresh)
         }, maxAgeMs = 5 * 60_000L)
@@ -80,8 +84,11 @@ fun SubscriptionsScreen() {
     val state by model.state.collectAsState()
     var filter by rememberSaveable { mutableStateOf(SubsFilter.All) }
     val fullFeed = state.feed
-    val feed = remember(fullFeed, filter) { fullFeed?.let { filter.apply(it) } }
     val filters = remember(fullFeed) { SubsFilter.entries.filter { it != SubsFilter.Live || fullFeed?.items?.any { i -> (i as? Video)?.isLive == true } == true } }
+    // Live picked, then the feed refreshed with nothing live: back to All rather than an empty list under no chip.
+    LaunchedEffect(filters) { if (filter !in filters) filter = SubsFilter.All }
+    val feed = remember(fullFeed, filter) { fullFeed?.let { filter.apply(it) } }
+    val haptics = rememberHaptics()
     // The channel strip leads with whoever uploaded last, as YouTube's does.
     val strip = remember(channels, fullFeed) {
         val order = HashMap<String, Int>()
@@ -109,7 +116,7 @@ fun SubscriptionsScreen() {
         if (channels.isNotEmpty()) item(key = "channels", contentType = "channels") {
             LazyRow(contentPadding = PaddingValues(horizontal = PAGE_GUTTER, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 items(strip, key = { it.id }) { ch ->
-                    Column(Modifier.width(64.dp).clip(RoundedCornerShape(12.dp)).clickable { app.openChannel(ch.id) }, horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(Modifier.width(64.dp).clip(RoundedCornerShape(12.dp)).clickable { haptics.play(Haptic.Tap); app.openChannel(ch.id) }, horizontalAlignment = Alignment.CenterHorizontally) {
                         Avatar(ch.avatar, 58.dp, name = ch.title)
                         Spacer(Modifier.height(4.dp))
                         Text(ch.title, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
@@ -117,7 +124,7 @@ fun SubscriptionsScreen() {
                 }
                 // Every channel, as the strip's last bubble.
                 item(key = "all") {
-                    Column(Modifier.width(64.dp).clip(RoundedCornerShape(12.dp)).clickable { app.navigate(ChannelsRoute) }, horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(Modifier.width(64.dp).clip(RoundedCornerShape(12.dp)).clickable { haptics.play(Haptic.Tap); app.navigate(ChannelsRoute) }, horizontalAlignment = Alignment.CenterHorizontally) {
                         Box(Modifier.size(58.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
                             Icon(OrielIcons.Chevron, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(26.dp))
                         }
@@ -139,11 +146,11 @@ fun SubscriptionsScreen() {
                 }
             }
             feed == null && state.loading -> items(4, contentType = { "skeleton" }) { VideoCardSkeleton(it) }
-            feed == null && state.error != null -> item { MessageState(state.error!!, action = "Try again", onAction = { model.reload() }) }
+            feed == null && state.error != null -> item(key = "error") { MessageState(state.error!!, action = "Try again", onAction = { model.reload() }) }
             feed != null && feed.isEmpty -> item(key = "empty") { MessageState(feed.message ?: if (filter == SubsFilter.All) "No new videos from your channels." else "Nothing ${filter.empty} from your channels.") }
             feed != null -> feedShelves(feed, keyPrefix = "subs")
         }
-        feedFooter(state, onRetry = model::loadMore)
+        feedFooter(state, onRetry = model::retryMore)
     }
 }
 
@@ -174,14 +181,18 @@ private enum class SubsFilter(val title: String, val empty: String) {
 suspend fun localSubscriptionFeed(graph: AppGraph, limit: Int = 30, fresh: Boolean = false): Feed = coroutineScope {
     val gate = Semaphore(6)
     val channels = graph.library.state.value.subscriptions.take(limit)
-    val uploads = channels.map { ch ->
+    val results = channels.map { ch ->
         async {
             gate.withPermit {
-                runCatching { graph.yt.channel(ch.id, HomeComposer.VIDEOS_TAB, fresh = fresh).feed.items.filterIsInstance<Video>().take(8) }.getOrDefault(emptyList())
-                    .map { v -> if (v.channel == null) v.copy(channel = ch.ref()) else v }
+                runCatching { graph.yt.channel(ch.id, HomeComposer.VIDEOS_TAB, fresh = fresh).feed.items.filterIsInstance<Video>().take(8) }
+                    .map { list -> list.map { v -> if (v.channel == null) v.copy(channel = ch.ref()) else v } }
             }
         }
-    }.awaitAll().flatten()
+    }.awaitAll()
+    // One channel failing leaves a gap; every one failing is offline or YouTube refusing, which
+    // the page says (with Try again) rather than "No new videos".
+    if (results.isNotEmpty() && results.all { it.isFailure }) throw results.first().exceptionOrNull()!!
+    val uploads = results.flatMap { it.getOrDefault(emptyList()) }
     val (shorts, videos) = uploads.distinctBy { it.id }.partition { it.isShort }
     val sorted = videos.sortedBy { Format.ageSeconds(it.publishedText) ?: Long.MAX_VALUE }
     val shelves = buildList {

@@ -59,7 +59,11 @@ import app.oriel.core.model.Chip
 import app.oriel.core.model.Feed
 import app.oriel.ui.LocalAppState
 import app.oriel.ui.components.ActionPill
+import app.oriel.ui.components.PillSize
 import app.oriel.ui.haptics.Haptic
+import app.oriel.ui.haptics.rememberHaptics
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.heightIn
 import app.oriel.ui.components.Avatar
 import app.oriel.ui.components.ChipsRow
 import app.oriel.ui.components.TabStrip
@@ -138,6 +142,8 @@ class ChannelModel(private val graph: AppGraph, private val id: String, params: 
     }
 
     private var failedTab: ChannelTab? = null
+    /** A channel search that failed, for Try again to ask again. */
+    private var failedSearch: String? = null
     private var moreJob: Job? = null
 
     /**
@@ -148,6 +154,7 @@ class ChannelModel(private val graph: AppGraph, private val id: String, params: 
     private fun cancelLoads() {
         job?.cancel()
         moreJob?.cancel()
+        failedSearch = null
         _state.update { it.copy(refreshing = false, loadingTab = false, loadingMore = false, moreFailed = false) }
     }
 
@@ -179,6 +186,7 @@ class ChannelModel(private val graph: AppGraph, private val id: String, params: 
 
     /** Try again after a failure: the tab that failed, or the whole channel. */
     fun retry() {
+        failedSearch?.let { return search(it) }
         failedTab?.let { return selectTab(it) }
         if (_state.value.page == null) load(tabParams) else refresh()
     }
@@ -199,11 +207,21 @@ class ChannelModel(private val graph: AppGraph, private val id: String, params: 
     fun search(query: String) {
         val q = query.trim().ifEmpty { return }
         cancelLoads()
-        _state.update { it.copy(searchQuery = q, loadingTab = true, sortChips = emptyList()) }
+        _state.update { it.copy(searchQuery = q, loadingTab = true, sortChips = emptyList(), error = null) }
         job = viewModelScope.launch {
             val f = withContext(Dispatchers.IO) { runCatching { graph.yt.channelSearch(id, q) }.getOrNull() }
-            _state.update { it.copy(feed = f ?: Feed(message = "Couldn't search this channel."), loadingTab = false) }
+            // A failed search says so with Try again, rather than reading as no results.
+            if (f == null) failedSearch = q
+            _state.update { if (f == null) it.copy(feed = null, loadingTab = false, error = "Couldn't search this channel.") else it.copy(feed = f, loadingTab = false) }
         }
+    }
+
+    /** The search closed: back to the tab that was picked before it. */
+    fun clearSearch() {
+        val s = _state.value
+        if (s.searchQuery == null) return
+        val tab = s.tabs.firstOrNull { it.title == s.selectedTab } ?: return load(tabParams)
+        selectTab(tab)
     }
 
     fun retryMore() {
@@ -238,6 +256,7 @@ fun ChannelScreen(id: String, params: String?) {
     val subscribed by graph.library.subscribedIds.collectAsState()
     val listState = rememberLazyListState()
     var aboutOpen by remember { mutableStateOf(false) }
+    val haptics = rememberHaptics()
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     val channel = state.page?.channel
@@ -252,7 +271,10 @@ fun ChannelScreen(id: String, params: String?) {
         onRefresh = model::refresh,
         onNearEnd = model::loadMore,
         actions = {
-            PillAction(OrielIcons.Search, "Search channel") { searching = !searching }
+            PillAction(OrielIcons.Search, if (searching) "Close search" else "Search channel") {
+                searching = !searching
+                if (!searching) { query = ""; model.clearSearch() }
+            }
             channel?.let { PillAction(OrielIcons.Share, "Share") { app.share(it) } }
         },
     ) {
@@ -285,7 +307,7 @@ fun ChannelScreen(id: String, params: String?) {
                         SkeletonLine(0.36f)
                     } else {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(channel.title, style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.W700), maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, modifier = Modifier.weight(1f, fill = false))
+                            Text(channel.title, style = MaterialTheme.typography.headlineSmall, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, modifier = Modifier.weight(1f, fill = false))
                             if (channel.verified) VerifiedBadge()
                         }
                         Spacer(Modifier.height(3.dp))
@@ -298,9 +320,12 @@ fun ChannelScreen(id: String, params: String?) {
                         val preview = channel.description?.takeIf { it.isNotBlank() && !it.trim().equals("More about this channel", ignoreCase = true) }
                         if (preview != null || state.page?.aboutToken != null) {
                             Spacer(Modifier.height(10.dp))
+                            // At least 44dp to tap, however short the preview.
                             Column(
-                                Modifier.clip(RoundedCornerShape(10.dp)).clickable { model.loadAbout(); aboutOpen = true }.padding(horizontal = 8.dp, vertical = 4.dp),
+                                Modifier.clip(RoundedCornerShape(10.dp)).clickable { haptics.play(Haptic.Tap); model.loadAbout(); aboutOpen = true }
+                                    .heightIn(min = 44.dp).padding(horizontal = 8.dp, vertical = 4.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center,
                             ) {
                                 if (preview != null) {
                                     Text(
@@ -319,7 +344,7 @@ fun ChannelScreen(id: String, params: String?) {
                         val isSub = channel.id in subscribed
                         ActionPill(
                             if (isSub) "Subscribed" else "Subscribe", if (isSub) OrielIcons.Bell else null, { app.toggleSubscribe(channel) },
-                            Modifier.widthIn(max = 360.dp).fillMaxWidth(), filled = !isSub, height = 46.dp,
+                            Modifier.widthIn(max = 360.dp).fillMaxWidth(), filled = !isSub, size = PillSize.Medium,
                             haptic = if (isSub) Haptic.ToggleOff else Haptic.ToggleOn,
                         )
                     }
@@ -403,7 +428,7 @@ private fun ChannelAboutSheet(channel: Channel, about: ChannelAbout?, failed: Bo
                     }
                 }
                 Spacer(Modifier.height(12.dp))
-                ActionPill("Share channel", OrielIcons.Share, { close { app.share(channel) } }, Modifier.padding(horizontal = PAGE_GUTTER).fillMaxWidth(), height = 44.dp)
+                ActionPill("Share channel", OrielIcons.Share, { close { app.share(channel) } }, Modifier.padding(horizontal = PAGE_GUTTER).fillMaxWidth(), size = PillSize.Medium)
                 Spacer(Modifier.height(20.dp))
             }
         }

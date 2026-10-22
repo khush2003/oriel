@@ -434,9 +434,6 @@ class YouTube(
     /** Any InnerTube endpoint, raw, for research probes. */
     internal suspend fun raw(endpoint: String, body: JsonObjectBuilder.() -> Unit): JsonElement = post(endpoint, body)
 
-    /** A raw InnerTube answer, for research probes. */
-    internal suspend fun rawPost(endpoint: String, body: JsonObjectBuilder.() -> Unit): JsonElement = post(endpoint, body)
-
     suspend fun shortInfo(videoId: String): ShortInfo =
         cache.get("short:$videoId", ttlMs = 15 * MINUTE) {
             kotlinx.coroutines.coroutineScope {
@@ -663,11 +660,6 @@ class YouTube(
         videoId?.let { id -> putJsonArray("videoIds") { add(id) } }
     }.at("playlistId").string
 
-    suspend fun deletePlaylist(playlistId: String) {
-        post("playlist/delete") { put("playlistId", playlistId) }
-        cache.remove("playlist:$playlistId")
-    }
-
     // ---- playback reporting --------------------------------------------------------------
 
     /**
@@ -772,7 +764,6 @@ class YouTube(
         const val SUBSCRIPTIONS = "FEsubscriptions"
         const val SUBSCRIBED_CHANNELS = "FEchannels"
         const val HISTORY = "FEhistory"
-        const val LIBRARY = "FElibrary"
         const val PLAYLISTS = "FEplaylist_aggregation"
         const val WATCH_LATER = "WL"
         const val LIKED_VIDEOS = "LL"

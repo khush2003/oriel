@@ -43,6 +43,7 @@ import app.oriel.ui.AlertAction
 import app.oriel.ui.AlertSpec
 import app.oriel.ui.LocalAppState
 import app.oriel.ui.components.ActionPill
+import app.oriel.ui.components.ROW_CORNER
 import app.oriel.ui.components.ChannelRow
 import app.oriel.ui.components.OrielIcons
 import app.oriel.ui.components.MessageState
@@ -79,13 +80,13 @@ private fun VideoListScreen(title: String, videos: List<Video>, empty: String, o
         }
         item(key = "play") {
             Row(Modifier.padding(horizontal = PAGE_GUTTER, vertical = 6.dp)) {
-                Box(Modifier.weight(1f)) { ActionPill("Play", OrielIcons.Play, { app.playPlaylist(videos, 0, context) }, Modifier.fillMaxWidth(), height = 46.dp) }
+                Box(Modifier.weight(1f)) { ActionPill("Play", OrielIcons.Play, { app.playPlaylist(videos, 0, context) }, Modifier.fillMaxWidth()) }
                 Spacer(Modifier.width(12.dp))
-                Box(Modifier.weight(1f)) { ActionPill("Shuffle", OrielIcons.Shuffle, { app.playPlaylist(videos, 0, context, shuffle = true) }, Modifier.fillMaxWidth(), height = 46.dp) }
+                Box(Modifier.weight(1f)) { ActionPill("Shuffle", OrielIcons.Shuffle, { app.playPlaylist(videos, 0, context, shuffle = true) }, Modifier.fillMaxWidth()) }
             }
         }
         item(key = "count") {
-            Text("${videos.size} videos", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = PAGE_GUTTER, vertical = 6.dp))
+            Text(Plurals.count(videos.size, "video"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = PAGE_GUTTER, vertical = 6.dp))
         }
         val keys = rowKeys(videos)
         itemsIndexed(videos, key = { i, _ -> keys[i] }, contentType = { _, _ -> "row" }) { i, v ->
@@ -128,9 +129,11 @@ fun HistoryScreen() {
     val library by graph.library.state.collectAsState()
     val settings by graph.settings.state.collectAsState()
     val signedIn by graph.account.signedIn.collectAsState()
+    val account by graph.account.account.collectAsState()
     // Signed in, YouTube's own history too: what was watched on other devices and in its apps.
     var onYouTube by rememberSaveable { mutableStateOf(false) }
-    val remote: FeedModel? = if (signedIn) viewModel(key = "history-remote") {
+    // One model per account, so another sign-in never shows the last one's history.
+    val remote: FeedModel? = if (signedIn) viewModel(key = "history-remote:${accountOwner(account)?.hashCode()}") {
         FeedModel(graph, "history", load = { fresh -> graph.yt.browse(YouTube.HISTORY, fresh = fresh) }, maxAgeMs = 60_000L)
     } else null
     val remoteState = remote?.state?.collectAsState()?.value
@@ -163,14 +166,15 @@ fun HistoryScreen() {
     PageScaffold(
         title = "History",
         onBack = app::back,
-        actions = {
+        // Clearing is this device's history only, so it's offered only while that's shown.
+        actions = if (onYouTube) null else ({
             PillAction(OrielIcons.Delete, "Clear history") {
                 app.alert = AlertSpec("Clear watch history?", "This clears what Oriel remembers on this device, and resume positions.", listOf(
                     AlertAction("Cancel"),
                     AlertAction("Clear", destructive = true) { graph.library.clearHistory() },
                 ))
             }
-        },
+        }),
         refreshing = onYouTube && remoteState?.refreshing == true,
         onRefresh = if (onYouTube && remote != null) ({ remote.reload(true) }) else null,
         onNearEnd = { if (onYouTube) remote?.loadMore() },
@@ -197,7 +201,7 @@ fun HistoryScreen() {
                 feed != null && feed.isEmpty -> item { MessageState(feed.message ?: "Nothing in your YouTube history yet.") }
                 feed != null -> feedShelves(feed, compact = true, keyPrefix = "yth")
             }
-            feedFooter(remoteState, onRetry = { remote?.loadMore() })
+            feedFooter(remoteState, onRetry = { remote?.retryMore() })
             return@PageScaffold
         }
         if (library.history.isNotEmpty()) item(key = "search") {
@@ -243,8 +247,9 @@ fun PlaylistsScreen() {
     val graph = app.graph
     val library by graph.library.state.collectAsState()
     val signedIn by graph.account.signedIn.collectAsState()
+    val account by graph.account.account.collectAsState()
     var creating by remember { mutableStateOf(false) }
-    val remote: FeedModel? = if (signedIn) viewModel(key = "playlists-remote") { FeedModel(graph, "playlists", load = { fresh -> graph.yt.browse(YouTube.PLAYLISTS, fresh = fresh) }, maxAgeMs = 5 * 60_000L) } else null
+    val remote: FeedModel? = if (signedIn) viewModel(key = "playlists-remote:${accountOwner(account)?.hashCode()}") { FeedModel(graph, "playlists", load = { fresh -> graph.yt.browse(YouTube.PLAYLISTS, fresh = fresh) }, maxAgeMs = 5 * 60_000L) } else null
     val remoteState = remote?.state?.collectAsState()?.value
     PageScaffold(
         title = "Playlists",
@@ -258,7 +263,7 @@ fun PlaylistsScreen() {
         if (library.localPlaylists.isNotEmpty()) {
             item(key = "local-h") { SectionHeader("On this device") }
             items(library.localPlaylists.distinctBy { it.id }, key = { "l:" + it.id }) { p ->
-                val pl = Playlist("local:" + p.id, p.name, thumbnail = p.videos.firstOrNull()?.let { Thumbnails.of(it, 480) }, countText = "${p.videos.size} videos")
+                val pl = Playlist("local:" + p.id, p.name, thumbnail = p.videos.firstOrNull()?.let { Thumbnails.of(it, 480) }, countText = Plurals.count(p.videos.size, "video"))
                 Box(Modifier.clickable { app.navigate(LocalPlaylistRoute(p.id)) }) {
                     LocalPlaylistRowView(pl)
                 }
@@ -278,7 +283,7 @@ fun PlaylistsScreen() {
                 feed != null && feed.isEmpty -> item(key = "pl-empty") { MessageState(feed.message ?: "No playlists on your YouTube account yet.") }
                 feed != null -> feedShelves(feed, compact = true, keyPrefix = "pl")
             }
-            feedFooter(remoteState, onRetry = { remote?.loadMore() })
+            feedFooter(remoteState, onRetry = { remote?.retryMore() })
         }
         if (library.localPlaylists.isEmpty() && library.savedPlaylists.isEmpty() && remoteState == null) {
             item { MessageState("Make a playlist with ＋, or save one from YouTube.", icon = OrielIcons.Playlist) }
@@ -293,8 +298,8 @@ fun PlaylistsScreen() {
 @Composable
 private fun LocalPlaylistRowView(p: Playlist) {
     Row(Modifier.fillMaxWidth().padding(horizontal = PAGE_GUTTER, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.width(160.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
-            if (p.thumbnail != null) RemoteImage(p.thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 9f), RoundedCornerShape(10.dp))
+        Box(Modifier.width(160.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(ROW_CORNER)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+            if (p.thumbnail != null) RemoteImage(p.thumbnail, Modifier.fillMaxWidth().aspectRatio(16f / 9f), RoundedCornerShape(ROW_CORNER))
             else Icon(OrielIcons.Playlist, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(32.dp))
         }
         Spacer(Modifier.width(12.dp))
@@ -321,6 +326,6 @@ fun TopicScreen(topicName: String) {
             feed != null && feed.isEmpty && !state.loading -> item { MessageState(feed.message ?: "Nothing here right now.", action = "Try again", onAction = { model.reload() }) }
             feed != null -> feedShelves(feed, keyPrefix = "topic")
         }
-        feedFooter(state, onRetry = model::loadMore)
+        feedFooter(state, onRetry = model::retryMore)
     }
 }

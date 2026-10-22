@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -47,7 +46,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -58,20 +56,12 @@ import app.oriel.core.model.Feed
 import app.oriel.core.model.Item
 import app.oriel.core.model.Playlist
 import app.oriel.core.model.Post
-import app.oriel.core.model.Shelf
 import app.oriel.core.model.ShelfKind
 import app.oriel.core.model.Video
 import app.oriel.ui.LocalAppState
 import app.oriel.ui.haptics.Haptic
 import app.oriel.ui.haptics.rememberHaptics
 import app.oriel.util.Thumbnails
-
-/** "Channel · 1.2M views · 2 days ago", as much of it as is known. */
-fun Video.metaLine(withChannel: Boolean = true): String = listOfNotNull(
-    channel?.name?.takeIf { withChannel },
-    viewsText,
-    publishedText,
-).joinToString(" · ")
 
 /**
  * The cards' quieter line: who and when, "Channel · 2 days ago". The view count waits for
@@ -115,6 +105,7 @@ fun MoreButton(onClick: () -> Unit, modifier: Modifier = Modifier, tint: Color =
 @Composable
 fun VideoCard(video: Video, modifier: Modifier = Modifier, showAvatar: Boolean = false, titleColor: Color = MaterialTheme.colorScheme.onSurface, metaColor: Color = MaterialTheme.colorScheme.onSurfaceVariant) {
     val app = LocalAppState.current
+    val haptics = rememberHaptics()
     Column(
         modifier
             .fillMaxWidth()
@@ -127,11 +118,15 @@ fun VideoCard(video: Video, modifier: Modifier = Modifier, showAvatar: Boolean =
         Spacer(Modifier.height(10.dp))
         Row(Modifier.padding(start = 2.dp), verticalAlignment = Alignment.Top) {
             if (showAvatar && video.channel != null) {
+                // A 44dp target around the 36dp avatar, drawn where the avatar always was: the
+                // offset pulls it back over the gutter and the shorter spacer makes up the rest.
                 Avatar(
                     video.channel?.avatar, 36.dp, name = video.channel?.name,
-                    modifier = Modifier.padding(top = 2.dp).clip(CircleShape).clickable(enabled = video.channel?.id != null) { app.openChannel(video.channel!!.id!!) },
+                    modifier = Modifier.offset(x = (-4).dp, y = (-2).dp).clip(CircleShape)
+                        .clickable(enabled = video.channel?.id != null, onClickLabel = "Open channel") { haptics.play(Haptic.Tap); app.openChannel(video.channel!!.id!!) }
+                        .minTouchTarget(),
                 )
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(4.dp))
             }
             Column(Modifier.weight(1f)) {
                 Text(video.title, style = MaterialTheme.typography.titleMedium, color = titleColor, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -173,7 +168,7 @@ fun VideoRow(
         VideoThumbnail(video, Modifier.width(thumbWidth), corner = ROW_CORNER, widthHint = thumbWidth)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(video.title, style = MaterialTheme.typography.titleMedium.copy(fontSize = MaterialTheme.typography.bodyLarge.fontSize), color = if (active) activeTint else titleColor, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(video.title, style = MaterialTheme.typography.titleMedium, color = if (active) activeTint else titleColor, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(3.dp))
             val meta = video.calmLine()
             if (meta.isNotEmpty()) Text(meta, style = MaterialTheme.typography.bodyMedium, color = metaColor, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -278,7 +273,7 @@ fun ChannelRow(channel: Channel, modifier: Modifier = Modifier) {
             }
             Text(listOfNotNull(channel.handle, channel.subscribersText).joinToString(" · "), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(8.dp))
-            SubscribeButton(channel.id in subscribed, compact = true) { app.toggleSubscribe(channel) }
+            SubscribeButton(channel.id in subscribed) { app.toggleSubscribe(channel) }
         }
     }
 }
@@ -286,7 +281,8 @@ fun ChannelRow(channel: Channel, modifier: Modifier = Modifier) {
 @Composable
 fun ChannelShelfCard(channel: Channel) {
     val app = LocalAppState.current
-    Column(Modifier.width(110.dp).clip(RoundedCornerShape(12.dp)).clickable { app.openChannel(channel.id) }.padding(vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    val haptics = rememberHaptics()
+    Column(Modifier.width(110.dp).clip(RoundedCornerShape(12.dp)).clickable { haptics.play(Haptic.Tap); app.openChannel(channel.id) }.padding(vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Avatar(channel.avatar, 88.dp, name = channel.title)
         Spacer(Modifier.height(8.dp))
         Text(channel.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, textAlign = TextAlign.Center, overflow = TextOverflow.Ellipsis)
@@ -299,11 +295,12 @@ fun VerifiedBadge(tint: Color = MaterialTheme.colorScheme.onSurfaceVariant) {
     Icon(OrielIcons.Verified, "Verified", tint = tint, modifier = Modifier.padding(start = 4.dp).size(14.dp))
 }
 
+/** A community post's card. [inset] keeps it in the page's gutters; a carousel, which has its own, passes false. */
 @Composable
-fun PostCard(post: Post, modifier: Modifier = Modifier) {
+fun PostCard(post: Post, modifier: Modifier = Modifier, inset: Boolean = true) {
     val app = LocalAppState.current
     Column(
-        modifier.padding(horizontal = PAGE_GUTTER, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(CARD_CORNER)).background(MaterialTheme.colorScheme.surfaceVariant).padding(16.dp),
+        modifier.padding(horizontal = if (inset) PAGE_GUTTER else 0.dp, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(CARD_CORNER)).background(MaterialTheme.colorScheme.surfaceVariant).padding(16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Avatar(post.author?.avatar, 32.dp, name = post.author?.name)
@@ -355,14 +352,14 @@ fun ItemCarouselCard(item: Item) {
         is Video -> if (item.isShort) ShortCard(item) else VideoShelfCard(item)
         is Playlist -> PlaylistShelfCard(item)
         is Channel -> ChannelShelfCard(item)
-        is Post -> PostCard(item, Modifier.width(300.dp))
+        is Post -> PostCard(item, Modifier.width(300.dp), inset = false)
     }
 }
 
 @Composable
 fun ItemRow(item: Item) {
     when (item) {
-        is Video -> if (item.isShort) VideoRow(item) else VideoRow(item)
+        is Video -> VideoRow(item)
         is Playlist -> PlaylistRow(item)
         is Channel -> ChannelRow(item)
         is Post -> PostCard(item)
@@ -442,6 +439,3 @@ fun rowKeys(videos: List<Video>): List<String> {
     val seen = HashMap<String, Int>()
     return videos.map { v -> val n = seen.merge(v.id, 1, Int::plus)!!; if (n == 1) v.id else "${v.id}#$n" }
 }
-
-/** Untitled shelves that don't render are dropped, so empty feeds read as empty. */
-val Shelf.isRenderable: Boolean get() = items.isNotEmpty()

@@ -4,19 +4,13 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import android.os.Build
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,11 +20,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -39,16 +30,16 @@ import androidx.compose.ui.unit.dp
 import app.oriel.BuildConfig
 import app.oriel.ui.AppState
 import app.oriel.ui.ReportRequest
+import app.oriel.ui.components.ChoiceRow
 import app.oriel.ui.components.LocalSheetClose
 import app.oriel.ui.components.OrielIcons
 import app.oriel.ui.components.OrielSheet
 import app.oriel.ui.components.RowDivider
 import app.oriel.ui.components.SettingsGroup
 import app.oriel.ui.components.SettingsRow
+import app.oriel.ui.components.SheetAction
 import app.oriel.ui.components.SheetTitle
 import app.oriel.ui.components.SwitchRow
-import app.oriel.ui.haptics.Haptic
-import app.oriel.ui.haptics.rememberHaptics
 import app.oriel.util.CrashLog
 import app.oriel.util.CrashRecord
 import app.oriel.util.IssueLink
@@ -109,11 +100,11 @@ fun ReportSheet(app: AppState, request: ReportRequest, onDismiss: () -> Unit) {
             return@OrielSheet
         }
 
-        SheetTitle("Report a problem", trailing = { SheetTextButton("Cancel") { close {} } })
+        SheetTitle("Report a problem", trailing = { SheetAction("Cancel") { close {} } })
         SettingsGroup(header = "What kind of problem", top = 8.dp) {
             ReportKind.entries.forEachIndexed { i, k ->
                 if (i > 0) RowDivider(inset = false)
-                KindRow(k.label, k == kind) { kind = k }
+                ChoiceRow(k.label, k == kind) { kind = k }
             }
         }
         SettingsGroup(
@@ -195,21 +186,6 @@ private fun count(n: Int, one: String, many: String) = when (n) {
     else -> "$n $many"
 }
 
-/** One kind of problem: a radio row, announced as selected or not. */
-@Composable
-private fun KindRow(label: String, selected: Boolean, onClick: () -> Unit) {
-    val haptics = rememberHaptics()
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = 48.dp)
-            .selectable(selected, role = Role.RadioButton) { if (!selected) haptics.play(Haptic.Select); onClick() }
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
-        if (selected) Icon(OrielIcons.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(19.dp))
-    }
-}
-
 /** A text field drawn as a grouped row: placeholder in the secondary colour, named for TalkBack by [label]. */
 @Composable
 private fun ReportField(value: String, onChange: (String) -> Unit, placeholder: String, label: String, singleLine: Boolean = false, minLines: Int = 1) {
@@ -227,17 +203,5 @@ private fun ReportField(value: String, onChange: (String) -> Unit, placeholder: 
             else KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
             modifier = Modifier.fillMaxWidth().semantics { contentDescription = label },
         )
-    }
-}
-
-/** A text button in a sheet's title bar, with a 44dp hit area. */
-@Composable
-private fun SheetTextButton(text: String, onClick: () -> Unit) {
-    val haptics = rememberHaptics()
-    Box(
-        Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(8.dp)).clickable { haptics.play(Haptic.Tap); onClick() }.padding(horizontal = 12.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(text, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
     }
 }

@@ -27,7 +27,6 @@ import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.TextUnit
-import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import app.oriel.R
@@ -36,7 +35,7 @@ import app.oriel.data.ThemeMode
 /*
  * Monochrome by design: primary is pure white in dark and pure black in light.
  * There is no brand colour in the scheme; colour comes from the thumbnails
- * (see ArtworkPalette). Only nine slots are overridden, as in BitChord.
+ * (see ArtworkPalette). Only these slots are overridden, as in BitChord, plus the separator.
  */
 private val DarkColors = darkColorScheme(
     primary = Color.White, onPrimary = Color.Black,
@@ -44,6 +43,8 @@ private val DarkColors = darkColorScheme(
     surface = Color(0xFF0D0D0F), onSurface = Color.White,
     surfaceVariant = Color(0xFF1C1C1E), onSurfaceVariant = Color(0xFF8E8E93),
     outline = Color(0xFF2C2C2E),
+    // iOS's separator, for alert hairlines; Material's default here is a lavender.
+    outlineVariant = Color(0xFF38383A),
     surfaceContainerHigh = Color(0xFF242426),
 )
 
@@ -53,12 +54,22 @@ private val LightColors = lightColorScheme(
     surface = Color(0xFFF7F7F9), onSurface = Color.Black,
     surfaceVariant = Color(0xFFF2F2F7), onSurfaceVariant = Color(0xFF6E6E73),
     outline = Color(0xFFE5E5EA),
+    outlineVariant = Color(0xFFC6C6C8),
     surfaceContainerHigh = Color(0xFFFFFFFF),
 )
 
 /** YouTube's red, used only where YouTube itself would: the live badge, the progress of a watched video. */
 val LiveRed = Color(0xFFFF0033)
-val AccentRed = Color(0xFFFA2D48)
+
+/** The creator's heart on a comment and the double-tap heart on a Short. */
+val HeartRed = Color(0xFFFF3B5C)
+
+/** iOS's system red for destructive actions, in its dark and light variants. */
+val DestructiveRedDark = Color(0xFFFF453A)
+val DestructiveRedLight = Color(0xFFD70015)
+
+/** The segmented control's raised thumb in dark mode (iOS's systemGray). */
+val SegmentThumbDark = Color(0xFF636366)
 
 /** The "reduce animation" switch: springs snap, crossfades drop. */
 val LocalReduceAnimation = staticCompositionLocalOf { false }

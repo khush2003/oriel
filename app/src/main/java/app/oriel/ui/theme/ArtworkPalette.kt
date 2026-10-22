@@ -33,7 +33,6 @@ import coil3.request.SuccessResult
 import coil3.request.allowHardware
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlin.math.pow
 import kotlin.math.sqrt
 
 @Immutable
@@ -77,13 +76,7 @@ fun Modifier.animatedBackground(color: Color): Modifier = composed {
     drawBehind { drawRect(shown.value) }
 }
 
-/** Average luminance of the artwork's top tenth, for how strong a status-bar scrim it needs. */
-@Composable
-fun rememberTopBandLuminance(imageUrl: String?): Float? = rememberArtworkSeed(imageUrl)?.topBandLuminance
-
-fun topBandScrimAlpha(luminance: Float?): Float = 0.16f + (0.65f - 0.16f) * (luminance?.coerceIn(0f, 1f) ?: 0f)
-
-private data class Seed(val dominant: Color, val vibrant: Color, val edge: Color, val topBandLuminance: Float)
+private data class Seed(val dominant: Color, val vibrant: Color, val edge: Color)
 
 private val seedCache = object : LinkedHashMap<String, Seed>(0, 0.75f, true) {
     override fun removeEldestEntry(eldest: Map.Entry<String, Seed>) = size > 128
@@ -114,7 +107,7 @@ private fun seedOf(bitmap: Bitmap): Seed? {
     val accentCandidates = Palette.from(soft).maximumColorCount(24).generate().swatches.ifEmpty { all }
     val dominant = all.maxBy { it.population }
     val vibrant = accentCandidates.maxBy { s -> s.hsl[1] * sqrt(s.population.toFloat()) }
-    return Seed(Color(dominant.rgb), Color(vibrant.rgb), soft.bandColor(fromBottom = true, 0.18f), soft.bandLuminance(0.10f))
+    return Seed(Color(dominant.rgb), Color(vibrant.rgb), soft.bandColor(fromBottom = true, 0.18f))
 }
 
 private fun Bitmap.bandColor(fromBottom: Boolean, fraction: Float): Color {
@@ -125,22 +118,6 @@ private fun Bitmap.bandColor(fromBottom: Boolean, fraction: Float): Color {
     pixels.forEach { p -> r += (p shr 16) and 0xFF; g += (p shr 8) and 0xFF; b += p and 0xFF }
     val n = pixels.size.coerceAtLeast(1)
     return Color((r / n).toInt(), (g / n).toInt(), (b / n).toInt())
-}
-
-private fun Bitmap.bandLuminance(fraction: Float): Float {
-    val band = (height * fraction).toInt().coerceIn(1, height)
-    val pixels = IntArray(width * band)
-    getPixels(pixels, 0, width, 0, 0, width, band)
-    if (pixels.isEmpty()) return 0f
-    return (pixels.sumOf { relativeLuminance(it).toDouble() } / pixels.size).toFloat()
-}
-
-private fun relativeLuminance(argb: Int): Float {
-    fun linear(c: Int): Float {
-        val s = c / 255f
-        return if (s <= 0.04045f) s / 12.92f else ((s + 0.055f) / 1.055f).toDouble().pow(2.4).toFloat()
-    }
-    return 0.2126f * linear((argb shr 16) and 0xFF) + 0.7152f * linear((argb shr 8) and 0xFF) + 0.0722f * linear(argb and 0xFF)
 }
 
 private fun Seed.toPalette(dark: Boolean): ArtworkPalette = if (dark) {

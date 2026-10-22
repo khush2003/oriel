@@ -69,7 +69,9 @@ import app.oriel.ui.components.topBarContentPadding
 import app.oriel.ui.theme.ArtworkPalette
 import app.oriel.ui.theme.rememberArtworkPalette
 import app.oriel.util.Thumbnails
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -77,32 +79,55 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-data class PlaylistState(val page: PlaylistPage? = null, val loading: Boolean = true, val loadingMore: Boolean = false, val moreFailed: Boolean = false, val error: String? = null, val refreshing: Boolean = false)
+data class PlaylistState(
+    val page: PlaylistPage? = null,
+    val loading: Boolean = true,
+    val loadingMore: Boolean = false,
+    val moreFailed: Boolean = false,
+    val error: String? = null,
+    val refreshing: Boolean = false,
+    /** Play all or Shuffle is fetching the rest of a long playlist first. */
+    val fetchingAll: Boolean = false,
+)
 
 class PlaylistModel(private val graph: AppGraph, private val id: String) : ViewModel() {
     private val _state = MutableStateFlow(PlaylistState())
     val state: StateFlow<PlaylistState> = _state.asStateFlow()
 
+    private var job: Job? = null
+    private var moreJob: Job? = null
+    private var allJob: Job? = null
+
     init { load(false) }
 
     fun load(fresh: Boolean) {
-        _state.update { it.copy(loading = it.page == null, refreshing = fresh && it.page != null, error = null) }
-        viewModelScope.launch {
+        // A reload replaces the list: a load, next page or fetch-all still on its way belonged to the old one.
+        job?.cancel()
+        moreJob?.cancel()
+        allJob?.cancel()
+        _state.update { it.copy(loading = it.page == null, refreshing = fresh && it.page != null, error = null, loadingMore = false, moreFailed = false, fetchingAll = false) }
+        job = viewModelScope.launch {
             val r = withContext(Dispatchers.IO) { runCatching { graph.yt.playlist(id, fresh) } }
             r.onSuccess { p -> _state.value = PlaylistState(page = p, loading = false) }
-                .onFailure { e -> graph.notePageFailure("Loading a playlist", e); _state.update { it.copy(loading = false, refreshing = false, error = friendlyError(e)) } }
+                .onFailure { e ->
+                    if (e is CancellationException) throw e
+                    graph.notePageFailure("Loading a playlist", e)
+                    _state.update { it.copy(loading = false, refreshing = false, error = friendlyError(e)) }
+                }
         }
     }
 
     fun loadMore() {
         val s = _state.value
         val token = s.page?.continuation ?: return
-        if (s.loadingMore || s.moreFailed) return
+        if (s.loadingMore || s.moreFailed || s.fetchingAll) return
         _state.update { it.copy(loadingMore = true) }
-        viewModelScope.launch {
+        moreJob = viewModelScope.launch {
             val next = withContext(Dispatchers.IO) { runCatching { graph.yt.more(token) }.getOrNull() }
             _state.update { st ->
                 val p = st.page ?: return@update st.copy(loadingMore = false)
+                // Reloaded meanwhile: this page followed the old list.
+                if (p.continuation != token) return@update st
                 // A failed page keeps its token, for the footer's Try again.
                 if (next == null) return@update st.copy(loadingMore = false, moreFailed = true)
                 val have = p.videos.mapTo(HashSet()) { it.id }
@@ -117,16 +142,27 @@ class PlaylistModel(private val graph: AppGraph, private val id: String) : ViewM
         loadMore()
     }
 
-    /** Every video, following continuations, for Play all / Shuffle on long playlists. */
-    suspend fun all(): List<Video> {
-        var p = _state.value.page ?: return emptyList()
-        var guard = 0
-        while (p.continuation != null && guard++ < 20) {
-            val next = withContext(Dispatchers.IO) { runCatching { graph.yt.more(p.continuation!!) }.getOrNull() } ?: break
-            p = p.copy(videos = p.videos + next.items.filterIsInstance<Video>(), continuation = next.continuation)
+    /**
+     * Every video, following continuations, for Play all / Shuffle on long playlists, then
+     * [then] with them. A second tap while it fetches does nothing; the pills show it's busy.
+     */
+    fun all(then: (List<Video>) -> Unit) {
+        if (_state.value.fetchingAll) return
+        val start = _state.value.page ?: return
+        // This walks the same continuations: a next page landing meanwhile would add them twice.
+        moreJob?.cancel()
+        _state.update { it.copy(fetchingAll = true, loadingMore = false) }
+        allJob = viewModelScope.launch {
+            var p = start
+            var guard = 0
+            while (p.continuation != null && guard++ < 20) {
+                val next = withContext(Dispatchers.IO) { runCatching { graph.yt.more(p.continuation!!) }.getOrNull() } ?: break
+                val have = p.videos.mapTo(HashSet()) { it.id }
+                p = p.copy(videos = p.videos + next.items.filterIsInstance<Video>().filterNot { it.id in have }, continuation = next.continuation)
+            }
+            _state.update { it.copy(page = p, fetchingAll = false) }
+            then(p.videos)
         }
-        _state.update { it.copy(page = p) }
-        return p.videos
     }
 }
 
@@ -150,8 +186,8 @@ fun CollectionHeader(
         meta?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = palette.onBackgroundVariant, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp, start = 24.dp, end = 24.dp)) }
         Spacer(Modifier.height(16.dp))
         Row(Modifier.fillMaxWidth().padding(horizontal = PAGE_GUTTER), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.weight(1f)) { ActionPill("Play", OrielIcons.Play, { onPlay?.invoke() }, Modifier.fillMaxWidth(), height = 48.dp, tint = palette.accent, enabled = onPlay != null) }
-            Box(Modifier.weight(1f)) { ActionPill("Shuffle", OrielIcons.Shuffle, { onShuffle?.invoke() }, Modifier.fillMaxWidth(), height = 48.dp, tint = palette.accent, enabled = onShuffle != null) }
+            Box(Modifier.weight(1f)) { ActionPill("Play", OrielIcons.Play, { onPlay?.invoke() }, Modifier.fillMaxWidth(), tint = palette.accent, enabled = onPlay != null) }
+            Box(Modifier.weight(1f)) { ActionPill("Shuffle", OrielIcons.Shuffle, { onShuffle?.invoke() }, Modifier.fillMaxWidth(), tint = palette.accent, enabled = onShuffle != null) }
         }
         description?.takeIf { it.isNotBlank() }?.let {
             Spacer(Modifier.height(12.dp))
@@ -173,11 +209,8 @@ fun PlaylistScreen(id: String) {
     val palette = rememberArtworkPalette(playlist?.thumbnail ?: page?.videos?.firstOrNull()?.let { Thumbnails.of(it, 320) })
     val context = { QueueContext(title = playlist?.title, playlistId = id) }
 
-    fun playAll(shuffle: Boolean) {
-        val vids = page?.videos.orEmpty()
-        if (vids.isEmpty()) return
-        app.playPlaylist(vids, 0, context(), shuffle)
-    }
+    // The whole playlist, not just the part scrolled to so far.
+    fun playAll(shuffle: Boolean) = model.all { vids -> app.playPlaylist(vids, 0, context(), shuffle) }
 
     PageScaffold(
         title = playlist?.title ?: "",
@@ -211,8 +244,8 @@ fun PlaylistScreen(id: String) {
                     meta = page.metadata.joinToString(" · ").ifBlank { playlist.countText },
                     description = page.description,
                     palette = palette,
-                    onPlay = if (page.videos.isNotEmpty()) ({ playAll(false) }) else null,
-                    onShuffle = if (page.videos.isNotEmpty()) ({ app.scope.launch { app.playPlaylist(model.all(), 0, context(), shuffle = true) } }) else null,
+                    onPlay = if (page.videos.isNotEmpty() && !state.fetchingAll) ({ playAll(false) }) else null,
+                    onShuffle = if (page.videos.isNotEmpty() && !state.fetchingAll) ({ playAll(true) }) else null,
                 )
             }
         }
@@ -264,7 +297,7 @@ fun LocalPlaylistScreen(id: String) {
         largeTitle = false,
         background = palette.background,
         actions = {
-            if (playlist.videos.size > 1) PillAction(if (editing) OrielIcons.Check else OrielIcons.Reorder, if (editing) "Done" else "Reorder") { haptics.play(Haptic.Tap); editing = !editing }
+            if (playlist.videos.size > 1) PillAction(if (editing) OrielIcons.Check else OrielIcons.Reorder, if (editing) "Done" else "Reorder") { editing = !editing }
             PillAction(OrielIcons.Edit, "Rename") { renaming = true }
             PillAction(OrielIcons.Delete, "Delete playlist") {
                 app.alert = AlertSpec("Delete “${playlist.name}”?", "This removes the playlist from this device. The videos stay on YouTube.", listOf(
@@ -279,7 +312,7 @@ fun LocalPlaylistScreen(id: String) {
                 art = playlist.videos.firstOrNull()?.let { Thumbnails.of(it, 720) },
                 title = playlist.name,
                 subtitle = "On this device",
-                meta = "${playlist.videos.size} videos",
+                meta = Plurals.count(playlist.videos.size, "video"),
                 description = null,
                 palette = palette,
                 onPlay = if (playlist.videos.isNotEmpty()) ({ app.playPlaylist(playlist.videos, 0, context) }) else null,

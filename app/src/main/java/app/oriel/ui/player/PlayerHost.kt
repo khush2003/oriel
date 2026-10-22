@@ -55,8 +55,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import app.oriel.ui.theme.LocalReduceAnimation
+import app.oriel.ui.theme.motion
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -170,6 +176,8 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
     // thrown to any corner, and thrown off the side to stop. These hold its drag, relative to
     // the corner it rests in, and the fade of a throw away.
     val pipDrag = remember { androidx.compose.animation.core.Animatable(Offset.Zero, Offset.VectorConverter) }
+    // Read when a release runs: the drag handler outlives the composition that set it up.
+    val reduceMotion by rememberUpdatedState(LocalReduceAnimation.current)
     val pipGone = remember { androidx.compose.animation.core.Animatable(0f) }
     BoxWithConstraints(Modifier.fillMaxSize().graphicsLayer { alpha = 1f - pipGone.value }) {
         val W = constraints.maxWidth.toFloat()
@@ -216,7 +224,10 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
         val progress = sheet.progress
         val fullscreen = sheet.fullscreen
         val fsAnim = remember { androidx.compose.animation.core.Animatable(0f) }
-        LaunchedEffect(fullscreen) { fsAnim.animateTo(if (fullscreen) 1f else 0f, PlayerSpring) }
+        LaunchedEffect(fullscreen) {
+            val target = if (fullscreen) 1f else 0f
+            if (reduceMotion) fsAnim.snapTo(target) else fsAnim.animateTo(target, PlayerSpring)
+        }
 
         // ---- the drag that moves the sheet ------------------------------------------------
         val tracker = remember { VelocityTracker() }
@@ -269,8 +280,12 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
                 haptics.play(Haptic.Tap)
                 scope.launch {
                     val out = Offset(if (offLeft) -W else W, v.y * 0.15f)
-                    launch { pipGone.animateTo(1f, androidx.compose.animation.core.tween(240)) }
-                    pipDrag.animateTo(pipDrag.value + out, androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 300f), v)
+                    if (reduceMotion) {
+                        pipGone.snapTo(1f)
+                    } else {
+                        launch { pipGone.animateTo(1f, androidx.compose.animation.core.tween(240)) }
+                        pipDrag.animateTo(pipDrag.value + out, androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 300f), v)
+                    }
                     connection.stop()
                     // Back in place once the player is gone, for the next video.
                     withTimeoutOrNull(1_500) { connection.current.first { it == null } }
@@ -285,7 +300,9 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
             sheet.pipCorner = corner
             scope.launch {
                 pipDrag.snapTo(from)
-                pipDrag.animateTo(Offset.Zero, androidx.compose.animation.core.spring(dampingRatio = 0.78f, stiffness = 260f), v)
+                // Tuned with the throw: a little give as it lands, at the finger's speed.
+                if (reduceMotion) pipDrag.snapTo(Offset.Zero)
+                else pipDrag.animateTo(Offset.Zero, androidx.compose.animation.core.spring(dampingRatio = 0.78f, stiffness = 260f), v)
             }
         }
         // Grows and shrinks the window about its own centre, under the fingers; its corner anchor
@@ -309,7 +326,7 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
             tracker.resetTracking()
             val leave = dragTotal > px(72.dp) || (v > 900f && dragTotal > px(16.dp))
             if (leave) { haptics.play(Haptic.Tap); sheet.fullscreen = false }
-            scope.launch { fsPull.animateTo(0f, SheetSpring) }
+            scope.launch { if (reduceMotion) fsPull.snapTo(0f) else fsPull.animateTo(0f, SheetSpring) }
         }
         // Expanded, a drag up grows the picture toward fullscreen under the finger (the same
         // flight the button runs, held at the finger's place), and letting go past a quarter of
@@ -325,8 +342,12 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
             tracker.resetTracking()
             val go = fsAnim.value > 0.22f || (v < -900f && dragTotal < -px(16.dp))
             if (go) { haptics.play(Haptic.Expand); sheet.fullscreen = true }
-            else scope.launch { fsAnim.animateTo(0f, SheetSpring) }
+            else scope.launch { if (reduceMotion) fsAnim.snapTo(0f) else fsAnim.animateTo(0f, SheetSpring) }
         }
+        // The drag handler outlives compositions; these see the screen as it is now, after a resize.
+        val latestPushFullscreen by rememberUpdatedState({ dragUp: Float -> pushFullscreen(dragUp) })
+        val latestReleaseFullscreen by rememberUpdatedState({ releaseFullscreen() })
+        val latestReleasePush by rememberUpdatedState({ releasePush() })
         // The picture's one drag, in every state: floating, it moves the window anywhere;
         // expanded, down collapses and a flick up goes fullscreen; in fullscreen, down leaves it.
         // What it does is decided as each drag starts. (It used to be two handlers swapped by
@@ -348,12 +369,12 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
                 onEnd = {
                     when {
                         floating -> latestReleasePip()
-                        startedFullscreen -> releaseFullscreen()
-                        startedExpanded && dragTotal < 0f && progress.value > 0.99f -> releasePush()
+                        startedFullscreen -> latestReleaseFullscreen()
+                        startedExpanded && dragTotal < 0f && progress.value > 0.99f -> latestReleasePush()
                         else -> release()
                     }
                 },
-                onCancel = { if (floating) latestReleasePip() else if (startedFullscreen) releaseFullscreen() else release() },
+                onCancel = { if (floating) latestReleasePip() else if (startedFullscreen) latestReleaseFullscreen() else release() },
             ) { uptime, delta, zoom ->
                 if (floating) {
                     panTotal += delta
@@ -373,7 +394,7 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
                     return@detectPictureDrag
                 }
                 if (sheet.fullscreen) return@detectPictureDrag
-                if (startedExpanded && dragTotal < 0 && progress.value > 0.99f) { pushFullscreen(-dragTotal); return@detectPictureDrag }
+                if (startedExpanded && dragTotal < 0 && progress.value > 0.99f) { latestPushFullscreen(-dragTotal); return@detectPictureDrag }
                 if (fsAnim.value > 0f && !sheet.fullscreen) scope.launch(start = CoroutineStart.UNDISPATCHED) { fsAnim.snapTo(0f) }
                 follow(dy)
             }
@@ -456,7 +477,7 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
             val fillScale = if (aspect > 0f) maxOf(aspect / screenAspect, screenAspect / aspect) else 1f
             val zoom by androidx.compose.animation.core.animateFloatAsState(
                 if (fullscreen && zoomed) fillScale else 1f,
-                androidx.compose.animation.core.spring(dampingRatio = 0.86f, stiffness = 380f),
+                motion(androidx.compose.animation.core.spring(dampingRatio = 0.86f, stiffness = 380f)),
                 label = "fillZoom",
             )
             VideoSurface(connection, video, Modifier.fillMaxSize().graphicsLayer { scaleX = zoom; scaleY = zoom }, contentScale = ContentScale.Fit, audioOnly = audioOnly)
@@ -563,7 +584,18 @@ private fun PipControls(app: AppState, onExpand: () -> Unit) {
         Row(Modifier.align(Alignment.TopEnd)) {
             val nudge = Modifier.offset(x = 4.dp)
             if (buffering && playing) {
-                Box(nudge.size(44.dp), contentAlignment = Alignment.Center) {
+                // Still a 44dp target that pauses, where the pause button was.
+                Box(
+                    nudge
+                        .size(44.dp)
+                        .clearAndSetSemantics {
+                            contentDescription = "Loading. Pause"
+                            role = Role.Button
+                            onClick { connection.togglePlay(); true }
+                        }
+                        .pressClickable(haptic = Haptic.Pause) { connection.togglePlay() },
+                    contentAlignment = Alignment.Center,
+                ) {
                     Box(Modifier.size(30.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.45f)), contentAlignment = Alignment.Center) {
                         ActivityIndicator(size = 14.dp, color = Color.White)
                     }
@@ -591,7 +623,7 @@ private fun PipControls(app: AppState, onExpand: () -> Unit) {
 private fun PipButton(icon: androidx.compose.ui.graphics.vector.ImageVector, description: String, iconSize: Dp, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val press by androidx.compose.animation.core.animateFloatAsState(if (pressed) 1f else 0f, androidx.compose.animation.core.spring(stiffness = 900f), label = "pipPress")
+    val press by androidx.compose.animation.core.animateFloatAsState(if (pressed) 1f else 0f, motion(androidx.compose.animation.core.spring(stiffness = 900f)), label = "pipPress")
     Box(modifier.size(44.dp).clickable(interaction, indication = null, onClickLabel = description, onClick = onClick), contentAlignment = Alignment.Center) {
         Box(
             Modifier

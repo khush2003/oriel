@@ -5,7 +5,10 @@
 package app.oriel.ui.components
 
 import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -47,7 +50,9 @@ import androidx.compose.ui.unit.dp
 import app.oriel.ui.haptics.Haptic
 import app.oriel.ui.haptics.rememberHaptics
 
-private val GroupShape = RoundedCornerShape(14.dp)
+/** The grouped card's corner, for anything that should read as one of these cards. */
+val GROUP_CORNER = 14.dp
+val GroupShape = RoundedCornerShape(GROUP_CORNER)
 private val GROUP_INSET = 16.dp
 private val ICON_SIZE = 22.dp
 private val TEXT_INSET = 52.dp
@@ -64,7 +69,7 @@ fun SettingsGroup(
 ) {
     Column(Modifier.fillMaxWidth()) {
         if (header != null) {
-            Text(header.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = GROUP_INSET + 4.dp, top = top, bottom = 8.dp))
+            Text(header.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = GROUP_INSET + 4.dp, top = top, bottom = 8.dp).semantics { heading() })
         } else Spacer(Modifier.height(top))
         Column(Modifier.padding(horizontal = GROUP_INSET).fillMaxWidth().clip(GroupShape).background(fill), content = content)
         if (footer != null) Text(footer, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = GROUP_INSET + 4.dp).padding(top = 8.dp))
@@ -162,12 +167,23 @@ fun IosSwitch(checked: Boolean, enabled: Boolean = true) {
     )
 }
 
-/** A radio-style row: label, optional detail, and a check when selected. */
+/**
+ * A choice row: label, optional detail, and a check when selected. One of several (a radio
+ * button) by default; [multi] makes it one of a set that each toggle (a checkbox). Disabled
+ * at α0.45 and not tappable.
+ */
 @Composable
-fun ChoiceRow(label: String, selected: Boolean, detail: String? = null, onClick: () -> Unit) {
+fun ChoiceRow(label: String, selected: Boolean, detail: String? = null, enabled: Boolean = true, multi: Boolean = false, onClick: () -> Unit) {
     val haptics = rememberHaptics()
+    val tap = { haptics.play(Haptic.Select); onClick() }
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { haptics.play(Haptic.Select); onClick() }.padding(horizontal = 16.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            .graphicsLayer { alpha = if (enabled) 1f else 0.45f }
+            .then(
+                if (multi) Modifier.toggleable(selected, enabled = enabled, role = Role.Checkbox) { tap() }
+                else Modifier.selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = tap),
+            )
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {

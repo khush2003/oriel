@@ -340,7 +340,7 @@ class StreamResolver(
     /** Starts resolving [request] in the background so a later [resolve] finds it ready. */
     fun prefetch(request: StreamRequest) {
         if (cached(request) != null || inflight.containsKey(request)) return
-        scope.async { runCatching { resolve(request) } }
+        scope.launch { runCatching { resolve(request) } }
     }
 
     fun invalidate(videoId: String) {
@@ -449,9 +449,9 @@ class StreamResolver(
             // InnerTubeX files every unexpected failure (a parse error, a bot check) under NETWORK.
             // Only a failure that is a connection problem should be retried like one.
             if (e.reason == StreamResolveException.Reason.NETWORK && !e.isUnreachable) {
-                throw StreamUnavailableException(StreamResolveException.Reason.UNKNOWN, friendlyMessage(StreamResolveException.Reason.UNKNOWN, null), e)
+                throw StreamUnavailableException(StreamResolveException.Reason.UNKNOWN, describe(e), e)
             }
-            throw StreamUnavailableException(e.reason, friendlyMessage(e.reason, e.message), e)
+            throw StreamUnavailableException(e.reason, if (e.isUnreachable) friendlyMessage(e.reason, e.message) else describe(e), e)
         } ?: throw StreamUnavailableException(null, "No playable stream for this video")
 
         val hls = stream.mimeType == "application/x-mpegURL"
@@ -500,15 +500,48 @@ class StreamResolver(
     private val StreamResolveException.isUnreachable: Boolean
         get() = reason == StreamResolveException.Reason.NETWORK && generateSequence(cause) { it.cause }.any { it is IOException }
 
-    private fun friendlyMessage(reason: StreamResolveException.Reason, fallback: String?): String = when (reason) {
-        StreamResolveException.Reason.AGE_RESTRICTED -> "This video is age-restricted. Sign in to play it."
-        StreamResolveException.Reason.UNAVAILABLE -> "This video isn't available in your region or was removed."
-        StreamResolveException.Reason.NETWORK -> "Couldn't reach YouTube. Check your connection."
-        StreamResolveException.Reason.NO_MUSIC_VIDEO -> "No video stream for this video."
-        else -> fallback ?: "This video can't be played right now."
-    }
-
     companion object {
+        internal const val BOT_CHECK = "YouTube is asking this network to confirm it isn't a bot. Try another network, or sign in."
+        internal const val SIGN_IN_WANTED = "YouTube wants a sign-in to play this. The video may be private, or YouTube may be asking this network to confirm it isn't a bot."
+        internal const val PRIVATE = "This video is private."
+        internal const val REMOVED = "This video has been removed."
+        internal const val NOT_IN_COUNTRY = "This video isn't available in your country."
+
+        /**
+         * Why [e] failed, in words for the user. InnerTubeX (0.10) keeps YouTube's own reason text
+         * to itself: its messages are fixed ("This track is unavailable.") and each attempt's
+         * outcome carries only the playability status ("playability:LOGIN_REQUIRED"). So the
+         * message is searched for YouTube's wording in case a version passes it on. A bare
+         * LOGIN_REQUIRED is either a private video or the bot check, so the message names both.
+         * That is only reported: nothing here tries to get past it.
+         */
+        internal fun describe(e: StreamResolveException): String {
+            val text = e.message.orEmpty().lowercase()
+            val statuses = e.diagnostics?.attempts.orEmpty().map { it.outcome }.filter { it.startsWith(PLAYABILITY) }.map { it.removePrefix(PLAYABILITY).uppercase() }
+            return when {
+                BOT_WORDS.any { it in text } -> BOT_CHECK
+                "private" in text -> PRIVATE
+                REMOVED_WORDS.any { it in text } -> REMOVED
+                "country" in text || "region" in text -> NOT_IN_COUNTRY
+                "LOGIN_REQUIRED" in statuses && e.reason != StreamResolveException.Reason.AGE_RESTRICTED &&
+                    e.reason != StreamResolveException.Reason.UNAVAILABLE -> SIGN_IN_WANTED
+                e.reason == StreamResolveException.Reason.NETWORK -> friendlyMessage(StreamResolveException.Reason.UNKNOWN, null)
+                else -> friendlyMessage(e.reason, e.message)
+            }
+        }
+
+        private fun friendlyMessage(reason: StreamResolveException.Reason, fallback: String?): String = when (reason) {
+            StreamResolveException.Reason.AGE_RESTRICTED -> "This video is age-restricted. Sign in to play it."
+            StreamResolveException.Reason.UNAVAILABLE -> "This video isn't available in your region or was removed."
+            StreamResolveException.Reason.NETWORK -> "Couldn't reach YouTube. Check your connection."
+            StreamResolveException.Reason.NO_MUSIC_VIDEO -> "No video stream for this video."
+            else -> fallback ?: "This video can't be played right now."
+        }
+
+        private const val PLAYABILITY = "playability:"
+        private val BOT_WORDS = listOf("not a bot", "confirm you're not", "confirm you\u2019re not")
+        private val REMOVED_WORDS = listOf("removed", "terminated", "deleted")
+
         private const val PLAYER_CONFIG_URL =
             "https://raw.githubusercontent.com/ZemerTeam/zemer-cipher/master/library/src/main/assets/player_configs.json"
         private const val EXCLUDE_MS = 10 * 60_000L

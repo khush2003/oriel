@@ -35,6 +35,21 @@ please read this page before you write code. It's short.
 - **Fixtures:** test data must be invented. Don't commit recorded YouTube responses, real
   thumbnails, real comments, or anyone's account data.
 
+## Stored data
+
+Everything the app keeps on the phone (the library, resume points, settings, the account) must
+survive every update. Each stored document carries a `schema` version (see `util/Stored.kt`).
+
+- Adding a field with a default is fine as it is. Never rename or remove a field, or rename an enum
+  constant, without a migration: persisted enums carry `@SerialName`, so renaming the Kotlin name
+  alone is safe.
+- Any other change to a persisted model needs a migration step: bump the document's `Schema`
+  version and add the step from the previous one.
+- Add a frozen, invented fixture of the old shape under `app/src/test/resources/stored/`
+  (`library.v<N>.json`, `settings.v<N>.json`) and a test that it still reads. Don't edit existing
+  fixtures.
+- Cached pages aren't migrated: bump `PageDiskCache.VERSION` instead, and the old ones are deleted.
+
 ## Tests
 
 All of these must pass; CI runs them on every PR.

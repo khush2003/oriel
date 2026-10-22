@@ -9,7 +9,6 @@ import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
@@ -26,25 +25,36 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.offset
 import androidx.compose.material3.MaterialTheme
 import app.oriel.ui.haptics.Haptic
 import app.oriel.ui.haptics.rememberHaptics
+import app.oriel.ui.theme.DestructiveRedDark
+import app.oriel.ui.theme.DestructiveRedLight
+import app.oriel.ui.theme.LocalIsDark
+import app.oriel.ui.theme.motion
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.ui.unit.LayoutDirection
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-/** iOS's destructive red, shared by every remove and delete. */
-val DestructiveRed = Color(0xFFFF453A)
+/** iOS's destructive red, shared by every remove and delete: lighter on dark, deeper on light. */
+val DestructiveRed: Color
+    @Composable @ReadOnlyComposable get() = if (LocalIsDark.current) DestructiveRedDark else DestructiveRedLight
 
 /**
  * iOS's trailing swipe action: drag a row left to show a red [label] button behind it. Let go
  * past the button and it stays open; tap it to remove. A long swipe, past half the row, removes
  * at once with a tick as it crosses the line. Anything else springs closed. Null [onRemove]
- * leaves the row as it is.
+ * leaves the row as it is. Right to left, it all mirrors: the row slides right. TalkBack gets
+ * [label] as a custom action.
  */
 @Composable
 fun SwipeToRemove(onRemove: (() -> Unit)?, modifier: Modifier = Modifier, label: String = "Remove", content: @Composable () -> Unit) {
@@ -57,12 +67,16 @@ fun SwipeToRemove(onRemove: (() -> Unit)?, modifier: Modifier = Modifier, label:
     var width by remember { mutableIntStateOf(0) }
     var armed by remember { mutableIntStateOf(0) }
     val remove by rememberUpdatedState(onRemove)
-    val settle = spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 520f)
+    val settle = motion(spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 520f))
+    val away = motion(spring<Float>(dampingRatio = 1f, stiffness = 700f))
+    // The offset is kept in reading order (negative is toward the start, where the row goes);
+    // offset {} mirrors it in RTL, so only the finger's screen-space deltas need turning round.
+    val sign = if (LocalLayoutDirection.current == LayoutDirection.Rtl) -1f else 1f
 
     fun commit() {
         haptics.play(Haptic.ToggleOff)
         scope.launch {
-            offset.animateTo(-width.toFloat(), spring(dampingRatio = 1f, stiffness = 700f))
+            offset.animateTo(-width.toFloat(), away)
             remove()
             offset.snapTo(0f)
         }
@@ -75,7 +89,7 @@ fun SwipeToRemove(onRemove: (() -> Unit)?, modifier: Modifier = Modifier, label:
             contentAlignment = Alignment.CenterEnd,
         ) {
             Text(
-                label, color = Color.White, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.W600),
+                label, color = Color.White, style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.width(88.dp).padding(horizontal = 8.dp),
                 maxLines = 1,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -87,13 +101,14 @@ fun SwipeToRemove(onRemove: (() -> Unit)?, modifier: Modifier = Modifier, label:
                 .background(MaterialTheme.colorScheme.background)
                 .draggable(
                     rememberDraggableState { d ->
-                        val next = (offset.value + d).coerceIn(-width.toFloat(), 0f)
+                        val next = (offset.value + d * sign).coerceIn(-width.toFloat(), 0f)
                         val past = width > 0 && abs(next) > width * 0.5f
                         if (past && armed == 0) { armed = 1; haptics.play(Haptic.Tick) } else if (!past) armed = 0
                         scope.launch { offset.snapTo(next) }
                     },
                     Orientation.Horizontal,
-                    onDragStopped = { velocity ->
+                    onDragStopped = { screenVelocity ->
+                        val velocity = screenVelocity * sign
                         val x = offset.value
                         when {
                             width > 0 && (abs(x) > width * 0.5f || velocity < -3000f && abs(x) > action) -> commit()
@@ -103,6 +118,12 @@ fun SwipeToRemove(onRemove: (() -> Unit)?, modifier: Modifier = Modifier, label:
                         armed = 0
                     },
                 ),
-        ) { content() }
+        ) {
+            // The row's own clickable takes this as a custom action, so TalkBack offers it where the focus is.
+            CompositionLocalProvider(LocalRowActions provides listOf(CustomAccessibilityAction(label) { commit(); true })) { content() }
+        }
     }
 }
+
+/** Accessibility actions for the row being composed, offered by [longPressMenuClickable]: the swipe's equivalent. */
+internal val LocalRowActions = compositionLocalOf<List<CustomAccessibilityAction>> { emptyList() }

@@ -97,18 +97,23 @@ data class Post(
 @Serializable
 enum class ShelfKind {
     /** Full-width video cards, one per row: the main feed. */
+    @SerialName("FEED")
     FEED,
 
     /** A horizontal carousel of cards. */
+    @SerialName("CAROUSEL")
     CAROUSEL,
 
     /** A carousel of vertical 9:16 cards: a Shorts shelf. */
+    @SerialName("SHORTS")
     SHORTS,
 
     /** Shorts in a two-column grid: a channel's Shorts tab. */
+    @SerialName("SHORTS_GRID")
     SHORTS_GRID,
 
     /** Compact rows with a small thumbnail: search refinements, playlists, related. */
+    @SerialName("LIST")
     LIST,
 }
 
@@ -360,7 +365,8 @@ data class SearchPage(
 
 @Serializable
 data class AccountInfo(
-    val name: String,
+    // Defaulted so a stored copy always reads; a blank one is treated as none.
+    val name: String = "",
     val email: String? = null,
     val handle: String? = null,
     val avatar: String? = null,

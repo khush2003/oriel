@@ -10,6 +10,20 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.toSize
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.IntrinsicSize
+import app.oriel.ui.theme.fade
+import app.oriel.ui.theme.SegmentThumbDark
+import app.oriel.ui.glass.glassEdgeColor
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.LinearEasing
@@ -44,9 +58,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -61,16 +72,10 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.runtime.mutableStateListOf
 import app.oriel.ui.theme.motion
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.Canvas
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -89,8 +94,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -110,24 +113,56 @@ import app.oriel.ui.theme.LocalReduceAnimation
 /** headlineMedium, padding h16 v10, with an optional subtitle and a "Show all". */
 @Composable
 fun SectionHeader(title: String, subtitle: String? = null, icon: ImageVector? = null, color: Color = MaterialTheme.colorScheme.onBackground, onMore: (() -> Unit)? = null, moreLabel: String = "Show all") {
-    Row(Modifier.fillMaxWidth().padding(horizontal = PAGE_GUTTER, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+    // The vertical padding is the title's, so "Show all" can take a 44dp target out of it without growing the row.
+    Row(Modifier.fillMaxWidth().padding(horizontal = PAGE_GUTTER), verticalAlignment = Alignment.CenterVertically) {
         if (icon != null) {
             Icon(icon, null, tint = color, modifier = Modifier.size(24.dp))
             Spacer(Modifier.width(6.dp))
         }
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.headlineMedium, color = color, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Column(Modifier.weight(1f).padding(vertical = 10.dp)) {
+            Text(title, style = MaterialTheme.typography.headlineMedium, color = color, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.semantics { heading() })
             subtitle?.let { Text(it, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1) }
         }
-        if (onMore != null) Text(moreLabel, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onMore).padding(4.dp))
+        if (onMore != null) TextButton(moreLabel, onMore, MaterialTheme.typography.titleSmall, MaterialTheme.colorScheme.primary, PaddingValues(4.dp))
     }
+}
+
+/** iOS's minimum hit area. */
+val MIN_TOUCH = 44.dp
+
+/**
+ * Grows the layout, not the drawing, to a [size] square at least, with what follows centred in
+ * it at its own size. Put the clickable before it, so the click takes the whole area.
+ */
+fun Modifier.minTouchTarget(size: Dp = MIN_TOUCH): Modifier = layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    val min = size.roundToPx()
+    val width = maxOf(placeable.width, min, constraints.minWidth).coerceAtMost(constraints.maxWidth)
+    val height = maxOf(placeable.height, min, constraints.minHeight).coerceAtMost(constraints.maxHeight)
+    layout(width, height) { placeable.placeRelative((width - placeable.width) / 2, (height - placeable.height) / 2) }
+}
+
+/** A text button: a 44dp target, the label dimming under the finger as iOS's do, and a tap. */
+@Composable
+private fun TextButton(text: String, onClick: () -> Unit, style: TextStyle, color: Color, padding: PaddingValues) {
+    val haptics = rememberHaptics()
+    val press = remember { MutableInteractionSource() }
+    val pressed by press.collectIsPressedAsState()
+    Text(
+        text, style = style, color = color, maxLines = 1,
+        modifier = Modifier
+            .clickable(press, indication = null, role = Role.Button) { haptics.play(Haptic.Tap); onClick() }
+            .minTouchTarget()
+            .graphicsLayer { alpha = if (pressed) 0.4f else 1f }
+            .padding(padding),
+    )
 }
 
 /** The iOS large title: displayLarge, padding h16 v8, as the first scrolling item. */
 @Composable
 fun LargeTitle(text: String, modifier: Modifier = Modifier, color: Color = MaterialTheme.colorScheme.onBackground, trailing: (@Composable () -> Unit)? = null) {
     Row(modifier.fillMaxWidth().padding(horizontal = PAGE_GUTTER, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(text, style = MaterialTheme.typography.displayLarge, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        Text(text, style = MaterialTheme.typography.displayLarge, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).semantics { heading() })
         trailing?.invoke()
     }
 }
@@ -137,7 +172,7 @@ fun LargeTitle(text: String, modifier: Modifier = Modifier, color: Color = Mater
 fun ExpandableText(text: String, modifier: Modifier = Modifier, style: TextStyle = MaterialTheme.typography.bodyMedium, color: Color = LocalContentColor.current, collapsedLines: Int = 3) {
     var expanded by rememberSaveable(text) { mutableStateOf(false) }
     var overflows by remember(text) { mutableStateOf(false) }
-    Column(modifier.animateContentSize(spring(stiffness = 600f)).clickable(enabled = overflows || expanded, indication = null, interactionSource = remember { MutableInteractionSource() }) { expanded = !expanded }) {
+    Column(modifier.animateContentSize(motion(spring(stiffness = 600f))).clickable(enabled = overflows || expanded, indication = null, interactionSource = remember { MutableInteractionSource() }) { expanded = !expanded }) {
         Text(text, style = style, color = color, maxLines = if (expanded) Int.MAX_VALUE else collapsedLines, overflow = TextOverflow.Ellipsis, onTextLayout = { if (!expanded) overflows = it.hasVisualOverflow })
         if (overflows && !expanded) Text("more", style = style.copy(fontWeight = FontWeight.W600), color = color)
     }
@@ -147,7 +182,7 @@ fun ExpandableText(text: String, modifier: Modifier = Modifier, style: TextStyle
 
 /** BitChord's SearchFilterTabs: corner 12, selected in the inverse colours, everything else on surfaceVariant. */
 @Composable
-fun ChipsRow(chips: List<Chip>, onSelect: (Chip) -> Unit, modifier: Modifier = Modifier, contentPadding: PaddingValues = PaddingValues(horizontal = PAGE_GUTTER, vertical = 6.dp), leading: (@Composable () -> Unit)? = null) {
+fun ChipsRow(chips: List<Chip>, onSelect: (Chip) -> Unit, modifier: Modifier = Modifier, contentPadding: PaddingValues = PaddingValues(horizontal = PAGE_GUTTER), leading: (@Composable () -> Unit)? = null) {
     Row(modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(contentPadding), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         leading?.invoke()
         chips.forEach { chip -> FilterChip(chip.title, chip.selected) { onSelect(chip) } }
@@ -163,63 +198,74 @@ fun ChipsRow(chips: List<Chip>, onSelect: (Chip) -> Unit, modifier: Modifier = M
 fun TabStrip(titles: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
     val haptics = rememberHaptics()
     val density = androidx.compose.ui.platform.LocalDensity.current
-    val bounds = remember(titles) { mutableStateListOf<Pair<Float, Float>>().apply { repeat(titles.size) { add(0f to 0f) } } }
-    val target = bounds.getOrNull(selected) ?: (0f to 0f)
+    // Each title's drawn capsule (left, top, width, height) in the row, from the left edge whatever the direction.
+    val bounds = remember(titles) { mutableStateListOf<androidx.compose.ui.geometry.Rect>().apply { repeat(titles.size) { add(androidx.compose.ui.geometry.Rect.Zero) } } }
+    val target = bounds.getOrNull(selected) ?: androidx.compose.ui.geometry.Rect.Zero
     // The leading edge leads going right and trails going left, so the capsule stretches on its way.
-    val x by animateFloatAsState(target.first, spring(dampingRatio = 0.82f, stiffness = 460f), label = "tabX")
-    val w by animateFloatAsState(target.second, spring(dampingRatio = 0.82f, stiffness = 360f), label = "tabW")
-    val shown by animateFloatAsState(if (selected in titles.indices) 1f else 0f, tween(160), label = "tabShown")
+    val x by animateFloatAsState(target.left, motion(spring(dampingRatio = 0.82f, stiffness = 460f)), label = "tabX")
+    val w by animateFloatAsState(target.width, motion(spring(dampingRatio = 0.82f, stiffness = 360f)), label = "tabW")
+    val shown by animateFloatAsState(if (selected in titles.indices) 1f else 0f, fade(160), label = "tabShown")
     val ink = MaterialTheme.colorScheme.onBackground
     val scroll = rememberScrollState()
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
+    val inset = PAGE_GUTTER - 4.dp
     LaunchedEffect(selected, target) {
-        if (target.second <= 0f) return@LaunchedEffect
+        if (target.width <= 0f) return@LaunchedEffect
         val pad = with(density) { 40.dp.toPx() }
+        val gutter = with(density) { inset.toPx() }
         val view = scroll.viewportSize.toFloat()
+        // The scroll runs from the start edge: from the right, right to left.
+        val content = scroll.maxValue + view
+        val start = if (rtl) content - (gutter + target.left + target.width) else gutter + target.left
         when {
-            target.first - pad < scroll.value -> scroll.animateScrollTo((target.first - pad).toInt().coerceAtLeast(0))
-            target.first + target.second + pad > scroll.value + view -> scroll.animateScrollTo((target.first + target.second + pad - view).toInt())
+            start - pad < scroll.value -> scroll.animateScrollTo((start - pad).toInt().coerceAtLeast(0))
+            start + target.width + pad > scroll.value + view -> scroll.animateScrollTo((start + target.width + pad - view).toInt())
         }
     }
     Row(
-        modifier.fillMaxWidth().horizontalScroll(scroll).padding(horizontal = PAGE_GUTTER - 4.dp, vertical = 6.dp)
+        modifier.fillMaxWidth().horizontalScroll(scroll).padding(horizontal = inset, vertical = 1.dp)
             .drawBehind {
-                if (w > 0f && shown > 0f) drawRoundRect(ink.copy(alpha = shown), topLeft = Offset(x, 0f), size = androidx.compose.ui.geometry.Size(w, size.height), cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height / 2))
+                if (w > 0f && shown > 0f) drawRoundRect(ink.copy(alpha = shown), topLeft = Offset(x, target.top), size = androidx.compose.ui.geometry.Size(w, target.height), cornerRadius = androidx.compose.ui.geometry.CornerRadius(target.height / 2))
             },
     ) {
         titles.forEachIndexed { i, title ->
             val on = i == selected
-            val color by animateColorAsState(if (on) MaterialTheme.colorScheme.background else ink.copy(alpha = 0.72f), tween(180), label = "tabInk")
+            val color by animateColorAsState(if (on) MaterialTheme.colorScheme.background else ink.copy(alpha = 0.72f), fade(180), label = "tabInk")
             Text(
-                title, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.W600), color = color, maxLines = 1,
+                title, style = MaterialTheme.typography.titleSmall, color = color, maxLines = 1,
                 modifier = Modifier
-                    .onGloballyPositioned { c ->
-                        val left = c.positionInParent().x
-                        val width = c.size.width.toFloat()
-                        if (i < bounds.size && bounds[i] != left to width) bounds[i] = left to width
-                    }
-                    .clip(CircleShape)
                     .clickable(remember { MutableInteractionSource() }, indication = null) { if (!on) { haptics.play(Haptic.Select); onSelect(i) } }
                     .semantics { this.selected = on; role = Role.Tab }
+                    .minTouchTarget()
+                    .onGloballyPositioned { c ->
+                        val drawn = androidx.compose.ui.geometry.Rect(c.positionInParent(), c.size.toSize())
+                        if (i < bounds.size && bounds[i] != drawn) bounds[i] = drawn
+                    }
                     .padding(horizontal = 14.dp, vertical = 8.dp),
             )
         }
     }
 }
 
+/** A capsule chip. [role] is Tab for a choice among chips; a chip that acts (removes a filter) is a Button. */
 @Composable
-fun FilterChip(label: String, selected: Boolean, leading: ImageVector? = null, onClick: () -> Unit) {
+fun FilterChip(label: String, selected: Boolean, leading: ImageVector? = null, role: Role = Role.Tab, onClick: () -> Unit) {
     val haptics = rememberHaptics()
-    val fill by animateColorAsState(if (selected) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.surfaceVariant, tween(160), label = "chipFill")
-    val text by animateColorAsState(if (selected) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onBackground, tween(160), label = "chipText")
+    val fill by animateColorAsState(if (selected) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.surfaceVariant, fade(160), label = "chipFill")
+    val text by animateColorAsState(if (selected) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.onBackground, fade(160), label = "chipText")
     // A capsule that gives a little under the finger, as iOS's segmented pills do.
     val press = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val pressed by press.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.94f else 1f, spring(dampingRatio = 0.6f, stiffness = 900f), label = "chipPress")
+    val scale by animateFloatAsState(if (pressed) 0.94f else 1f, motion(spring(dampingRatio = 0.6f, stiffness = 900f)), label = "chipPress")
     Row(
-        Modifier.graphicsLayer { scaleX = scale; scaleY = scale }.clip(CircleShape).background(fill).clickable(press, indication = null) {
-            if (!selected) haptics.play(Haptic.Select)
-            onClick()
-        }.semantics { this.selected = selected; role = Role.Tab }.padding(horizontal = 14.dp, vertical = 7.dp),
+        Modifier
+            .clickable(press, indication = null) {
+                if (!selected) haptics.play(Haptic.Select)
+                onClick()
+            }
+            .semantics { if (role == Role.Tab) this.selected = selected; this.role = role }
+            .minTouchTarget()
+            .graphicsLayer { scaleX = scale; scaleY = scale }.clip(CircleShape).background(fill).padding(horizontal = 14.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (leading != null) {
@@ -232,10 +278,12 @@ fun FilterChip(label: String, selected: Boolean, leading: ImageVector? = null, o
 
 // ---- buttons -------------------------------------------------------------------------------
 
+/** An [ActionPill]'s height: Large for page actions (Play, Shuffle), Medium for a state's button, Compact in rows. */
+enum class PillSize(val height: Dp) { Large(50.dp), Medium(44.dp), Compact(36.dp) }
+
 /**
- * BitChord's ActionPill: filled is the inverse colour, unfilled is a faint
- * veil with a hairline. [height] 50 for page actions (Play all, Shuffle),
- * 36 for the watch page's row of actions.
+ * BitChord's ActionPill: filled is the inverse colour, unfilled is a faint veil with a
+ * hairline. At least [size] tall, taller if the text is; a Compact pill still takes a 44dp tap.
  */
 @Composable
 fun ActionPill(
@@ -244,7 +292,7 @@ fun ActionPill(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     filled: Boolean = false,
-    height: Dp = 50.dp,
+    size: PillSize = PillSize.Large,
     haptic: Haptic = Haptic.Tap,
     tint: Color? = null,
     enabled: Boolean = true,
@@ -253,70 +301,52 @@ fun ActionPill(
     val dark = LocalIsDark.current
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.96f else 1f, spring(stiffness = 900f), label = "pillPress")
+    val scale by animateFloatAsState(if (pressed) 0.96f else 1f, motion(spring(stiffness = 900f)), label = "pillPress")
     val fill = when {
         filled -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.onSurface.copy(alpha = if (dark) 0.09f else 0.06f)
     }
     val content = tint ?: if (filled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+    val large = size != PillSize.Compact
     Row(
         modifier
-            .graphicsLayer { scaleX = scale; scaleY = scale; alpha = if (enabled) 1f else 0.38f }
-            .height(height)
-            .clip(CircleShape)
-            .background(fill)
-            .then(if (filled) Modifier else Modifier.border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f), CircleShape))
-            .clickable(interaction, indication = null, enabled = enabled) {
+            .clickable(interaction, indication = null, enabled = enabled, role = Role.Button) {
                 haptics.play(haptic)
                 onClick()
             }
-            .padding(horizontal = if (height >= 44.dp) 24.dp else 14.dp),
+            .minTouchTarget()
+            .graphicsLayer { scaleX = scale; scaleY = scale; alpha = if (enabled) 1f else 0.38f }
+            .heightIn(min = size.height)
+            .clip(CircleShape)
+            .background(fill)
+            .then(if (filled) Modifier else Modifier.border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f), CircleShape))
+            .padding(horizontal = if (large) 24.dp else 14.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
-        if (icon != null) Icon(icon, null, tint = content, modifier = Modifier.size(if (height >= 44.dp) 18.dp else 19.dp))
-        if (icon != null && text != null) Spacer(Modifier.width(if (height >= 44.dp) 8.dp else 6.dp))
-        if (text != null) Text(text, style = if (height >= 44.dp) MaterialTheme.typography.titleMedium else MaterialTheme.typography.labelLarge, color = content, maxLines = 1)
+        if (icon != null) Icon(icon, null, tint = content, modifier = Modifier.size(if (large) 18.dp else 19.dp))
+        if (icon != null && text != null) Spacer(Modifier.width(if (large) 8.dp else 6.dp))
+        if (text != null) Text(text, style = if (large) MaterialTheme.typography.titleMedium else MaterialTheme.typography.labelLarge, color = content, maxLines = 1)
     }
-}
-
-/** A 50dp circle in the unfilled pill's veil; disabled at α0.38. */
-@Composable
-fun CircleIconButton(icon: ImageVector, contentDescription: String?, onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 50.dp, enabled: Boolean = true, tint: Color = MaterialTheme.colorScheme.onSurface) {
-    val haptics = rememberHaptics()
-    val dark = LocalIsDark.current
-    Box(
-        modifier
-            .graphicsLayer { alpha = if (enabled) 1f else 0.38f }
-            .size(size)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = if (dark) 0.09f else 0.06f))
-            .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f), CircleShape)
-            .clickable(enabled = enabled) {
-                haptics.play(Haptic.Tap)
-                onClick()
-            },
-        contentAlignment = Alignment.Center,
-    ) { Icon(icon, contentDescription, tint = tint, modifier = Modifier.size(size * 0.44f)) }
 }
 
 /** Subscribe: the filled inverse pill; Subscribed: the quiet veil with a bell. */
 @Composable
-fun SubscribeButton(subscribed: Boolean, compact: Boolean = false, onClick: () -> Unit) {
+fun SubscribeButton(subscribed: Boolean, onClick: () -> Unit) {
     ActionPill(
         text = if (subscribed) "Subscribed" else "Subscribe",
         icon = if (subscribed) OrielIcons.Bell else null,
         onClick = onClick,
         filled = !subscribed,
-        height = if (compact) 34.dp else 38.dp,
+        size = PillSize.Compact,
         haptic = if (subscribed) Haptic.ToggleOff else Haptic.ToggleOn,
     )
 }
 
-/** BitChord's Search "Clear" pill and other text buttons: titleMedium in primary. */
+/** BitChord's Search "Clear" pill and other text buttons: titleMedium in primary, on a 44dp target. */
 @Composable
 fun TextAction(text: String, onClick: () -> Unit, color: Color = MaterialTheme.colorScheme.primary) {
-    Text(text, style = MaterialTheme.typography.titleMedium, color = color, modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 4.dp))
+    TextButton(text, onClick, MaterialTheme.typography.titleMedium, color, PaddingValues(horizontal = 10.dp, vertical = 4.dp))
 }
 
 // ---- search field --------------------------------------------------------------------------
@@ -334,8 +364,9 @@ fun SearchField(
     /** Shown at the end while the field is empty, where Clear goes once there's text: a microphone. */
     idleTrailing: (@Composable () -> Unit)? = null,
 ) {
+    val haptics = rememberHaptics()
     Row(
-        modifier.height(46.dp).fillMaxWidth().clip(RoundedCornerShape(11.dp)).background(MaterialTheme.colorScheme.surfaceVariant).padding(start = 8.dp, end = 8.dp),
+        modifier.heightIn(min = 46.dp).fillMaxWidth().clip(RoundedCornerShape(11.dp)).background(MaterialTheme.colorScheme.surfaceVariant).padding(start = 8.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(32.dp).padding(6.dp)) { Icon(OrielIcons.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -356,7 +387,7 @@ fun SearchField(
             )
         }
         if (value.isNotEmpty()) {
-            Box(Modifier.size(40.dp).clip(CircleShape).clickable(onClickLabel = "Clear") { onValueChange("") }, contentAlignment = Alignment.Center) {
+            Box(Modifier.size(MIN_TOUCH).clip(CircleShape).clickable(onClickLabel = "Clear") { haptics.play(Haptic.Tap); onValueChange("") }, contentAlignment = Alignment.Center) {
                 Icon(OrielIcons.Close, "Clear", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
             }
         } else idleTrailing?.invoke()
@@ -378,19 +409,21 @@ fun <T> SegmentedControl(
     onSelect: (T) -> Unit,
     modifier: Modifier = Modifier,
     track: Color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (LocalIsDark.current) 0.12f else 0.07f),
-    thumb: Color = if (LocalIsDark.current) Color(0xFF636366) else Color.White,
+    thumb: Color = if (LocalIsDark.current) SegmentThumbDark else Color.White,
     ink: Color = MaterialTheme.colorScheme.onSurface,
 ) {
     val haptics = rememberHaptics()
     val index = options.indexOf(selected).coerceAtLeast(0)
-    val at by animateFloatAsState(index.toFloat(), spring(dampingRatio = 0.78f, stiffness = 520f), label = "segThumb")
-    androidx.compose.foundation.layout.BoxWithConstraints(modifier.fillMaxWidth().height(34.dp).clip(RoundedCornerShape(9.dp)).background(track).padding(2.dp)) {
-        val segment = maxWidth / options.size.coerceAtLeast(1)
+    val at by animateFloatAsState(index.toFloat(), motion(spring(dampingRatio = 0.78f, stiffness = 520f)), label = "segThumb")
+    // The layer's offset doesn't mirror, so right to left the thumb steps the other way.
+    val sign = if (LocalLayoutDirection.current == LayoutDirection.Rtl) -1f else 1f
+    // At least 34dp, and as tall as the labels at a large font size.
+    Box(modifier.fillMaxWidth().heightIn(min = 34.dp).height(IntrinsicSize.Min).clip(RoundedCornerShape(9.dp)).background(track).padding(2.dp)) {
         // The thumb, with the soft shadow iOS gives it in light mode.
         Box(
             Modifier
-                .graphicsLayer { translationX = at * segment.toPx() }
-                .width(segment).fillMaxHeight()
+                .fillMaxWidth(1f / options.size.coerceAtLeast(1)).fillMaxHeight()
+                .graphicsLayer { translationX = at * size.width * sign }
                 .shadow(if (LocalIsDark.current) 0.dp else 3.dp, RoundedCornerShape(7.dp), clip = false, ambientColor = Color.Black.copy(alpha = 0.12f), spotColor = Color.Black.copy(alpha = 0.12f))
                 .clip(RoundedCornerShape(7.dp))
                 .background(thumb),
@@ -404,7 +437,7 @@ fun <T> SegmentedControl(
                         .semantics { this.selected = on; role = Role.RadioButton },
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(label(option), style = MaterialTheme.typography.labelLarge.copy(fontWeight = if (on) FontWeight.W600 else FontWeight.W500), color = ink, maxLines = 1)
+                    Text(label(option), style = MaterialTheme.typography.labelLarge.copy(fontWeight = if (on) FontWeight.W600 else FontWeight.W500), color = ink, maxLines = 1, modifier = Modifier.padding(vertical = 4.dp))
                 }
             }
         }
@@ -425,8 +458,8 @@ fun MessageState(text: String, modifier: Modifier = Modifier, icon: ImageVector?
         if (action != null && onAction != null) {
             Spacer(Modifier.height(16.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                ActionPill(action, null, onAction, filled = true, height = 44.dp)
-                if (secondary != null && onSecondary != null) ActionPill(secondary, null, onSecondary, height = 44.dp)
+                ActionPill(action, null, onAction, filled = true, size = PillSize.Medium)
+                if (secondary != null && onSecondary != null) ActionPill(secondary, null, onSecondary, size = PillSize.Medium)
             }
         }
     }
@@ -439,18 +472,6 @@ fun LoadingRow(modifier: Modifier = Modifier) {
     }
 }
 
-/** A determinate capsule bar: a soft track and an animated fill, as iOS's progress view. */
-@Composable
-fun CapsuleProgress(progress: () -> Float, modifier: Modifier = Modifier, color: Color = MaterialTheme.colorScheme.primary) {
-    val track = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
-    val shown by animateFloatAsState(progress(), motion(spring(stiffness = Spring.StiffnessLow)), label = "progress")
-    Canvas(modifier) {
-        val r = androidx.compose.ui.geometry.CornerRadius(size.height / 2)
-        drawRoundRect(track, cornerRadius = r)
-        drawRoundRect(color, size = androidx.compose.ui.geometry.Size(size.width * shown.coerceIn(0f, 1f), size.height), cornerRadius = r)
-    }
-}
-
 /**
  * iOS's activity indicator: eight rounded spokes, the lit one stepping round once a second
  * and the rest trailing off. Drawn in one layer; only the draw phase ticks.
@@ -459,7 +480,7 @@ fun CapsuleProgress(progress: () -> Float, modifier: Modifier = Modifier, color:
 fun ActivityIndicator(modifier: Modifier = Modifier, size: Dp = 22.dp, color: Color = MaterialTheme.colorScheme.onSurfaceVariant) {
     val reduce = LocalReduceAnimation.current
     val turn = if (reduce) null else rememberInfiniteTransition(label = "spin").animateFloat(0f, 8f, infiniteRepeatable(tween(960, easing = LinearEasing)), label = "spin")
-    Canvas(modifier.size(size)) {
+    Canvas(modifier.size(size).semantics { progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate }) {
         val step = turn?.value?.toInt() ?: 0
         val w = this.size.minDimension
         val stroke = w * 0.095f
@@ -527,21 +548,29 @@ fun SkeletonLine(widthFraction: Float, height: Dp = 14.dp, modifier: Modifier = 
 
 // ---- notice ----------------------------------------------------------------------------------
 
-/** BitChord's QueueActionNotice: a short-lived glass banner over the bars. */
+/**
+ * BitChord's QueueActionNotice: a short-lived glass banner over the bars. Announced politely as
+ * it arrives. On light, where the card is the page's own white, a soft shadow sets it off.
+ */
 @Composable
 fun NoticeBanner(text: String, modifier: Modifier = Modifier, action: String? = null, onAction: (() -> Unit)? = null) {
+    val shape = RoundedCornerShape(16.dp)
+    val dark = LocalIsDark.current
     Row(
-        modifier.padding(horizontal = BAR_GUTTER).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh).border(0.5.dp, app.oriel.ui.glass.GLASS_EDGE_COLOR, RoundedCornerShape(16.dp)).padding(horizontal = 16.dp, vertical = 12.dp),
+        modifier
+            .padding(horizontal = BAR_GUTTER)
+            .semantics { liveRegion = LiveRegionMode.Polite }
+            .shadow(if (dark) 0.dp else 12.dp, shape, clip = false, ambientColor = Color.Black.copy(alpha = 0.18f), spotColor = Color.Black.copy(alpha = 0.18f))
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .border(0.5.dp, glassEdgeColor(), shape)
+            .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp), color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f, fill = false), maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(text, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp), color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f, fill = false).padding(vertical = 12.dp), maxLines = 2, overflow = TextOverflow.Ellipsis)
         if (action != null && onAction != null) {
             Spacer(Modifier.width(14.dp))
-            Text(action, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onAction).padding(4.dp))
+            TextButton(action, onAction, MaterialTheme.typography.titleSmall, MaterialTheme.colorScheme.primary, PaddingValues(4.dp))
         }
     }
 }
-
-@Composable
-fun ProvideContentColor(color: Color, content: @Composable () -> Unit) = CompositionLocalProvider(LocalContentColor provides color, content = content)
-

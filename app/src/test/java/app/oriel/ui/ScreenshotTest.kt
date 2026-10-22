@@ -50,9 +50,14 @@ import app.oriel.util.ReportKind
 import app.oriel.core.model.ShortSound
 import androidx.compose.ui.test.onNodeWithContentDescription
 import org.junit.Rule
+import kotlinx.coroutines.flow.first
 import org.junit.Test
 import app.oriel.ui.navigation.tabRoot
 import app.oriel.ui.navigation.HomeRoute
+import app.oriel.ui.navigation.ChannelRoute
+import app.oriel.ui.navigation.PlaylistRoute
+import app.oriel.ui.navigation.YouRoute
+import androidx.navigation.toRoute
 import app.oriel.ui.navigation.LocalPlaylistRoute
 import androidx.navigation.NavDestination.Companion.hasRoute
 import org.junit.runner.RunWith
@@ -134,6 +139,8 @@ class ScreenshotTest {
                     state.watch.preview(Fixtures.watch, Fixtures.comments, Fixtures.storyboard)
                     connection.preview(listOf(Fixtures.watch.video!!) + Fixtures.videos.drop(1).take(3), 0, playing = true, positionMs = 300_000)
                 }
+                // As a first tap would: navigate() drops pushes from a page still settling in.
+                nav.currentBackStackEntryFlow.first().lifecycle.currentStateFlow.first { it.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED) }
                 setup(state)
             }
             OrielRoot(state, inPip = false)
@@ -257,6 +264,16 @@ class ScreenshotTest {
         rule.onAllNodes(hasText("Comments")).onFirst().performClick()
     })
 
+    /** Comments that failed to load say so, with Try again. */
+    @Test fun commentsFailed() = shoot("15b_comments_failed", setup = {
+        it.sheet.progress.snapTo(1f)
+        it.watch.preview(Fixtures.watch, Fixtures.comments.copy(comments = emptyList(), error = "Couldn't load comments", failed = true), Fixtures.storyboard)
+    }, after = {
+        rule.onAllNodes(hasText("Comments")).onFirst().performClick()
+        settle(8)
+        rule.onAllNodes(hasText("Try again")).onFirst().assertExists()
+    })
+
     /** Shorts: the picture stops above a dark tab bar; the poster stands in until a first frame. */
     @Test fun shorts() {
         val short = Fixtures.shorts[0]
@@ -356,6 +373,81 @@ class ScreenshotTest {
             settle(8)
         })
         assertTrue("search opens again", appState!!.nav.currentBackStackEntry!!.destination.hasRoute(SearchRoute::class))
+    }
+
+    private fun top() = appState!!.nav.currentBackStackEntry!!
+
+    /** Channel B opened from channel A stacks on it, and back goes to A. (It used to replace A.) */
+    @Test fun channelFromChannelGoesBackToTheFirst() {
+        shoot("60_channel_from_channel", playing = false, after = {
+            appState!!.openChannel(CHANNEL_A)
+            settle(8)
+            appState!!.openChannel(CHANNEL_B)
+            settle(8)
+            // The same channel again is no push.
+            appState!!.openChannel(CHANNEL_B)
+            settle(8)
+            assertEquals(ChannelRoute(CHANNEL_B), top().toRoute<ChannelRoute>())
+            appState!!.back()
+            settle(8)
+        })
+        assertEquals("back on the first channel", ChannelRoute(CHANNEL_A), top().toRoute<ChannelRoute>())
+        appState!!.back()
+        settle(8)
+        assertTrue("then Home", top().destination.hasRoute(HomeRoute::class))
+    }
+
+    /** Search, then You, then Home: Home, not Search restored over it; Search comes back from its button. */
+    @Test fun searchThenYouThenHome() {
+        shoot("61_search_you_home", playing = false, after = {
+            appState!!.openSearch()
+            settle(8)
+            appState!!.selectTab(Tab.YOU)
+            settle(8)
+            assertTrue("on You", top().destination.hasRoute(YouRoute::class))
+            appState!!.selectTab(Tab.HOME)
+            settle(8)
+        })
+        assertTrue("on Home", top().destination.hasRoute(HomeRoute::class))
+        appState!!.openSearch()
+        settle(8)
+        assertTrue("search opens again", top().destination.hasRoute(SearchRoute::class))
+    }
+
+    /** Home, a channel, Search, then Home: Home's tab comes back as it was left, on the channel. */
+    @Test fun homeChannelSearchHome() {
+        shoot("62_home_channel_search_home", playing = false, after = {
+            appState!!.openChannel(CHANNEL_A)
+            settle(8)
+            appState!!.openSearch()
+            settle(8)
+            assertTrue("search is open", top().destination.hasRoute(SearchRoute::class))
+            appState!!.selectTab(Tab.HOME)
+            settle(8)
+        })
+        assertEquals("back on Home's channel", ChannelRoute(CHANNEL_A), top().toRoute<ChannelRoute>())
+        appState!!.back()
+        settle(8)
+        assertTrue("then Home", top().destination.hasRoute(HomeRoute::class))
+    }
+
+    /** Shared text: the first YouTube link in it, without the punctuation after it; anything else isn't opened. */
+    @Test fun sharedTextOpensTheFirstYouTubeLink() {
+        rule.mainClock.autoAdvance = false
+        rule.setContent { Frame(ThemeMode.DARK, playing = false) {} }
+        settle()
+        fun share(text: String) = appState!!.handleIntent(android.content.Intent(android.content.Intent.ACTION_SEND).putExtra(android.content.Intent.EXTRA_TEXT, text))
+        assertTrue(share("Look at this (https://example.com/a) and https://www.youtube.com/playlist?list=PLtest123!"))
+        settle(8)
+        assertEquals(PlaylistRoute("PLtest123"), top().toRoute<PlaylistRoute>())
+        assertTrue(share("“https://youtube.com/channel/$CHANNEL_B”."))
+        settle(8)
+        assertEquals(ChannelRoute(CHANNEL_B), top().toRoute<ChannelRoute>())
+        assertFalse("not a video id", share("https://youtu.be/nope"))
+        assertFalse("not YouTube", share("https://example.com/watch?v=dQw4w9WgXcQ"))
+        assertTrue(share("https://www.youtube.com/hashtag/cats."))
+        settle(8)
+        assertEquals(SearchRoute("#cats"), top().toRoute<SearchRoute>())
     }
 
     /** A swipe up on the watch page's picture goes fullscreen, the picture growing with the finger. */
@@ -517,6 +609,11 @@ class ScreenshotTest {
             settle(8)
         })
         assertEquals("preview text", 1, count(hasText("Oriel problem report", substring = true)))
+    }
+
+    private companion object {
+        const val CHANNEL_A = "UCaaaaaaaaaaaaaaaaaaaaaa"
+        const val CHANNEL_B = "UCbbbbbbbbbbbbbbbbbbbbbb"
     }
 
     @Test fun homeLoading() {

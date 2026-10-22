@@ -1,36 +1,78 @@
 package app.oriel.data
 
 import app.oriel.util.AppJson
+import app.oriel.util.AtomicJson
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.serialization.KSerializer
 import java.io.File
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Last-known pages on disk, for stale-while-revalidate.
  *
  * Home and Explore render from here on a cold start — the first frame has
  * content instead of a spinner — while the network copy loads behind it.
+ *
+ * Pages are versioned by directory (`v<N>` under [root]): when the page models
+ * change shape, [VERSION] goes up and the old pages are deleted rather than
+ * migrated, since they're only a cache.
+ *
+ * [clear] starts a new [generation]; a page loaded before it is dropped when
+ * written, so a load that was in flight can't bring back pages of an account
+ * or a locale that was just left. Callers capture [generation] when their load
+ * starts and pass it to [write].
  */
-class PageDiskCache(private val dir: File) {
+class PageDiskCache(
+    private val root: File,
+    scope: CoroutineScope,
+    private val report: (String, Throwable) -> Unit = { _, _ -> },
+) {
+    private val dir = File(root, "v$VERSION")
+    private val io = CoroutineScope(scope.coroutineContext + Dispatchers.IO)
+    private val lock = Any()
+    private val gen = AtomicLong()
+
+    /** Goes up with each [clear]. */
+    val generation: Long get() = gen.get()
+
     init {
-        dir.mkdirs()
+        io.launch {
+            runCatching {
+                // Other versions' pages, and the unversioned ones from before, aren't readable as these.
+                root.listFiles { f -> f.name != dir.name }?.forEach { it.deleteRecursively() }
+                dir.mkdirs()
+            }
+        }
     }
 
     fun <T> read(key: String, serializer: KSerializer<T>): T? = runCatching {
-        File(dir, "$key.json").takeIf { it.isFile }?.readText()?.let { AppJson.decodeFromString(serializer, it) }
+        AtomicJson.read(File(dir, "$key.json"))?.let { AppJson.decodeFromString(serializer, it) }
     }.getOrNull()
 
     /** When [key] was last written, or null if it never was. */
     fun savedAt(key: String): Long? = File(dir, "$key.json").takeIf { it.isFile }?.lastModified()
 
-    fun <T> write(key: String, serializer: KSerializer<T>, value: T) {
-        runCatching {
-            val tmp = File(dir, "$key.json.tmp")
-            tmp.writeText(AppJson.encodeToString(serializer, value))
-            tmp.renameTo(File(dir, "$key.json"))
+    /** Saves [value] unless the cache was cleared since [generation] (by default, now). */
+    fun <T> write(key: String, serializer: KSerializer<T>, value: T, generation: Long = this.generation) {
+        val text = runCatching { AppJson.encodeToString(serializer, value) }.getOrElse { report("Page cache encode", it); return }
+        AtomicJson.persist(io, "Page cache save $key", report) {
+            synchronized(lock) {
+                if (generation != gen.get()) return@synchronized
+                dir.mkdirs()
+                AtomicJson.write(File(dir, "$key.json"), text)
+            }
         }
     }
 
-    fun clear() {
+    fun clear() = synchronized(lock) {
+        gen.incrementAndGet()
         dir.listFiles()?.forEach { it.delete() }
+    }
+
+    companion object {
+        /** Bump when [app.oriel.core.model.Feed] or another cached page changes in a way old pages can't decode into. */
+        const val VERSION = 1
     }
 }

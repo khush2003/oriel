@@ -19,10 +19,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import app.oriel.ui.components.GroupShape
 import app.oriel.ui.components.LocalSheetClose
+import app.oriel.ui.components.ROW_CORNER
 import app.oriel.ui.components.OrielSheet
 import app.oriel.ui.components.SheetTitle
 import androidx.compose.ui.Alignment
@@ -45,11 +48,14 @@ import app.oriel.util.Thumbnails
  */
 @Composable
 fun ChaptersSheet(app: AppState, onDismiss: () -> Unit) {
-    val chapters = remember { app.watch.state.value.page?.chapters.orEmpty().distinctBy { it.startMs } }
-    val videoId = app.watch.state.value.video?.id.orEmpty()
+    val watch by app.watch.state.collectAsState()
+    val videoId = watch.video?.id.orEmpty()
+    // Per video: Autoplay can move on while the list is open.
+    val pageChapters = watch.page?.chapters
+    val chapters = remember(videoId, pageChapters) { pageChapters.orEmpty().distinctBy { it.startMs } }
     val position = rememberPosition(app.connection, 500)
     // Derived, so the list recomposes when the chapter changes, not on every position tick.
-    val currentIndex by remember { derivedStateOf { chapters.indexOfLast { it.startMs <= position.longValue } } }
+    val currentIndex by remember(chapters) { derivedStateOf { chapters.indexOfLast { it.startMs <= position.longValue } } }
     val list = rememberLazyListState(initialFirstVisibleItemIndex = (currentIndex - 1).coerceAtLeast(0))
     val haptics = rememberHaptics()
     val accent = MaterialTheme.colorScheme.primary
@@ -75,13 +81,13 @@ private fun ChapterRow(chapter: Chapter, videoId: String, playing: Boolean, acce
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 2.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .clip(GroupShape)
             .then(if (playing) Modifier.background(accent.copy(alpha = 0.12f)) else Modifier)
             .clickable(onClick = onClick)
             .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RemoteImage(chapter.thumbnail ?: Thumbnails.frame(videoId, 320), Modifier.width(112.dp).aspectRatio(16f / 9f), RoundedCornerShape(10.dp))
+        RemoteImage(chapter.thumbnail ?: Thumbnails.frame(videoId, 320), Modifier.width(112.dp).aspectRatio(16f / 9f), RoundedCornerShape(ROW_CORNER))
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(

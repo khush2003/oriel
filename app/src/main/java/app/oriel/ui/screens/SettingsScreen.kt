@@ -67,17 +67,20 @@ fun SettingsScreen() {
     val signedIn by graph.account.signedIn.collectAsState()
     val account by graph.account.account.collectAsState()
     val syncing by graph.account.syncing.collectAsState()
+    val expired by graph.account.sessionExpired.collectAsState()
     var picker by remember { mutableStateOf<Picker<*>?>(null) }
     var licences by remember { mutableStateOf(false) }
     var cacheBytes by remember { mutableStateOf<Long?>(null) }
     val context = androidx.compose.ui.platform.LocalContext.current
-    var crashes by remember { mutableStateOf(CrashLog.crashCount(context)) }
+    // Counted off the main thread: it reads the crash files.
+    var crashes by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     // The report sheet can clear what's kept: counted again when it closes.
-    androidx.compose.runtime.LaunchedEffect(app.report) { if (app.report == null) crashes = CrashLog.crashCount(context) }
+    androidx.compose.runtime.LaunchedEffect(app.report) { if (app.report == null) crashes = withContext(Dispatchers.IO) { CrashLog.crashCount(context) } }
     androidx.compose.runtime.LaunchedEffect(Unit) { cacheBytes = withContext(Dispatchers.IO) { runCatching { graph.caches.stream.cacheSpace }.getOrNull() } }
     fun set(t: (SettingsState) -> SettingsState) = graph.settings.update(t)
 
     PageScaffold(title = "Settings", onBack = app::back) {
+        if (signedIn && expired) item(key = "expired") { SessionExpiredCard(onSignIn = { app.navigate(LoginRoute) }) }
         item(key = "account") {
             SettingsGroup(header = "Account", footer = if (signedIn) "Your Google sign-in stays on this device and is only ever sent to YouTube." else "Oriel works fully without an account. Signing in brings your recommendations, subscriptions, likes and playlists, and lets likes and saves reach YouTube.") {
                 if (signedIn) {
@@ -90,7 +93,7 @@ fun SettingsScreen() {
                         }
                     }
                     RowDivider()
-                    SettingsRow("Sync library now", OrielIcons.Repeat, value = if (syncing) "Syncing…" else null, enabled = !syncing, onClick = { app.scope.launch { graph.account.sync() } })
+                    SettingsRow("Sync library now", OrielIcons.Repeat, value = if (syncing) "Syncing…" else null, enabled = !syncing, onClick = { syncLibrary(app) })
                     RowDivider()
                     SettingsRow("Sign out", OrielIcons.SignOut, destructive = true, onClick = {
                         app.alert = AlertSpec("Sign out?", "Your library on this device stays. Recommendations go back to Oriel's own.", listOf(
@@ -202,19 +205,29 @@ fun SettingsScreen() {
                     picker = Picker("Video cache size", listOf(256, 512, 1024, 2048, 4096), s.streamCacheMb, { if (it >= 1024) "${it / 1024} GB" else "$it MB" }, footer = "Takes effect the next time Oriel starts.") { v -> set { it.copy(streamCacheMb = v) } }
                 })
                 RowDivider()
-                SettingsRow("Clear search history", OrielIcons.Delete, onClick = { graph.library.clearSearches(); app.notice("Search history cleared") })
+                SettingsRow("Clear search history", OrielIcons.Delete, onClick = {
+                    app.alert = AlertSpec("Clear search history?", "This clears the searches Oriel remembers on this device.", listOf(
+                        AlertAction("Cancel"),
+                        AlertAction("Clear", destructive = true) { graph.library.clearSearches(); app.notice("Search history cleared") },
+                    ))
+                })
                 RowDivider()
                 SettingsRow("Clear caches", OrielIcons.Delete, destructive = true, onClick = {
-                    app.scope.launch {
-                        withContext(Dispatchers.IO) {
-                            graph.caches.clearStreamCache()
-                            graph.pages.clear()
-                            SingletonImageLoader.get(context).let { it.memoryCache?.clear(); it.diskCache?.clear() }
-                        }
-                        graph.yt.clearCache()
-                        cacheBytes = 0
-                        app.notice("Caches cleared")
-                    }
+                    app.alert = AlertSpec("Clear caches?", "Played videos, pages and images are fetched again as they're needed. Your library and history stay.", listOf(
+                        AlertAction("Cancel"),
+                        AlertAction("Clear", destructive = true) {
+                            app.scope.launch {
+                                withContext(Dispatchers.IO) {
+                                    graph.caches.clearStreamCache()
+                                    graph.pages.clear()
+                                    SingletonImageLoader.get(context).let { it.memoryCache?.clear(); it.diskCache?.clear() }
+                                }
+                                graph.yt.clearCache()
+                                cacheBytes = 0
+                                app.notice("Caches cleared")
+                            }
+                        },
+                    ))
                 })
             }
         }
@@ -265,7 +278,7 @@ fun SettingsScreen() {
                 SettingsGroup {
                     SponsorBlock.DEFAULT_CATEGORIES.plus(listOf("preview", "filler")).forEachIndexed { i, c ->
                         if (i > 0) RowDivider(inset = false)
-                        ChoiceRow(SponsorBlock.label(c), c in s.sponsorCategories) {
+                        ChoiceRow(SponsorBlock.label(c), c in s.sponsorCategories, multi = true) {
                             set { st -> st.copy(sponsorCategories = if (c in st.sponsorCategories) st.sponsorCategories - c else st.sponsorCategories + c) }
                         }
                     }

@@ -17,6 +17,8 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import java.io.IOException
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * A home feed made on the device, for when YouTube won't make one.
@@ -42,10 +44,15 @@ class HomeComposer(private val yt: YouTube, private val library: LibraryStore) {
             val topics = HOME_TOPICS.map { t -> async { limited { yt.topic(t, fresh) } } }
 
             val watched = state.history.take(50).mapTo(HashSet()) { it.video.id }
-            val fromSubs = uploads.awaitAll().filterNotNull().flatten()
-                .sortedBy { Format.ageSeconds(it.publishedText) ?: Long.MAX_VALUE }
-            val recommended = interleave(related.awaitAll().filterNotNull()).filterNot { it.id in watched || it.isShort }
-            val topicFeeds = topics.awaitAll().filterNotNull()
+            val uploadLists = uploads.awaitAll()
+            val relatedLists = related.awaitAll()
+            val topicResults = topics.awaitAll()
+            val sources = uploadLists + relatedLists + topicResults
+            // Nothing came back at all: an error the feed can show and retry, not a bare home.
+            if (sources.isNotEmpty() && sources.all { it == null }) throw IOException("None of the home's sources loaded")
+            val fromSubs = newestFirst(uploadLists.filterNotNull())
+            val recommended = interleave(relatedLists.filterNotNull()).filterNot { it.id in watched || it.isShort }
+            val topicFeeds = topicResults.filterNotNull()
             val topicVideos = interleave(topicFeeds.map { f -> f.items.filterIsInstance<Video>().filterNot { it.isShort } })
             val shorts = topicFeeds.flatMap { f -> f.items.filterIsInstance<Video>().filter { it.isShort } }.distinctBy { it.id }
 
@@ -67,9 +74,27 @@ class HomeComposer(private val yt: YouTube, private val library: LibraryStore) {
         return Feed(shelves = shelves.filter { it.items.isNotEmpty() }, chips = chips())
     }
 
-    /** One source, given [REQUEST_TIMEOUT_MS] once it's let through: a slow one is left out rather than holding up the home. */
+    /** One source, given [REQUEST_TIMEOUT_MS] once it's let through: a slow or failed one is left out rather than holding up the home. */
     private suspend fun <T> limited(block: suspend () -> T): T? = gate.withPermit {
-        withTimeoutOrNull(REQUEST_TIMEOUT_MS) { runCatching { block() }.getOrNull() }
+        withTimeoutOrNull(REQUEST_TIMEOUT_MS) {
+            try {
+                block()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+
+    /**
+     * Channels' uploads merged newest first. Upload ages are only readable in English ("3 days
+     * ago"); in any other language the channels' own lists, each already newest first, take turns.
+     */
+    private fun newestFirst(perChannel: List<List<Video>>): List<Video> {
+        val all = perChannel.flatten()
+        val ages = all.map { Format.ageSeconds(it.publishedText) }
+        return if (ages.any { it != null }) all.zip(ages).sortedBy { it.second ?: Long.MAX_VALUE }.map { it.first } else interleave(perChannel)
     }
 
     /** Round-robin, so no one source dominates the top of the feed. */

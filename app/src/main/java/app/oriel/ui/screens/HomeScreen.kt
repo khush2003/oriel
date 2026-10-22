@@ -32,11 +32,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.oriel.core.YouTube
+import app.oriel.core.model.AccountInfo
 import app.oriel.core.model.Chip
 import app.oriel.core.model.Feed
 import app.oriel.data.HomeComposer
 import app.oriel.ui.LocalAppState
 import app.oriel.ui.components.ActionPill
+import app.oriel.ui.components.PillSize
 import app.oriel.ui.components.Avatar
 import app.oriel.ui.components.ChipsRow
 import app.oriel.ui.components.OrielIcons
@@ -66,7 +68,7 @@ fun HomeScreen() {
     }
     val state by model.state.collectAsState()
     // Another account signing in after this one reuses the signed-in model: its feed goes.
-    val owner = account?.let { it.email ?: it.handle ?: it.name }
+    val owner = accountOwner(account)
     LaunchedEffect(model, owner) {
         if (owner == null || model.owner == owner) return@LaunchedEffect
         val before = model.owner
@@ -91,14 +93,16 @@ fun HomeScreen() {
         baseChips.mapIndexed { i, c -> c.copy(selected = if (selected == null) i == 0 else c.title == selected) }
     } else HomeComposer.chips(selected?.let { s -> HomeComposer.chips().firstOrNull { it.title == s }?.token })
 
+    fun retry() {
+        val chip = chips.firstOrNull { it.selected && it.title == selected }
+        model.reload(true, loaderFor(chip), key = chip?.title)
+    }
+
     PageScaffold(
         title = "Home",
         tab = Tab.HOME,
         refreshing = state.refreshing,
-        onRefresh = {
-            val chip = chips.firstOrNull { it.selected && it.title == selected }
-            model.reload(true, loaderFor(chip), key = chip?.title)
-        },
+        onRefresh = ::retry,
         onNearEnd = model::loadMore,
         onShown = model::refreshIfStale,
         titleTrailing = {
@@ -122,13 +126,14 @@ fun HomeScreen() {
                 }
             })
         }
-        refreshNotice(state, onRetry = { val chip = chips.firstOrNull { it.selected && it.title == selected }; model.reload(true, loaderFor(chip), key = chip?.title) })
+        refreshNotice(state, onRetry = ::retry)
         if (!signedIn && !bannerDismissed) item(key = "signin", contentType = "banner") {
             SignInCard(onSignIn = { app.navigate(LoginRoute) }, onDismiss = { graph.settings.update { it.copy(signInBannerDismissed = true) } })
         }
         when {
             feed == null && state.loading -> items(5, contentType = { "skeleton" }) { VideoCardSkeleton(it) }
-            feed == null && state.error != null -> item { MessageState(state.error!!, action = "Try again", onAction = { model.reload() }) }
+            // A chip's page that failed is tried again as that chip, not as the whole feed under it.
+            feed == null && state.error != null -> item(key = "error") { MessageState(state.error!!, action = "Try again", onAction = ::retry) }
             feed != null && feed.isEmpty && !state.loading -> item {
                 MessageState(feed.message ?: "Nothing here yet. Watch something or follow a few channels and Home fills in.", icon = OrielIcons.Home)
             }
@@ -136,7 +141,7 @@ fun HomeScreen() {
                 if (state.loading) items(5, contentType = { "skeleton" }) { VideoCardSkeleton(it) } else feedShelves(feed, keyPrefix = "home")
             }
         }
-        feedFooter(state, onRetry = model::loadMore)
+        feedFooter(state, onRetry = model::retryMore)
     }
 }
 
@@ -154,7 +159,9 @@ fun SignInCard(onSignIn: () -> Unit, onDismiss: (() -> Unit)?, text: String = "S
         Spacer(Modifier.height(6.dp))
         Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(12.dp))
-        ActionPill("Sign in with Google", OrielIcons.SignIn, onSignIn, filled = true, height = 44.dp)
+        ActionPill("Sign in with Google", OrielIcons.SignIn, onSignIn, filled = true, size = PillSize.Medium)
     }
 }
 
+/** Who's signed in, to tell one account's feeds from another's. */
+fun accountOwner(account: AccountInfo?): String? = account?.let { it.email ?: it.handle ?: it.name }

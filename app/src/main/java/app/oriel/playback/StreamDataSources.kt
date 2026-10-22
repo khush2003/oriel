@@ -110,7 +110,7 @@ class StreamDataSources(private val graph: AppGraph) {
             val id = uri.pathSegments.firstOrNull() ?: throw UnplayableIOException("Malformed media URI")
             return when (uri.host) {
                 "video" -> {
-                    val height = uri.getQueryParameter("h")?.toIntOrNull() ?: 720
+                    val height = uri.getQueryParameter("h")?.toIntOrNull() ?: MediaItems.DEFAULT_HEIGHT
                     val stream = resolve(StreamRequest(id, quality(), height))
                     if (stream.isHls) throw LiveStreamIOException(id)
                     val video = stream.video ?: throw UnplayableIOException("No picture for this video")
@@ -136,7 +136,7 @@ class StreamDataSources(private val graph: AppGraph) {
                 return dataSpec.buildUpon().setHttpRequestHeaders(headers + dataSpec.httpRequestHeaders).build()
             }
             val id = uri.pathSegments.firstOrNull() ?: throw UnplayableIOException("Malformed media URI")
-            val height = uri.getQueryParameter("h")?.toIntOrNull() ?: 720
+            val height = uri.getQueryParameter("h")?.toIntOrNull() ?: MediaItems.DEFAULT_HEIGHT
             val stream = resolve(StreamRequest(id, quality(), height))
             if (!stream.isHls) throw UnplayableIOException("This stream has ended")
             liveHeaders.clear()

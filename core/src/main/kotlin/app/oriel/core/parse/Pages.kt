@@ -419,6 +419,7 @@ object Pages {
         val meta = root.at("metadata", "channelMetadataRenderer")
         val parts = vm.at("metadata", "contentMetadataViewModel", "metadataRows").arr
             .flatMap { it["metadataParts"].arr }.mapNotNull { it.at("text", "content").string }
+        val counts = parts.filterNot { it.startsWith("@") }
         val avatar = vm.at("image", "decoratedAvatarViewModel", "avatar", "avatarViewModel", "image", "sources").arr.lastOrNull()?.get("url").string
             ?: c4.at("avatar", "thumbnails").arr.lastOrNull()?.get("url").string
             ?: meta.at("avatar", "thumbnails").arr.lastOrNull()?.get("url").string
@@ -431,8 +432,9 @@ object Pages {
                 title = vm.at("title", "dynamicTextViewModel", "text", "content").string ?: c4["title"].string ?: meta["title"].string.orEmpty(),
                 avatar = avatar?.let(Text::absolute),
                 handle = parts.firstOrNull { it.startsWith("@") } ?: c4["channelHandleText"].text,
-                subscribersText = parts.firstOrNull { it.contains("subscriber") } ?: c4["subscriberCountText"].text,
-                videosText = parts.firstOrNull { it.contains("video") } ?: c4["videosCountText"].text,
+                // After the handle come the subscribers, then the videos, worded in the language asked for.
+                subscribersText = parts.firstOrNull { it.contains("subscriber") } ?: counts.getOrNull(0) ?: c4["subscriberCountText"].text,
+                videosText = parts.firstOrNull { it.contains("video") } ?: counts.getOrNull(1) ?: c4["videosCountText"].text,
                 verified = vm.at("title", "dynamicTextViewModel", "text", "attachmentRuns") != null || c4["badges"].arr.isNotEmpty(),
                 description = vm.at("description", "descriptionPreviewViewModel", "description", "content").string ?: meta["description"].string,
             ),
@@ -506,7 +508,18 @@ object Pages {
         val parts = vm.at("metadata", "contentMetadataViewModel", "metadataRows").arr.flatMap { it["metadataParts"].arr }
         val texts = parts.mapNotNull { it.at("text", "content").string ?: it.at("avatarStack", "avatarStackViewModel", "text", "content").string }
         val ownerPart = parts.firstOrNull { it["avatarStack"] != null } ?: parts.firstOrNull()
-        val ownerName = texts.firstOrNull { it.startsWith("by ") }?.removePrefix("by ") ?: classic["ownerText"].text
+        val ownerText = ownerPart?.let { it.at("avatarStack", "avatarStackViewModel", "text") ?: it["text"] }
+        // "by Name" in English, "von Name" in German: the linked run is the name in any language.
+        val ownerRun = ownerText.at("commandRuns", 0)
+        val linkedName = run {
+            val content = ownerText["content"].string ?: return@run null
+            // A run starting at 0 leaves its startIndex out.
+            val start = ownerRun["startIndex"].int ?: 0
+            val length = ownerRun["length"].int ?: return@run null
+            if (start < 0 || length <= 0 || start + length > content.length) null else content.substring(start, start + length).trim().ifEmpty { null }
+        }
+        val ownerName = linkedName ?: texts.firstOrNull { it.startsWith("by ") }?.removePrefix("by ") ?: classic["ownerText"].text
+        val ownerLabel = ownerText["content"].string.takeIf { linkedName != null || it?.startsWith("by ") == true }
         val ownerId = ownerPart?.findFirst("browseEndpoint")?.get("browseId").string
             ?: classic.at("ownerText", "runs", 0, "navigationEndpoint", "browseEndpoint", "browseId").string
         val feed = feed(root)
@@ -526,7 +539,7 @@ object Pages {
                 firstVideoId = videos.firstOrNull()?.id,
             ),
             description = vm.at("description", "descriptionPreviewViewModel", "description", "content").string ?: classic["descriptionText"].text,
-            metadata = texts.filterNot { it.startsWith("by ") || it == "Playlist" },
+            metadata = texts.filterNot { it == ownerLabel || it.startsWith("by ") || it == "Playlist" },
             videos = videos,
             continuation = feed.continuation,
         )

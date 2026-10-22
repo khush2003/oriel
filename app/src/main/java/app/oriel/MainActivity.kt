@@ -69,7 +69,7 @@ class MainActivity : ComponentActivity() {
                 // Android 12+ enters picture-in-picture on its own when leaving with a video playing.
                 LaunchedEffect(Unit) {
                     combine(connection.isPlaying, connection.current, connection.audioOnly, connection.videoSize, graph.settings.state) { playing, current, audioOnly, size, s ->
-                        Triple(playing && current != null && !audioOnly && s.autoPip && MediaItems.hasPicture(connection.currentMediaItem()), size, Unit)
+                        Triple(autoPipWanted(playing, current != null, audioOnly, s.autoPip), size, Unit)
                     }.collect { (auto, size) ->
                         if (supportsPip(this@MainActivity)) runCatching { setPictureInPictureParams(pipParams(size, autoEnter = auto)) }
                     }
@@ -111,8 +111,7 @@ class MainActivity : ComponentActivity() {
         super.onUserLeaveHint()
         // Before Android 12 picture-in-picture has to be entered by hand on the way out.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S || !supportsPip(this)) return
-        val s = graph.settings.current
-        if (s.autoPip && connection.isPlaying.value && !connection.audioOnly.value && MediaItems.hasPicture(connection.currentMediaItem())) {
+        if (autoPipWanted()) {
             runCatching { enterPictureInPictureMode(pipParams(connection.videoSize.value, autoEnter = false)) }
         }
     }
@@ -121,7 +120,17 @@ class MainActivity : ComponentActivity() {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         inPip.value = isInPictureInPictureMode
         if (isInPictureInPictureMode) connection.setVideoVisible(true)
+        // Entering by hand (the PiP button) set auto-enter off; back out, it follows the setting again.
+        else if (supportsPip(this)) runCatching { setPictureInPictureParams(pipParams(connection.videoSize.value, autoEnter = autoPipWanted())) }
     }
+
+    /** Whether leaving the app now should float the video: one with a picture playing, and the setting on. */
+    private fun autoPipWanted(
+        playing: Boolean = connection.isPlaying.value,
+        hasVideo: Boolean = connection.current.value != null,
+        audioOnly: Boolean = connection.audioOnly.value,
+        enabled: Boolean = graph.settings.current.autoPip,
+    ): Boolean = playing && hasVideo && !audioOnly && enabled && MediaItems.hasPicture(connection.currentMediaItem())
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -133,7 +142,8 @@ class MainActivity : ComponentActivity() {
         val state = app ?: return
         when {
             intent.getBooleanExtra(EXTRA_OPEN_PLAYER, false) -> state.sheet.expand()
-            else -> state.handleIntent(intent)
+            // A link or share it couldn't make sense of says so, rather than opening on nothing.
+            !state.handleIntent(intent) && intent.action != null && intent.action != Intent.ACTION_MAIN -> state.notice("Couldn't open this link")
         }
     }
 

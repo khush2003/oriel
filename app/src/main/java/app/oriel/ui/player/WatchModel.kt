@@ -51,6 +51,8 @@ data class CommentsState(
     val loadingMore: Boolean = false,
     val sort: List<SortOption> = emptyList(),
     val error: String? = null,
+    /** The last load failed (rather than the comments being off): [error] then offers Try again. */
+    val failed: Boolean = false,
     /** Replies opened under a comment: the parent and its replies. */
     val thread: Comment? = null,
     val replies: List<Comment> = emptyList(),
@@ -201,7 +203,8 @@ class WatchModel(private val graph: AppGraph, private val connection: PlayerConn
 
     // ---- comments --------------------------------------------------------------------------
 
-    fun loadComments(token: String? = _state.value.page?.commentsToken) {
+    /** [previousSort] is the chips as they were before a re-sort, put back if it fails. */
+    fun loadComments(token: String? = _state.value.page?.commentsToken, previousSort: List<SortOption>? = null) {
         token ?: run {
             _comments.value = CommentsState(error = "Comments are turned off")
             return
@@ -209,7 +212,7 @@ class WatchModel(private val graph: AppGraph, private val connection: PlayerConn
         commentsJob?.cancel()
         // A page of the old sort order (or video) mustn't be appended to the new list.
         commentsMoreJob?.cancel()
-        _comments.update { it.copy(loading = true, loadingMore = false, error = null, comments = if (it.sort.isEmpty()) emptyList() else it.comments) }
+        _comments.update { it.copy(loading = true, loadingMore = false, error = null, failed = false, comments = if (it.sort.isEmpty()) emptyList() else it.comments) }
         commentsJob = scope.launch {
             runCatching { withContext(Dispatchers.IO) { graph.yt.comments(token) } }
                 .onSuccess { p ->
@@ -221,7 +224,7 @@ class WatchModel(private val graph: AppGraph, private val connection: PlayerConn
                         error = p.disabledReason,
                     )
                 }
-                .onFailure { _comments.update { it.copy(loading = false, error = "Couldn't load comments") } }
+                .onFailure { _comments.update { it.copy(loading = false, failed = true, error = "Couldn't load comments", sort = previousSort ?: it.sort) } }
         }
     }
 
@@ -241,8 +244,15 @@ class WatchModel(private val graph: AppGraph, private val connection: PlayerConn
     }
 
     fun sortComments(option: SortOption) {
+        val before = _comments.value.sort
         _comments.update { it.copy(sort = it.sort.map { s -> s.copy(selected = s.token == option.token) }) }
-        loadComments(option.token)
+        loadComments(option.token, previousSort = before)
+    }
+
+    /** Tries the last load again, in the order that's selected. */
+    fun retryComments() {
+        val selected = _comments.value.sort.firstOrNull { it.selected }?.token
+        loadComments(selected ?: _state.value.page?.commentsToken)
     }
 
     fun openReplies(comment: Comment) {

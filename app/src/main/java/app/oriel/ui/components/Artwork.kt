@@ -29,12 +29,9 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import app.oriel.core.model.Video
-import app.oriel.ui.theme.AccentRed
 import app.oriel.ui.theme.LiveRed
 import app.oriel.ui.theme.LocalIsDark
 import app.oriel.util.Format
@@ -78,7 +75,7 @@ fun VideoThumbnail(video: Video, modifier: Modifier = Modifier, corner: Dp = 14.
         // How far in: a capsule inset along the bottom, as Apple's TV app draws it.
         if (watched) {
             Box(Modifier.align(Alignment.BottomCenter).padding(horizontal = 10.dp, vertical = 8.dp).fillMaxWidth().height(4.dp).clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.35f))) {
-                Box(Modifier.fillMaxWidth(progress!!.coerceIn(0.03f, 1f)).height(4.dp).clip(RoundedCornerShape(50)).background(Color.White))
+                Box(Modifier.fillMaxWidth(progress.coerceIn(0.03f, 1f)).height(4.dp).clip(RoundedCornerShape(50)).background(Color.White))
             }
         }
         overlay()
@@ -96,7 +93,7 @@ fun DurationBadge(video: Video, modifier: Modifier = Modifier) {
     }
     // A soft capsule, not YouTube's black box.
     Box(modifier.clip(RoundedCornerShape(50)).background(color).padding(horizontal = 7.dp, vertical = 2.dp)) {
-        Text(text, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.W600, style = MaterialTheme.typography.labelSmall)
+        Text(text, color = Color.White, style = MaterialTheme.typography.labelSmall)
     }
 }
 
@@ -108,7 +105,9 @@ fun Avatar(url: String?, size: Dp, modifier: Modifier = Modifier, name: String? 
     Box(modifier.size(size), contentAlignment = Alignment.Center) {
         if (sized == null && name != null) {
             Box(Modifier.fillMaxSize().clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
-                Text(name.take(1).uppercase(), style = MaterialTheme.typography.titleMedium.copy(fontSize = (size.value * 0.42f).sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // Sized off the disc, not the font setting: the disc doesn't grow with the font, so the letter mustn't.
+                val letter = with(LocalDensity.current) { (size * 0.42f).toSp() }
+                Text(name.take(1).uppercase(), style = MaterialTheme.typography.titleMedium.copy(fontSize = letter), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } else if (sized == null) {
             // Nobody to show (signed out): a person glyph, as iOS draws an empty contact.

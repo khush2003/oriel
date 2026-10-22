@@ -3,7 +3,6 @@ package app.oriel.ui.components
 import app.oriel.ui.AlertAction
 import app.oriel.util.Thumbnails
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -12,7 +11,6 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -76,11 +74,22 @@ import app.oriel.core.model.Item
 import app.oriel.core.model.Playlist
 import app.oriel.core.model.Post
 import app.oriel.core.model.Video
-import app.oriel.playback.QueueContext
 import app.oriel.ui.AlertSpec
 import app.oriel.ui.AppState
 import app.oriel.ui.haptics.Haptic
 import app.oriel.ui.haptics.rememberHaptics
+import app.oriel.ui.theme.LocalIsDark
+import app.oriel.ui.theme.fade
+import app.oriel.ui.theme.motion
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.platform.LocalAccessibilityManager
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.dismiss
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
 import kotlinx.coroutines.delay
 
 /**
@@ -110,7 +119,7 @@ fun OrielSheet(onDismiss: () -> Unit, scrollable: Boolean = true, maxHeight: Dp 
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         tonalElevation = 0.dp,
         scrimColor = Color.Black.copy(alpha = 0.36f),
-        dragHandle = { Grabber() },
+        dragHandle = { Grabber { close {} } },
     ) {
         CompositionLocalProvider(LocalSheetClose provides close) {
             val body = Modifier.fillMaxWidth().heightIn(max = maxHeight)
@@ -122,26 +131,52 @@ fun OrielSheet(onDismiss: () -> Unit, scrollable: Boolean = true, maxHeight: Dp 
     }
 }
 
+/** iOS's grabber. Drawn only; for TalkBack it's the sheet's close, since the drag has no other equivalent. */
 @Composable
-private fun Grabber() {
+private fun Grabber(onDismiss: () -> Unit) {
     Box(
         Modifier.padding(top = 7.dp, bottom = 9.dp).size(36.dp, 5.dp).clip(CircleShape)
-            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f)),
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f))
+            .semantics {
+                contentDescription = "Close sheet"
+                onClick("Close") { onDismiss(); true }
+                dismiss { onDismiss(); true }
+            },
     )
 }
 
-/** A sheet's title row, centred, with an optional back chevron and a trailing action, as iOS's sheet navigation bar. */
+/**
+ * A sheet's title row, as iOS's sheet navigation bar: an optional back chevron, the title
+ * centred, and an optional trailing action. The sides are measured first and the title gets
+ * what's left, so a wide action never runs under it.
+ */
 @Composable
 fun SheetTitle(title: String, onBack: (() -> Unit)? = null, trailing: (@Composable () -> Unit)? = null) {
-    Box(Modifier.fillMaxWidth().heightIn(min = 44.dp).padding(horizontal = 8.dp, vertical = 2.dp), contentAlignment = Alignment.Center) {
-        if (onBack != null) {
-            Icon(
-                OrielIcons.Back, "Back", tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.align(Alignment.CenterStart).size(40.dp).clip(CircleShape).clickable(onClick = onBack).padding(11.dp),
-            )
-        }
-        Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 52.dp))
-        if (trailing != null) Box(Modifier.align(Alignment.CenterEnd)) { trailing() }
+    val haptics = rememberHaptics()
+    CenteredTitleRow(
+        Modifier.fillMaxWidth().heightIn(min = 44.dp).padding(horizontal = 8.dp, vertical = 2.dp),
+        start = onBack?.let { back ->
+            {
+                Box(
+                    Modifier.size(44.dp).clip(CircleShape).clickable { haptics.play(Haptic.Tap); back() },
+                    contentAlignment = Alignment.Center,
+                ) { Icon(OrielIcons.Back, "Back", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp)) }
+            }
+        },
+        title = { Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.semantics { heading() }) },
+        end = trailing,
+    )
+}
+
+/** A text button in a sheet's title bar (Cancel, Done, New), with a 44dp hit area. */
+@Composable
+fun SheetAction(text: String, onClick: () -> Unit) {
+    val haptics = rememberHaptics()
+    Box(
+        Modifier.heightIn(min = 44.dp).clip(RoundedCornerShape(8.dp)).clickable { haptics.play(Haptic.Tap); onClick() }.padding(horizontal = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1)
     }
 }
 
@@ -227,7 +262,7 @@ fun ItemActionsSheet(app: AppState, item: Item, onDismiss: () -> Unit) {
         val close = LocalSheetClose.current
         ItemHeader(item)
         Spacer(Modifier.height(10.dp))
-        Column(Modifier.padding(horizontal = PAGE_GUTTER).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
+        Column(Modifier.padding(horizontal = PAGE_GUTTER).clip(GroupShape).background(MaterialTheme.colorScheme.surfaceVariant)) {
             ItemActions(app, item) { close {} }
         }
     }
@@ -243,7 +278,6 @@ fun SaveToPlaylistSheet(app: AppState, video: Video, onDismiss: () -> Unit) {
     val signedIn by app.graph.account.signedIn.collectAsState()
     var remote by remember { mutableStateOf<List<Pair<Playlist, Boolean>>?>(null) }
     var creating by remember { mutableStateOf(false) }
-    val haptics = rememberHaptics()
     LaunchedEffect(video.id, signedIn) { if (signedIn) remote = app.graph.actions.accountPlaylists(video.id) }
 
     // The sheet's own close, so finishing a new playlist slides it down rather than cutting it.
@@ -251,18 +285,14 @@ fun SaveToPlaylistSheet(app: AppState, video: Video, onDismiss: () -> Unit) {
     val closeSheet = remember { arrayOfNulls<(() -> Unit) -> Unit>(1) }
     OrielSheet(onDismiss) {
         closeSheet[0] = LocalSheetClose.current
-        Row(Modifier.fillMaxWidth().padding(horizontal = PAGE_GUTTER, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Save to…", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
-            TextAction("New playlist", { creating = true })
-        }
-        SettingsGroup(header = "On this device") {
+        SheetTitle("Save to…", trailing = { SheetAction("New") { creating = true } })
+        SettingsGroup(header = "On this device", top = 8.dp) {
             val later = library.watchLater.any { it.id == video.id }
-            ChoiceRow("Watch later", later) { haptics.play(Haptic.Select); app.graph.actions.toggleWatchLater(video) }
+            ChoiceRow("Watch later", later, multi = true) { app.graph.actions.toggleWatchLater(video) }
             library.localPlaylists.forEach { p ->
                 RowDivider(inset = false)
                 val has = p.videos.any { it.id == video.id }
-                ChoiceRow(p.name, has, detail = "${p.videos.size}") {
-                    haptics.play(Haptic.Select)
+                ChoiceRow(p.name, has, detail = "${p.videos.size}", multi = true) {
                     if (has) app.graph.library.removeFromLocalPlaylist(p.id, video.id) else app.graph.actions.addToLocalPlaylist(p, listOf(video))
                 }
             }
@@ -275,8 +305,7 @@ fun SaveToPlaylistSheet(app: AppState, video: Video, onDismiss: () -> Unit) {
                     list.isEmpty() -> Text("No playlists yet", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(16.dp))
                     else -> list.forEachIndexed { i, (p, has) ->
                         if (i > 0) RowDivider(inset = false)
-                        ChoiceRow(p.title, has) {
-                            haptics.play(Haptic.Select)
+                        ChoiceRow(p.title, has, multi = true) {
                             remote = list.map { if (it.first.id == p.id) it.first to !has else it }
                             app.graph.actions.setInAccountPlaylist(p.id, video, !has, p.title)
                         }
@@ -314,7 +343,7 @@ fun TextPromptDialog(title: String, initial: String, confirm: String, onDismiss:
             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { done() }),
-            modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.background).padding(horizontal = 10.dp, vertical = 9.dp).focusRequester(focus),
+            modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(alertFieldFill()).padding(horizontal = 10.dp, vertical = 9.dp).focusRequester(focus),
         )
         Spacer(Modifier.height(16.dp))
         AlertButtons(listOf(AlertAction("Cancel") { onDismiss() }, AlertAction(confirm, emphasized = true) { done() }))
@@ -340,7 +369,7 @@ fun NewPlaylistDialog(signedIn: Boolean, onDismiss: () -> Unit, onCreate: (name:
             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { if (name.isNotBlank()) onCreate(name.trim(), onAccount, private) }),
-            modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.background).padding(horizontal = 10.dp, vertical = 9.dp).focusRequester(focus),
+            modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(alertFieldFill()).padding(horizontal = 10.dp, vertical = 9.dp).focusRequester(focus),
             decorationBox = { inner ->
                 Box { if (name.isEmpty()) Text("Title", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant); inner() }
             },
@@ -369,6 +398,10 @@ fun NewPlaylistDialog(signedIn: Boolean, onDismiss: () -> Unit, onCreate: (name:
 
 // ---- iOS alerts --------------------------------------------------------------------------
 
+/** An alert's text field: a veil of the text colour, which shows on the card in both modes (the page colour vanished on light). */
+@Composable
+private fun alertFieldFill(): Color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (LocalIsDark.current) 0.10f else 0.06f)
+
 @Composable
 private fun AlertCard(visible: MutableTransitionState<Boolean>, onDismiss: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -376,8 +409,8 @@ private fun AlertCard(visible: MutableTransitionState<Boolean>, onDismiss: () ->
         // shrinks a touch and fades quickly. Kept composed until the exit has played.
         AnimatedVisibility(
             visible,
-            enter = fadeIn(spring(stiffness = 900f)) + scaleIn(spring(dampingRatio = 0.78f, stiffness = 520f), initialScale = 1.14f),
-            exit = fadeOut(tween(140)) + scaleOut(tween(160), targetScale = 0.94f),
+            enter = fadeIn(motion(spring(stiffness = 900f))) + scaleIn(motion(spring(dampingRatio = 0.78f, stiffness = 520f)), initialScale = 1.14f),
+            exit = fadeOut(fade(140)) + scaleOut(fade(160), targetScale = 0.94f),
         ) {
             Column(
                 Modifier.widthIn(max = 290.dp).fillMaxWidth(0.76f).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh),
@@ -392,10 +425,10 @@ private fun AlertButtons(actions: List<AlertAction>) {
     val divider = MaterialTheme.colorScheme.outlineVariant
     Box(Modifier.fillMaxWidth().height(0.5.dp).background(divider))
     if (actions.size == 2) {
-        Row(Modifier.fillMaxWidth().height(46.dp)) {
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
             actions.forEachIndexed { i, a ->
-                if (i > 0) Box(Modifier.width(0.5.dp).height(46.dp).background(divider))
-                AlertButton(a, Modifier.weight(1f))
+                if (i > 0) Box(Modifier.width(0.5.dp).fillMaxHeight().background(divider))
+                AlertButton(a, Modifier.weight(1f).fillMaxHeight())
             }
         }
     } else {
@@ -408,11 +441,16 @@ private fun AlertButtons(actions: List<AlertAction>) {
 
 @Composable
 private fun AlertButton(action: AlertAction, modifier: Modifier) {
-    Box(modifier.height(46.dp).clickable(onClick = action.onClick), contentAlignment = Alignment.Center) {
+    val haptics = rememberHaptics()
+    Box(
+        modifier.heightIn(min = 46.dp).clickable(role = Role.Button) { haptics.play(Haptic.Tap); action.onClick() }.padding(horizontal = 8.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
         Text(
             action.label,
             style = MaterialTheme.typography.bodyLarge.copy(fontWeight = if (action.emphasized) FontWeight.W600 else FontWeight.W400),
             color = if (action.destructive) DestructiveRed else MaterialTheme.colorScheme.primary,
+            textAlign = TextAlign.Center,
         )
     }
 }
@@ -443,9 +481,12 @@ fun AlertHost(app: AppState) {
 @Composable
 fun NoticeHost(app: AppState, modifier: Modifier = Modifier) {
     val notice by app.notice.collectAsState()
+    val accessibility = LocalAccessibilityManager.current
     LaunchedEffect(notice?.id) {
         val n = notice ?: return@LaunchedEffect
-        delay(if (n.action != null) 4_500 else 2_800)
+        // Longer when TalkBack or the "time to take action" setting asks for it.
+        val base = if (n.action != null) 4_500L else 2_800L
+        delay(accessibility?.calculateRecommendedTimeoutMillis(base, containsIcons = false, containsText = true, containsControls = n.action != null) ?: base)
         app.clearNotice(n)
     }
     var last by remember { mutableStateOf<AppState.Notice?>(null) }
@@ -453,8 +494,8 @@ fun NoticeHost(app: AppState, modifier: Modifier = Modifier) {
     val shownNotice = notice ?: last
     AnimatedVisibility(
         notice != null,
-        enter = slideInVertically(spring(dampingRatio = 0.8f, stiffness = 420f, visibilityThreshold = IntOffset.VisibilityThreshold)) { -it } + fadeIn(tween(180)),
-        exit = slideOutVertically(spring(dampingRatio = 1f, stiffness = 520f, visibilityThreshold = IntOffset.VisibilityThreshold)) { -it } + fadeOut(tween(200)),
+        enter = slideInVertically(motion(spring(dampingRatio = 0.8f, stiffness = 420f, visibilityThreshold = IntOffset.VisibilityThreshold))) { -it } + fadeIn(fade(180)),
+        exit = slideOutVertically(motion(spring(dampingRatio = 1f, stiffness = 520f, visibilityThreshold = IntOffset.VisibilityThreshold))) { -it } + fadeOut(fade(200)),
         modifier = modifier,
     ) {
         shownNotice?.let { n ->

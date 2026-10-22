@@ -157,7 +157,7 @@ fun PlayerSettingsSheet(app: AppState, onDismiss: () -> Unit, onPip: () -> Unit,
                         ChoiceRow("Auto", override == null && !audioOnly, detail = "Up to ${autoHeight}p") { connection.setAudioOnly(false); connection.setHeight(null); page = Page.Main }
                         heights.forEach { h ->
                             RowDivider(inset = false)
-                            ChoiceRow(if (h >= 2160) "${h}p 4K" else if (h >= 1440) "${h}p HD" else if (h >= 720) "${h}p HD" else "${h}p", override == h && !audioOnly) {
+                            ChoiceRow(if (h >= 2160) "${h}p 4K" else if (h >= 720) "${h}p HD" else "${h}p", override == h && !audioOnly) {
                                 connection.setAudioOnly(false); connection.setHeight(h); page = Page.Main
                             }
                         }

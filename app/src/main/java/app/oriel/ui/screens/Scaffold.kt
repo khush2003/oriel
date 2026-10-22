@@ -9,10 +9,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.ui.draw.clip
+import app.oriel.ui.components.GroupShape
 import app.oriel.ui.components.TextAction
 import app.oriel.ui.components.LoadingRow
 import app.oriel.ui.components.PAGE_GUTTER
@@ -178,21 +177,17 @@ fun PageScaffold(
             overlay()
         }
         TopFadeScrim(Modifier.align(Alignment.TopCenter), pageColor = background)
+        // Back only from a page that's settled in: a second tap while it slides away popped the
+        // page under it too, or sent the app to the background from Home.
+        val back = onBack?.let { androidx.lifecycle.compose.dropUnlessResumed(block = it) }
         CompositionLocalProvider(LocalAppBackdrop provides if (glass) pageBackdrop else null) {
-            FloatingTopBar(onBack, Modifier.align(Alignment.TopCenter), title = title, showTitle = showTitle, leading = leading, actions = actions)
+            FloatingTopBar(back, Modifier.align(Alignment.TopCenter), title = title, showTitle = showTitle, leading = leading, actions = actions)
         }
     }
 }
 
 /** A feed's end: a spinner while the next page loads, or a way to ask again when it didn't. */
-fun LazyListScope.feedFooter(state: FeedState, onRetry: () -> Unit) {
-    when {
-        state.loadingMore -> item(key = "more", contentType = "more") { LoadingRow() }
-        state.moreFailed -> item(key = "more-failed", contentType = "more") {
-            NoticeRow("Couldn't load more.", action = "Try again", onAction = onRetry)
-        }
-    }
-}
+fun LazyListScope.feedFooter(state: FeedState, onRetry: () -> Unit) = moreFooter(state.loadingMore, state.moreFailed, onRetry)
 
 /**
  * Over a feed still showing an older copy because the refresh failed: that it
@@ -220,7 +215,7 @@ fun LazyListScope.moreFooter(loading: Boolean, failed: Boolean, onRetry: () -> U
 fun NoticeRow(text: String, action: String, onAction: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = PAGE_GUTTER, vertical = 6.dp)
-            .clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceVariant)
+            .clip(GroupShape).background(MaterialTheme.colorScheme.surfaceVariant)
             .padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

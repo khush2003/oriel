@@ -11,7 +11,13 @@ import app.oriel.core.model.Channel
 import app.oriel.core.model.PlaylistPanel
 import app.oriel.core.model.WatchPage
 import app.oriel.ui.components.VideoCardSkeleton
+import app.oriel.ui.components.GROUP_CORNER
+import app.oriel.ui.components.GroupShape
+import app.oriel.ui.components.ROW_CORNER
+import app.oriel.ui.theme.HeartRed
 import app.oriel.ui.theme.LiveRed
+import app.oriel.ui.theme.LocalReduceAnimation
+import app.oriel.ui.theme.motion
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.indication
@@ -161,7 +167,7 @@ fun WatchContent(app: AppState, palette: ArtworkPalette, modifier: Modifier = Mo
         var shownPanel by remember { mutableStateOf(Panel.Comments) }
         if (panel != Panel.None && panel != shownPanel) shownPanel = panel
         val slide = androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 420f, visibilityThreshold = androidx.compose.ui.unit.IntOffset.VisibilityThreshold)
-        AnimatedVisibility(panel != Panel.None, enter = slideInVertically(slide) { it }, exit = slideOutVertically(slide) { it }, modifier = Modifier.fillMaxSize()) {
+        AnimatedVisibility(panel != Panel.None, enter = enterMotion(slideInVertically(slide) { it }), exit = exitMotion(slideOutVertically(slide) { it }), modifier = Modifier.fillMaxSize()) {
             val inThread = shownPanel == Panel.Comments && comments.thread != null
             // Each panel's list, kept here so the header's hairline can follow its scroll, and so
             // the comments keep their place while a reply thread is pushed over them.
@@ -224,7 +230,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.relatedItems(groups: 
 private fun TitleBlock(video: Video, page: WatchPage?, palette: ArtworkPalette, onMore: () -> Unit) {
     Column(Modifier.fillMaxWidth().clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClick = onMore).padding(horizontal = PAGE_GUTTER).padding(top = 16.dp, bottom = 4.dp)) {
         if (video.title.isNotEmpty()) {
-            Text(video.title, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.W700), color = palette.onBackground, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            Text(video.title, style = MaterialTheme.typography.titleLarge, color = palette.onBackground, maxLines = 3, overflow = TextOverflow.Ellipsis)
         } else {
             SkeletonLine(0.8f, 20.dp)
         }
@@ -346,7 +352,7 @@ private fun ActionTile(
     Column(
         modifier
             .graphicsLayer { scaleX = scale; scaleY = scale }
-            .clip(RoundedCornerShape(14.dp))
+            .clip(GroupShape)
             .background(palette.onBackground.copy(alpha = if (active) 0.15f else 0.065f))
             .clickable(interactionSource = interaction, indication = null, onClickLabel = description, onClick = onClick)
             .padding(vertical = 10.dp),
@@ -407,8 +413,8 @@ private fun ChaptersShelf(app: AppState, chapters: List<Chapter>, palette: Artwo
         SectionHeader("Chapters", color = palette.onBackground)
         LazyRow(contentPadding = PaddingValues(horizontal = PAGE_GUTTER), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             items(chapters.distinctBy { it.startMs }, key = { it.startMs }) { ch ->
-                Column(Modifier.width(150.dp).clip(RoundedCornerShape(10.dp)).clickable { app.connection.seekTo(ch.startMs) }) {
-                    RemoteImage(ch.thumbnail ?: Thumbnails.frame(app.watch.state.value.video?.id ?: "", 320), Modifier.fillMaxWidth().aspectRatio(16f / 9f), RoundedCornerShape(10.dp))
+                Column(Modifier.width(150.dp).clip(RoundedCornerShape(ROW_CORNER)).pressClickable(onClickLabel = "Play from ${ch.title}") { app.connection.seekTo(ch.startMs) }) {
+                    RemoteImage(ch.thumbnail ?: Thumbnails.frame(app.watch.state.value.video?.id ?: "", 320), Modifier.fillMaxWidth().aspectRatio(16f / 9f), RoundedCornerShape(ROW_CORNER))
                     Spacer(Modifier.height(6.dp))
                     Text(ch.title, style = MaterialTheme.typography.titleSmall, color = palette.onBackground, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text(Format.durationMs(ch.startMs), style = MaterialTheme.typography.labelMedium, color = palette.onBackgroundVariant)
@@ -436,7 +442,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.playlistPanelItems(
     val corner = 14.dp
     item(key = "playlist") {
         val shape = if (open) RoundedCornerShape(topStart = corner, topEnd = corner) else RoundedCornerShape(corner)
-        val turn by androidx.compose.animation.core.animateFloatAsState(if (open) 180f else 0f, androidx.compose.animation.core.spring(stiffness = 700f), label = "playlistChevron")
+        val turn by androidx.compose.animation.core.animateFloatAsState(if (open) 180f else 0f, motion(androidx.compose.animation.core.spring(stiffness = 700f)), label = "playlistChevron")
         Row(
             Modifier
                 .padding(horizontal = PAGE_GUTTER).padding(top = 8.dp, bottom = if (open) 0.dp else 8.dp)
@@ -522,8 +528,8 @@ private fun Panel(palette: ArtworkPalette, title: String, count: String? = null,
 internal fun PanelHeader(title: String, count: String?, palette: ArtworkPalette, onClose: (() -> Unit)?, onBack: (() -> Unit)? = null) {
     // End inset 7dp, not 14: the close button's 44dp target reaches 7dp past its 30dp disc.
     Row(Modifier.fillMaxWidth().padding(start = if (onBack != null) 6.dp else PAGE_GUTTER, end = 7.dp, top = 4.dp, bottom = 8.dp).height(40.dp), verticalAlignment = Alignment.CenterVertically) {
-        androidx.compose.animation.AnimatedVisibility(onBack != null, enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandHorizontally(), exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkHorizontally()) {
-            Box(Modifier.size(40.dp).clip(CircleShape).clickable { onBack?.invoke() }, contentAlignment = Alignment.Center) {
+        androidx.compose.animation.AnimatedVisibility(onBack != null, enter = enterMotion(androidx.compose.animation.fadeIn() + androidx.compose.animation.expandHorizontally()), exit = exitMotion(androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkHorizontally())) {
+            Box(Modifier.size(44.dp).pressClickable(onClickLabel = "Back") { onBack?.invoke() }, contentAlignment = Alignment.Center) {
                 Icon(OrielIcons.Back, "Back", tint = palette.accent, modifier = Modifier.size(20.dp))
             }
         }
@@ -533,7 +539,7 @@ internal fun PanelHeader(title: String, count: String?, palette: ArtworkPalette,
             modifier = Modifier.weight(1f), label = "panelTitle",
         ) { (t, c) ->
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(t, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.W700), color = palette.onBackground, maxLines = 1)
+                Text(t, style = MaterialTheme.typography.titleLarge, color = palette.onBackground, maxLines = 1)
                 if (c != null) {
                     Spacer(Modifier.width(8.dp))
                     Text(c, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W500), color = palette.onBackgroundVariant, maxLines = 1)
@@ -575,7 +581,7 @@ internal fun CommentSortRow(options: List<SortOption>, palette: ArtworkPalette, 
 private fun DescriptionPanel(app: AppState, video: Video, page: WatchPage?, palette: ArtworkPalette, listState: androidx.compose.foundation.lazy.LazyListState) {
     LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(bottom = 40.dp)) {
         item {
-            Text(video.title, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.W700), color = palette.onBackground, modifier = Modifier.padding(horizontal = PAGE_GUTTER).padding(top = 8.dp, bottom = 14.dp))
+            Text(video.title, style = MaterialTheme.typography.titleLarge, color = palette.onBackground, modifier = Modifier.padding(horizontal = PAGE_GUTTER).padding(top = 8.dp, bottom = 14.dp))
         }
         // The App Store's information strip: small grey labels over the figures, hairlines between.
         item {
@@ -615,7 +621,7 @@ private fun DescriptionPanel(app: AppState, video: Video, page: WatchPage?, pale
         if (video.channel != null) {
             item { GroupLabel("Channel", palette) }
             item {
-                Box(Modifier.padding(horizontal = PAGE_GUTTER).clip(RoundedCornerShape(14.dp)).background(palette.onBackground.copy(alpha = 0.065f))) {
+                Box(Modifier.padding(horizontal = PAGE_GUTTER).clip(GroupShape).background(palette.onBackground.copy(alpha = 0.065f))) {
                     ChannelLine(app, video, page?.subscribersText, palette, inset = 14.dp)
                 }
             }
@@ -632,9 +638,9 @@ private fun GroupLabel(text: String, palette: ArtworkPalette) {
 /** One row of an inset group drawn row by row (so it can live in a lazy list): rounded at the group's ends, hairlines between. */
 @Composable
 private fun GroupedRow(palette: ArtworkPalette, first: Boolean, last: Boolean, onClick: () -> Unit, content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
-    val shape = RoundedCornerShape(topStart = if (first) 14.dp else 0.dp, topEnd = if (first) 14.dp else 0.dp, bottomStart = if (last) 14.dp else 0.dp, bottomEnd = if (last) 14.dp else 0.dp)
+    val shape = RoundedCornerShape(topStart = if (first) GROUP_CORNER else 0.dp, topEnd = if (first) GROUP_CORNER else 0.dp, bottomStart = if (last) GROUP_CORNER else 0.dp, bottomEnd = if (last) GROUP_CORNER else 0.dp)
     Column(Modifier.padding(horizontal = PAGE_GUTTER).clip(shape).background(palette.onBackground.copy(alpha = 0.065f))) {
-        Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, content = content)
+        Row(Modifier.fillMaxWidth().pressClickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, content = content)
         if (!last) Box(Modifier.padding(start = 112.dp).fillMaxWidth().height(0.5.dp).background(palette.divider))
     }
 }
@@ -681,15 +687,17 @@ fun linkify(text: String, color: Color, onTime: (Long) -> Unit, onLink: (String)
 @Composable
 private fun CommentsPanel(app: AppState, palette: ArtworkPalette, listState: androidx.compose.foundation.lazy.LazyListState, repliesState: androidx.compose.foundation.lazy.LazyListState) {
     val c by app.watch.comments.collectAsState()
+    val reduceMotion = LocalReduceAnimation.current
     androidx.compose.animation.AnimatedContent(
         c.thread,
         contentKey = { it?.id },
         transitionSpec = {
             val push = targetState != null
             val slide = androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 520f, visibilityThreshold = androidx.compose.ui.unit.IntOffset.VisibilityThreshold)
-            (androidx.compose.animation.slideInHorizontally(slide) { if (push) it else -it / 3 } + androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(200)))
+            val transform = if (reduceMotion) androidx.compose.animation.EnterTransition.None togetherWith androidx.compose.animation.ExitTransition.None
+            else (androidx.compose.animation.slideInHorizontally(slide) { if (push) it else -it / 3 } + androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(200)))
                 .togetherWith(androidx.compose.animation.slideOutHorizontally(slide) { if (push) -it / 3 else it } + androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(200)))
-                .apply { targetContentZIndex = if (push) 1f else 0f }
+            transform.apply { targetContentZIndex = if (push) 1f else 0f }
         },
         modifier = Modifier.fillMaxSize(), label = "commentsPush",
     ) { thread ->
@@ -712,7 +720,9 @@ private fun CommentsPanel(app: AppState, palette: ArtworkPalette, listState: and
             if (c.sort.isNotEmpty()) item(key = "sort") { CommentSortRow(c.sort, palette, app.watch::sortComments) }
             when {
                 c.loading && c.comments.isEmpty() -> items(6) { CommentSkeleton() }
-                c.error != null && c.comments.isEmpty() -> item { MessageState(c.error!!) }
+                c.error != null && c.comments.isEmpty() -> item {
+                    if (c.failed) MessageState(c.error!!, action = "Try again", onAction = app.watch::retryComments) else MessageState(c.error!!)
+                }
                 else -> {
                     val comments = c.comments.distinctBy { it.id }
                     itemsIndexed(comments, key = { _, it -> it.id }) { i, it -> CommentRow(app, it, palette, onReplies = app.watch::openReplies, separator = i < comments.lastIndex) }
@@ -736,7 +746,13 @@ internal fun CommentRow(app: AppState, comment: Comment, palette: ArtworkPalette
     val hasReplies = onReplies != null && comment.replyCount > 0 && comment.repliesToken != null
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(start = start, end = PAGE_GUTTER, top = 14.dp, bottom = if (hasReplies) 4.dp else 12.dp)) {
-            Avatar(comment.authorAvatar, avatar, name = comment.author, modifier = Modifier.clip(CircleShape).clickable(enabled = comment.authorChannelId != null) { app.openChannel(comment.authorChannelId!!) })
+            // The avatar opens the channel; its 44dp target overhangs the drawn circle without moving anything.
+            Box(Modifier.size(avatar), contentAlignment = Alignment.Center) {
+                Avatar(comment.authorAvatar, avatar, name = comment.author, modifier = Modifier.clip(CircleShape))
+                comment.authorChannelId?.let { channelId ->
+                    Box(Modifier.requiredSize(44.dp).pressClickable(onClickLabel = "Open ${comment.author}'s channel") { app.openChannel(channelId) })
+                }
+            }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 if (comment.pinned) {
@@ -764,7 +780,7 @@ internal fun CommentRow(app: AppState, comment: Comment, palette: ArtworkPalette
                     comment.likes?.let { Text(" $it", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W500), color = palette.onBackgroundVariant) }
                     Spacer(Modifier.width(20.dp))
                     Icon(OrielIcons.Dislike, null, tint = palette.onBackgroundVariant, modifier = Modifier.size(16.dp))
-                    if (comment.hearted) Icon(OrielIcons.Heart, "Hearted by the creator", tint = Color(0xFFFF3B5C), modifier = Modifier.padding(start = 20.dp).size(15.dp))
+                    if (comment.hearted) Icon(OrielIcons.Heart, "Hearted by the creator", tint = HeartRed, modifier = Modifier.padding(start = 20.dp).size(15.dp))
                     Spacer(Modifier.weight(1f))
                     if (hasReplies && onReplies != null) {
                         val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }

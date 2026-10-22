@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="background">#FF000000</color>
-    <color name="icon_background">#FF000000</color>
-    <color name="accent">#FFFF5A5F</color>
+    <!-- The window behind the first frame: the page colour, so light mode doesn't open on black. -->
+    <color name="background">#FFFFFFFF</color>
 </resources>

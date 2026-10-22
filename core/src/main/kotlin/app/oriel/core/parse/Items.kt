@@ -72,6 +72,13 @@ object Items {
                 val channelPart = flat.firstOrNull { p -> p.at("text", "commandRuns", 0, "onTap", "innertubeCommand", "browseEndpoint") != null }
                     ?: parts.takeIf { it.size >= 2 }?.first()?.firstOrNull()
                 val stats = flat.filter { it !== channelPart }.mapNotNull { it.at("text", "content").string }
+                // YouTube words these in the language asked for, so the row's shape decides: the row
+                // that isn't the channel's holds the views, then the age. The English words are the
+                // fallback for rows of another shape.
+                val statRow = parts.lastOrNull { row -> row.none { it === channelPart } }.orEmpty().mapNotNull { it.at("text", "content").string }
+                val isUpcoming = vm?.findFirst("upcomingEventData") != null || stats.any { it.startsWith("Premieres") || it.startsWith("Scheduled") }
+                val viewsText = if (statRow.size >= 2) statRow[0] else stats.firstOrNull(Text::isViews) ?: statRow.singleOrNull()?.takeUnless { isUpcoming || Text.isTime(it) }
+                val publishedText = if (statRow.size >= 2) statRow[1] else stats.firstOrNull(Text::isTime) ?: statRow.singleOrNull()?.takeIf { isUpcoming }
                 val channelName = channelPart.at("text", "content").string
                 val channelId = channelPart.at("text", "commandRuns", 0, "onTap", "innertubeCommand", "browseEndpoint", "browseId").string ?: avatarChannel
                 Video(
@@ -80,10 +87,10 @@ object Items {
                     channel = channelName?.let { ChannelRef(it, channelId, avatarUrl, verified = channelPart.at("text", "attachmentRuns") != null) },
                     thumbnail = image.at("image", "sources").arr.lastOrNull()?.get("url").string,
                     durationSec = durationBadge,
-                    viewsText = stats.firstOrNull(Text::isViews),
-                    publishedText = stats.firstOrNull(Text::isTime),
+                    viewsText = viewsText,
+                    publishedText = publishedText,
                     isLive = isLive || stats.any { it.contains("watching") },
-                    isUpcoming = stats.any { it.startsWith("Premieres") || it.startsWith("Scheduled") },
+                    isUpcoming = isUpcoming,
                     isShort = type == "LOCKUP_CONTENT_TYPE_SHORTS" || tap?.get("reelWatchEndpoint") != null,
                     progress = progress?.let { it / 100f },
                 )
@@ -95,8 +102,10 @@ object Items {
                     ov.at("thumbnailOverlayBadgeViewModel", "thumbnailBadges").arr + ov.at("thumbnailBottomOverlayViewModel", "badges").arr
                 }.firstNotNullOfOrNull { it.at("thumbnailBadgeViewModel", "text").string }
                 val ownerPart = parts.firstOrNull()?.firstOrNull()
-                val ownerName = ownerPart.at("text", "content").string?.takeUnless { it == "Playlist" || it == "Podcast" || it == "Mix" }
                 val ownerId = ownerPart.at("text", "commandRuns", 0, "onTap", "innertubeCommand", "browseEndpoint", "browseId").string
+                // A linked first part is the owner in any language; an unlinked one is usually the
+                // kind of list ("Playlist"), known here only in English.
+                val ownerName = ownerPart.at("text", "content").string?.takeIf { ownerId != null || (it != "Playlist" && it != "Podcast" && it != "Mix") }
                 val isMix = type == "LOCKUP_CONTENT_TYPE_STATION" || id.startsWith("RD")
                 Playlist(
                     id = id,
@@ -187,14 +196,18 @@ object Items {
         val id = r["channelId"].string ?: return null
         // channelRenderer files the handle under subscriberCountText and the
         // subscriber count under videoCountText; sort them by what they say.
-        val texts = listOfNotNull(r["subscriberCountText"].text, r["videoCountText"].text)
+        val first = r["subscriberCountText"].text
+        val second = r["videoCountText"].text
+        val texts = listOfNotNull(first, second)
+        val handleFirst = first?.startsWith("@") == true
         return Channel(
             id = id,
             title = r["title"].text ?: return null,
             avatar = r.at("thumbnail", "thumbnails").arr.lastOrNull()?.get("url").string?.let(Text::absolute),
             handle = texts.firstOrNull { it.startsWith("@") },
-            subscribersText = texts.firstOrNull { it.contains("subscriber") },
-            videosText = texts.firstOrNull { it.contains("video") },
+            // By the words in English, otherwise by which of the two holds the handle.
+            subscribersText = texts.firstOrNull { it.contains("subscriber") } ?: if (handleFirst) second else first,
+            videosText = texts.firstOrNull { it.contains("video") } ?: second.takeUnless { handleFirst },
             verified = r["ownerBadges"].arr.any { it.at("metadataBadgeRenderer", "style").string?.contains("VERIFIED") == true },
             description = r["descriptionSnippet"].text,
         )

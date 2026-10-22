@@ -76,7 +76,11 @@ class PlaybackService : MediaLibraryService() {
     /** Per video, how often playback stopped on the network after the loader's own retries. */
     private val stalls = HashMap<String, Int>()
     private var recoverJob: Job? = null
+    /** The delayed move past a video that failed; a transition of any kind makes it moot. */
+    private var skipJob: Job? = null
     private var precacheJob: Job? = null
+    /** Whether [precacheJob] is still waiting for a lead, and so is paused with playback. */
+    private var prefetchWaiting = false
     private var sleepJob: Job? = null
     private var tickJob: Job? = null
     private var segmentsJob: Job? = null
@@ -165,6 +169,12 @@ class PlaybackService : MediaLibraryService() {
     private val listener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             val graph = applicationContext.graph
+            // Recovery and the automatic skip were for the video that failed.
+            recoverJob?.cancel()
+            skipJob?.cancel()
+            // Moving off a failed video (Next, a tap in the queue) leaves the player idle with the old
+            // error; the new one should load. An unprepared restored queue has no error, and stays so.
+            if (player.playbackState == Player.STATE_IDLE && player.playerError != null) player.prepare()
             _lastError.value = null
             reporter.finish()
             if (_sleepAtEnd.value && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
@@ -207,7 +217,10 @@ class PlaybackService : MediaLibraryService() {
                 }
                 startTicker()
                 reportPlaying()
+                if (prefetchWaiting && precacheJob?.isActive != true) prefetchUpcoming()
             } else {
+                // Its wait for a lead can't end while paused: stop polling until playback resumes.
+                if (prefetchWaiting) precacheJob?.cancel()
                 reporter.paused(player.currentPosition)
                 savePosition()
                 queue.scheduleSave()
@@ -243,7 +256,7 @@ class PlaybackService : MediaLibraryService() {
     private fun savePosition() {
         if (!::player.isInitialized) return
         val item = player.currentMediaItem ?: return
-        if (MediaItems.kind(item) == "hls") return
+        if (MediaItems.kind(item) == MediaItems.KIND_HLS) return
         val duration = player.duration.takeIf { it != C.TIME_UNSET } ?: return
         applicationContext.graph.library.savePosition(item.mediaId, player.currentPosition, duration)
     }
@@ -302,14 +315,14 @@ class PlaybackService : MediaLibraryService() {
         val unplayable = causes.filterIsInstance<UnplayableIOException>().firstOrNull()
         // A refused URL and a refused SABR stream recover the same way; a SABR read whose
         // connection kept dropping is the network's, below.
-        val refusedUrl = http?.takeIf { it.responseCode in setOf(401, 403, 410) }?.dataSpec?.uri?.toString() ?: sabr?.takeIf { it.refused }?.url
+        val refusedUrl = http?.takeIf { it.responseCode in REFUSED_HTTP }?.dataSpec?.uri?.toString() ?: sabr?.takeIf { it.refused }?.url
         // googlevideo busy or briefly failing: the network's too, not the video's.
         val busy = http?.responseCode?.let { it == 408 || it == 429 || it in 500..599 } == true
         val resolveFailed = causes.any { it is ResolveNetworkIOException }
         CrashLog.note(this, "$mediaId ${error.errorCodeName}${http?.let { " HTTP ${it.responseCode} ${it.dataSpec.uri.host}" }.orEmpty()} ← " +
             causes.joinToString(" ← ") { "${it::class.simpleName}: ${it.message?.take(160)}" })
         // Auto plays YouTube's HLS ladder; when that's refused or not offered, this video drops to the fixed-quality streams.
-        if (MediaItems.kind(player.currentMediaItem) == "abr" && mediaId != null) {
+        if (MediaItems.kind(player.currentMediaItem) == MediaItems.KIND_ABR && mediaId != null) {
             val refused = http?.responseCode in setOf(401, 403, 410)
             // Segment URLs expire (after a long pause, say): a fresh manifest is usually all it
             // takes, and keeps the ladder. Only a second refusal, or no ladder at all, drops to
@@ -379,15 +392,31 @@ class PlaybackService : MediaLibraryService() {
             // step the ceiling down a rung and carry on from the same spot, twice at most.
             error.errorCode in DECODER_ERRORS && mediaId != null && (decoderSteps[mediaId] ?: 0) < 2 -> {
                 decoderSteps[mediaId] = (decoderSteps[mediaId] ?: 0) + 1
-                val current = player.videoFormat?.height?.takeIf { it > 0 } ?: 2160
+                val item = player.currentMediaItem
+                // Heights here are the short edge, as the quality menu's are, so a portrait video steps down too.
+                val playing = player.videoFormat?.let { minOf(it.width, it.height) }?.takeIf { it > 0 }
+                val current = minOf(playing ?: 2160, MediaItems.height(item) ?: 2160)
                 val lower = listOf(1440, 1080, 720, 480).firstOrNull { it < current } ?: 360
-                val long = (lower * 16 + 8) / 9
-                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().setMaxVideoSize(long, long).build()
-                decoderCapped = mediaId
+                val video = MediaItems.video(item)
+                if (MediaItems.kind(item) == MediaItems.KIND_AV && video != null) {
+                    // A fixed-quality item names its one height: rebuild it a rung lower.
+                    val index = player.currentMediaItemIndex
+                    val position = player.currentPosition
+                    player.replaceMediaItem(index, MediaItems.build(video, lower))
+                    player.seekTo(index, position)
+                } else if (MediaItems.kind(item) == MediaItems.KIND_ABR || MediaItems.kind(item) == MediaItems.KIND_HLS) {
+                    // A ladder only needs its ceiling lowered, which the player's track selection honours.
+                    val long = (lower * 16 + 8) / 9
+                    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().setMaxVideoSize(long, long).build()
+                    decoderCapped = mediaId
+                }
                 player.prepare()
                 player.play()
             }
-            else -> skipAfterError(error.localizedMessage ?: "Playback error")
+            error.errorCode in DECODER_ERRORS -> skipAfterError("This phone can't decode this video. Try a lower quality.")
+            error.errorCode in 4000..4999 -> skipAfterError("This phone can't play this video's format.")
+            error.errorCode in 2000..2999 -> skipAfterError("Couldn't load the video.")
+            else -> skipAfterError("Playback failed.")
         }
     }
 
@@ -399,7 +428,8 @@ class PlaybackService : MediaLibraryService() {
     private fun skipAfterError(message: String) {
         _lastError.value = message
         if (!player.hasNextMediaItem()) return
-        scope.launch {
+        skipJob?.cancel()
+        skipJob = scope.launch {
             delay(2_500)
             if (_lastError.value == message && player.hasNextMediaItem()) {
                 player.seekToNextMediaItem()
@@ -426,16 +456,19 @@ class PlaybackService : MediaLibraryService() {
     private fun prefetchUpcoming() {
         val graph = applicationContext.graph
         precacheJob?.cancel()
+        prefetchWaiting = false
         if (!graph.settings.current.prefetchNext || player.mediaItemCount == 0) return
+        prefetchWaiting = true
         precacheJob = scope.launch {
             while (!hasLead()) delay(1_000)
+            prefetchWaiting = false
             val index = player.currentTimeline.takeIf { !it.isEmpty }?.getNextWindowIndex(player.currentMediaItemIndex, Player.REPEAT_MODE_OFF, player.shuffleModeEnabled) ?: C.INDEX_UNSET
             if (index == C.INDEX_UNSET) return@launch
             val next = player.getMediaItemAt(index)
             val kind = MediaItems.kind(next)
-            if (kind == "hls") return@launch
+            if (kind == MediaItems.KIND_HLS) return@launch
             // Auto plays the HLS ladder: warm the manifest it will ask for, so Next starts at once.
-            if (kind == "abr") {
+            if (kind == MediaItems.KIND_ABR) {
                 withContext(Dispatchers.IO) { runCatching { graph.yt.adaptiveManifest(next.mediaId) } }
                 return@launch
             }
@@ -464,12 +497,16 @@ class PlaybackService : MediaLibraryService() {
         _sleepAt.value = at
         sleepJob = scope.launch {
             delay(minutes * 60_000L)
-            repeat(20) { step ->
-                player.volume = (1f - (step + 1) / 20f).coerceAtLeast(0f)
-                delay(100)
+            // Cancelled mid-fade (the timer reset or turned off), the sound comes back at full volume.
+            try {
+                repeat(20) { step ->
+                    player.volume = (1f - (step + 1) / 20f).coerceAtLeast(0f)
+                    delay(100)
+                }
+                player.pause()
+            } finally {
+                player.volume = 1f
             }
-            player.pause()
-            player.volume = 1f
             _sleepAt.value = null
         }
     }
@@ -482,6 +519,7 @@ class PlaybackService : MediaLibraryService() {
 
     fun cancelSleepTimer() {
         sleepJob?.cancel()
+        player.volume = 1f
         _sleepAt.value = null
         _sleepAtEnd.value = false
     }
@@ -507,9 +545,13 @@ class PlaybackService : MediaLibraryService() {
 
     private val callback = object : MediaLibrarySession.Callback {
         override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
-            val base = if (controller.isTrusted) MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
-            else MediaSession.ConnectionResult.DEFAULT_UNTRUSTED_SESSION_AND_LIBRARY_COMMANDS
-            val commands = base.buildUpon().add(SessionCommand(ACTION_LIKE, Bundle.EMPTY)).build()
+            // Browsing lists the user's history and likes, so only the system's own surfaces get it.
+            // Any other app may still control playback, but can't read the library or like for them.
+            val commands = if (canBrowse(session, controller)) {
+                MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS.buildUpon().add(SessionCommand(ACTION_LIKE, Bundle.EMPTY)).build()
+            } else {
+                MediaSession.ConnectionResult.DEFAULT_UNTRUSTED_SESSION_COMMANDS
+            }
             return MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller).setAvailableSessionCommands(commands).build()
         }
 
@@ -531,7 +573,8 @@ class PlaybackService : MediaLibraryService() {
 
         // Android Auto and other media browsers: liked videos and history, as sound.
         override fun onGetLibraryRoot(session: MediaLibrarySession, browser: MediaSession.ControllerInfo, params: LibraryParams?): ListenableFuture<LibraryResult<MediaItem>> =
-            Futures.immediateFuture(LibraryResult.ofItem(folder(ROOT, "Oriel"), params))
+            if (!canBrowse(session, browser)) Futures.immediateFuture(LibraryResult.ofError(SessionError.ERROR_PERMISSION_DENIED))
+            else Futures.immediateFuture(LibraryResult.ofItem(folder(ROOT, "Oriel"), params))
 
         override fun onGetChildren(
             session: MediaLibrarySession,
@@ -541,6 +584,7 @@ class PlaybackService : MediaLibraryService() {
             pageSize: Int,
             params: LibraryParams?,
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> {
+            if (!canBrowse(session, browser)) return Futures.immediateFuture(LibraryResult.ofError(SessionError.ERROR_PERMISSION_DENIED))
             val graph = applicationContext.graph
             val items: List<MediaItem> = when (parentId) {
                 ROOT -> listOf(folder(LIKED, "Liked videos"), folder(HISTORY, "History"))
@@ -554,6 +598,11 @@ class PlaybackService : MediaLibraryService() {
             return Futures.immediateFuture(LibraryResult.ofItemList(ImmutableList.copyOf(items.subList(from, to)), params))
         }
     }
+
+    /** Oriel itself and system controllers, the media notification, Android Auto, and a car's own system. */
+    private fun canBrowse(session: MediaSession, controller: MediaSession.ControllerInfo): Boolean =
+        controller.isTrusted || session.isMediaNotificationController(controller) ||
+            session.isAutoCompanionController(controller) || session.isAutomotiveController(controller)
 
     private fun folder(id: String, title: String) = MediaItem.Builder()
         .setMediaId(id)
@@ -569,7 +618,7 @@ class PlaybackService : MediaLibraryService() {
         /** The running service, for in-process callers (the UI) that need more than a MediaController offers. */
         val instance = MutableStateFlow<PlaybackService?>(null)
 
-        /** IO errors no retry fixes: a missing file, no permission, a cleartext URL, a range past the end, a refusal. */
+        /** A decoder that couldn't start, failed mid-stream, or was handed more than it can take. */
         private val DECODER_ERRORS = setOf(
             PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
             PlaybackException.ERROR_CODE_DECODING_FAILED,
@@ -577,6 +626,10 @@ class PlaybackService : MediaLibraryService() {
         )
         private const val PREFETCH_LEAD_MS = 30_000L
 
+        /** googlevideo refusing a URL: expired, minted by a client it no longer trusts, or gone. */
+        private val REFUSED_HTTP = setOf(401, 403, 404, 410)
+
+        /** IO errors no retry fixes: a missing file, no permission, a cleartext URL, a range past the end, a refusal. */
         private val UNRECOVERABLE_IO = setOf(
             PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
             PlaybackException.ERROR_CODE_IO_NO_PERMISSION,

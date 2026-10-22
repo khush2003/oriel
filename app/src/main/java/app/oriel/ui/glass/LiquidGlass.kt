@@ -26,6 +26,7 @@ import app.oriel.ui.glass.backdrop.effects.colorControls
 import app.oriel.ui.glass.backdrop.effects.lens
 import app.oriel.ui.glass.backdrop.highlight.Highlight
 import app.oriel.ui.glass.backdrop.shadow.Shadow
+import app.oriel.ui.theme.LocalIsDark
 import app.oriel.ui.theme.LocalLiquidGlassEnabled
 import app.oriel.ui.theme.LocalReduceBlur
 
@@ -44,14 +45,14 @@ private const val GLASS_RESOLUTION_SCALE = 0.33f
 
 /** The hairline along every floating surface, and what stands in for the rim where glass isn't drawn. */
 val GLASS_EDGE_WIDTH = 0.5.dp
-val GLASS_EDGE_COLOR = Color.White.copy(alpha = 0.10f)
+
+/** The edge's colour: white on dark, and black on light, where a white hairline vanishes against the page. */
+@Composable
+fun glassEdgeColor(): Color = if (LocalIsDark.current) Color.White.copy(alpha = 0.10f) else Color.Black.copy(alpha = 0.08f)
 
 /** Black or white off the theme's luminance: the only tint that holds against arbitrary content behind glass. */
 @Composable
 fun glassContentColor(): Color = if (MaterialTheme.colorScheme.surface.luminance() > 0.5f) Color.Black else Color.White
-
-@Composable
-fun glassIndicatorColor(): Color = if (MaterialTheme.colorScheme.surface.luminance() > 0.5f) Color.White else Color.Black
 
 /** What a glass surface falls back to: the theme surface, nearly opaque, plus the edge. */
 @Composable
@@ -82,7 +83,7 @@ fun backdropWanted(): Boolean = LocalLiquidGlassEnabled.current || (!LocalReduce
 fun Modifier.glassSurface(shape: CornerBasedShape): Modifier {
     val backdrop = LocalAppBackdrop.current
     if (backdrop == null || (!LocalLiquidGlassEnabled.current && LocalReduceBlur.current)) {
-        return clip(shape).background(glassFallbackColor(), shape).border(GLASS_EDGE_WIDTH, GLASS_EDGE_COLOR, shape)
+        return clip(shape).background(glassFallbackColor(), shape).border(GLASS_EDGE_WIDTH, glassEdgeColor(), shape)
     }
     if (!LocalLiquidGlassEnabled.current) return frostedSurface(backdrop, shape)
     val density = LocalDensity.current
@@ -101,7 +102,7 @@ fun Modifier.glassSurface(shape: CornerBasedShape): Modifier {
         shadow = { Shadow.Default },
         onDrawSurface = { drawRect(color = tint.copy(alpha = SURFACE_OPACITY), size = size) },
         backdropScale = GLASS_RESOLUTION_SCALE,
-    ).border(GLASS_EDGE_WIDTH, GLASS_EDGE_COLOR, shape)
+    ).border(GLASS_EDGE_WIDTH, glassEdgeColor(), shape)
 }
 
 @Composable
@@ -117,7 +118,7 @@ private fun Modifier.frostedSurface(backdrop: Backdrop, shape: CornerBasedShape)
         shadow = null,
         onDrawSurface = { drawRect(color = tint, size = size) },
         backdropScale = GLASS_RESOLUTION_SCALE,
-    ).border(GLASS_EDGE_WIDTH, GLASS_EDGE_COLOR, shape)
+    ).border(GLASS_EDGE_WIDTH, glassEdgeColor(), shape)
 }
 
 /**

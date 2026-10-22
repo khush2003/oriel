@@ -1,0 +1,18 @@
+{
+  "videoWifi": "P1080",
+  "videoCellular": "P480",
+  "audioQuality": "LOW",
+  "dataSaver": true,
+  "transport": "SABR",
+  "autoplay": false,
+  "defaultSpeed": 1.25,
+  "captions": true,
+  "captionLanguage": "de",
+  "doubleTapSeekSec": 5,
+  "sponsorCategories": ["sponsor", "intro"],
+  "returnDislike": false,
+  "theme": "DARK",
+  "country": "DE",
+  "language": "de",
+  "telemetry": false
+}

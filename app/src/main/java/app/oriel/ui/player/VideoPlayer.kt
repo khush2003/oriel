@@ -19,7 +19,17 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.role
+import app.oriel.ui.theme.LocalReduceAnimation
+import app.oriel.ui.theme.motion
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -228,6 +238,8 @@ fun VideoControls(
     var seekAmount by remember { mutableIntStateOf(0) }
     var seekJob by remember { mutableStateOf<Job?>(null) }
     val seekPulse = remember { Animatable(0f) }
+    // Read when a gesture runs, which outlives the composition that set it up.
+    val reduceMotion by rememberUpdatedState(LocalReduceAnimation.current)
     var seekAt by remember { mutableStateOf(Offset.Zero) }
 
     // Press and hold plays at 2x until the finger lifts, as YouTube's player does.
@@ -239,7 +251,14 @@ fun VideoControls(
         modifier
             .fillMaxSize()
             // Not keyed on anything that changes mid-video: a restart would cancel a hold at 2x.
-            .semantics { onClick(label = "Show controls") { visible = true; scheduleHide(); true } }
+            .semantics {
+                onClick(label = "Show controls") { visible = true; scheduleHide(); true }
+                // The double-tap seeks, for TalkBack, where a double tap is the activation.
+                if (!isLive) customActions = listOf(
+                    CustomAccessibilityAction("Back $step seconds") { connection.seekBy(-step * 1000L); true },
+                    CustomAccessibilityAction("Forward $step seconds") { connection.seekBy(step * 1000L); true },
+                )
+            }
             .pointerInput(step) {
                 fun seek(side: Int, at: Offset) {
                     haptics.play(Haptic.Tick)
@@ -251,7 +270,8 @@ fun VideoControls(
                     seekJob?.cancel()
                     seekJob = scope.launch {
                         seekPulse.snapTo(0f)
-                        seekPulse.animateTo(1f, tween(650, easing = EaseOutCubic))
+                        if (reduceMotion) { delay(650); seekPulse.snapTo(1f) }
+                        else seekPulse.animateTo(1f, tween(650, easing = EaseOutCubic))
                         delay(250)
                         seekSide = 0
                         seekAmount = 0
@@ -324,14 +344,14 @@ fun VideoControls(
         if (seekSide != 0) lastSide = seekSide
         AnimatedVisibility(
             seekSide != 0,
-            enter = fadeIn(tween(120)),
-            exit = fadeOut(tween(220)),
+            enter = enterMotion(fadeIn(tween(120))),
+            exit = exitMotion(fadeOut(tween(220))),
             modifier = Modifier.align(if (lastSide < 0) Alignment.CenterStart else Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(0.38f),
         ) {
             SeekIndicator(lastSide, seekAmount, { seekPulse.value }, { seekAt }, Modifier.fillMaxSize())
         }
 
-        AnimatedVisibility(visible || error != null || ended, enter = fadeIn(spring(stiffness = 700f)), exit = fadeOut(spring(stiffness = 500f)), modifier = Modifier.fillMaxSize()) {
+        AnimatedVisibility(visible || error != null || ended, enter = enterMotion(fadeIn(spring(stiffness = 700f))), exit = exitMotion(fadeOut(spring(stiffness = 500f))), modifier = Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.32f))) {
                 val insets = if (mode == ControlsMode.Fullscreen) Modifier.windowInsetsPadding(WindowInsets.safeDrawing) else Modifier
                 Box(Modifier.fillMaxSize().then(insets)) {
@@ -356,7 +376,7 @@ fun VideoControls(
                     // Centre transport, out of the way of the preview while scrubbing. Its fade is read in
                     // the layer, not here, so it doesn't recompose the overlay each frame; only whether
                     // it's there to touch is composition's. Gone under an error, which takes the centre.
-                    val transport = animateFloatAsState(if (scrubbing) 0f else 1f, spring(stiffness = 600f), label = "transport")
+                    val transport = animateFloatAsState(if (scrubbing) 0f else 1f, motion(spring(stiffness = 600f)), label = "transport")
                     val transportShown by remember { derivedStateOf { transport.value > 0.01f } }
                     val canGoBack by remember { derivedStateOf { position.longValue > 4000 } }
                     if (error == null) Row(
@@ -373,10 +393,12 @@ fun VideoControls(
                         })
                         // Spinner, play, pause and replay cross-scale into each other rather than swapping.
                         val centre = when { buffering && error == null -> 0; ended -> 3; playing -> 2; else -> 1 }
+                        val reduce = LocalReduceAnimation.current
                         AnimatedContent(
                             centre,
                             transitionSpec = {
-                                (fadeIn(tween(140)) + scaleIn(spring(dampingRatio = 0.7f, stiffness = 700f), initialScale = 0.6f))
+                                if (reduce) EnterTransition.None togetherWith ExitTransition.None
+                                else (fadeIn(tween(140)) + scaleIn(spring(dampingRatio = 0.7f, stiffness = 700f), initialScale = 0.6f))
                                     .togetherWith(fadeOut(tween(100)) + scaleOut(tween(120), targetScale = 0.6f))
                                     .using(SizeTransform(clip = false))
                             },
@@ -384,7 +406,18 @@ fun VideoControls(
                             label = "centre",
                         ) { c ->
                             Box(Modifier.size(64.dp), contentAlignment = Alignment.Center) {
-                                if (c == 0) ActivityIndicator(size = 40.dp, color = Color.White)
+                                // Loading still answers a tap: it pauses (or plays) as the button it covers would.
+                                if (c == 0) Box(
+                                    Modifier
+                                        .size(64.dp)
+                                        .clearAndSetSemantics {
+                                            contentDescription = if (playing) "Loading. Pause" else "Loading. Play"
+                                            role = Role.Button
+                                            onClick { connection.togglePlay(); scheduleHide(); true }
+                                        }
+                                        .pressClickable(haptic = if (playing) Haptic.Pause else Haptic.Resume) { connection.togglePlay(); scheduleHide() },
+                                    contentAlignment = Alignment.Center,
+                                ) { ActivityIndicator(size = 40.dp, color = Color.White) }
                                 else OverlayButton(
                                     when (c) { 3 -> OrielIcons.Replay; 2 -> OrielIcons.Pause; else -> OrielIcons.Play },
                                     if (c == 2) "Pause" else "Play", size = 64.dp, iconSize = 40.dp,
@@ -461,7 +494,7 @@ fun VideoControls(
             }
         }
 
-        AnimatedVisibility(boosting, enter = fadeIn(tween(120)) + scaleIn(initialScale = 0.9f), exit = fadeOut(tween(160)), modifier = Modifier.align(Alignment.TopCenter).padding(top = if (mode == ControlsMode.Fullscreen) 24.dp else 14.dp)) {
+        AnimatedVisibility(boosting, enter = enterMotion(fadeIn(tween(120)) + scaleIn(initialScale = 0.9f)), exit = exitMotion(fadeOut(tween(160))), modifier = Modifier.align(Alignment.TopCenter).padding(top = if (mode == ControlsMode.Fullscreen) 24.dp else 14.dp)) {
             Row(Modifier.videoGlass(RoundedCornerShape(50), 0.6f).padding(horizontal = 14.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("2×", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.W700), color = Color.White)
                 Spacer(Modifier.width(6.dp))
@@ -470,7 +503,7 @@ fun VideoControls(
         }
 
         // "Skipped sponsor · Undo", over everything, as SponsorBlock's own extension shows it.
-        AnimatedVisibility(skipped != null, enter = fadeIn() + scaleIn(initialScale = 0.9f), exit = fadeOut() + scaleOut(targetScale = 0.9f), modifier = Modifier.align(Alignment.BottomStart).padding(start = 12.dp, bottom = if (visible) 57.dp else 9.dp)) {
+        AnimatedVisibility(skipped != null, enter = enterMotion(fadeIn() + scaleIn(initialScale = 0.9f)), exit = exitMotion(fadeOut() + scaleOut(targetScale = 0.9f)), modifier = Modifier.align(Alignment.BottomStart).padding(start = 12.dp, bottom = if (visible) 57.dp else 9.dp)) {
             skipped?.let { s ->
                 // A 44dp-tall target around the chip; the press shows on the chip itself.
                 val interaction = remember { MutableInteractionSource() }
@@ -538,10 +571,11 @@ private fun Scrubber(
 ) {
     val haptics = rememberHaptics()
     val starts = remember(chapters) { chapters.map { it.startMs } }
-    val fraction = if (duration > 0) position.longValue.toFloat() / duration else 0f
+    // Only whether it's loading is composition's; the position itself is read as the bar draws.
+    val loading by remember(buffering) { derivedStateOf { buffering && position.longValue == 0L } }
     var lastChapter by remember { mutableIntStateOf(-1) }
     ThinSlider(
-        value = value() ?: fraction,
+        value = { value() ?: if (duration > 0) position.longValue.toFloat() / duration else 0f },
         onValueChange = { v ->
             if (duration > 0 && starts.size > 1) {
                 val ms = (v * duration).toLong()
@@ -553,8 +587,8 @@ private fun Scrubber(
         },
         onDragStateChange = { dragging -> if (!dragging) lastChapter = -1; onDragStateChange(dragging) },
         onValueChangeFinished = onValueChangeFinished,
-        buffered = if (duration > 0) connection.bufferedPosition().toFloat() / duration else 0f,
-        loading = buffering && position.longValue == 0L,
+        buffered = { if (duration > 0) connection.bufferedPosition().toFloat() / duration else 0f },
+        loading = loading,
         durationMs = duration.coerceAtLeast(0),
         chapterStartsMs = starts,
         segments = segments,
@@ -567,7 +601,8 @@ private fun chapterAt(chapters: List<app.oriel.core.model.Chapter>, positionMs: 
 
 @Composable
 private fun LiveBadge(onClick: () -> Unit) {
-    Row(Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onClick).padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+    // A 44dp-tall target around the badge, which goes to the live edge.
+    Row(Modifier.heightIn(min = 44.dp).pressClickable(onClickLabel = "Go to the live edge", onClick = onClick).padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(8.dp).clip(CircleShape).background(LiveRed))
         Spacer(Modifier.width(6.dp))
         Text("LIVE", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W700), color = Color.White)

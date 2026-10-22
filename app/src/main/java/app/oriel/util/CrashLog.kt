@@ -81,8 +81,6 @@ object CrashLog {
     fun trail(context: Context): List<String> =
         File(dir(context), "events.txt").takeIf { it.isFile }?.readLines()?.filter { it.isNotBlank() }.orEmpty()
 
-    fun hasAny(context: Context): Boolean = crashFiles(context).isNotEmpty() || trail(context).isNotEmpty()
-
     fun clear(context: Context) {
         dir(context).listFiles()?.forEach { it.delete() }
     }

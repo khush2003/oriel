@@ -11,8 +11,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Library mutations. Each lands in [LibraryStore] at once, so the UI is
@@ -32,10 +38,40 @@ class LibraryActions(private val graph: AppGraph) {
         _notices.tryEmit(text)
     }
 
-    private fun mirror(what: String, block: suspend () -> Unit) {
+    /** A notice that waits until something shows notices, for ones raised before the UI is up. */
+    suspend fun noticeWhenShown(text: String) {
+        _notices.subscriptionCount.first { it > 0 }
+        _notices.emit(text)
+    }
+
+    /** One queue per thing mirrored ("rate:<id>"), and how many calls are waiting in it. */
+    private class Lane {
+        val mutex = Mutex()
+        val waiting = AtomicInteger()
+    }
+
+    private val lanes = ConcurrentHashMap<String, Lane>()
+
+    /**
+     * Mirrors to the account, one call at a time per [key]. [block] sends the local state as it
+     * is when its turn comes, and a call with a newer one queued behind it is skipped, so a quick
+     * like then unlike ends unliked on YouTube too, whatever order the requests would have raced in.
+     */
+    private fun mirror(what: String, key: String, block: suspend () -> Unit) {
         if (!yt.isSignedIn) return
+        val lane = lanes.getOrPut(key) { Lane() }
+        lane.waiting.incrementAndGet()
         graph.scope.launch(Dispatchers.IO) {
-            runCatching { block() }.onFailure { _notices.tryEmit("Couldn't $what on your YouTube account") }
+            lane.mutex.withLock {
+                if (lane.waiting.decrementAndGet() > 0) return@withLock
+                try {
+                    block()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    _notices.tryEmit("Couldn't $what on your YouTube account")
+                }
+            }
         }
     }
 
@@ -56,7 +92,7 @@ class LibraryActions(private val graph: AppGraph) {
                 library.setDisliked(video, false)
             }
         }
-        mirror("save this rating") { yt.rate(video.id, status) }
+        mirror("save this rating", "rate:${video.id}") { yt.rate(video.id, rating(video.id)) }
     }
 
     /** Like ⇄ no rating; returns whether it's liked now. */
@@ -78,8 +114,8 @@ class LibraryActions(private val graph: AppGraph) {
         val add = !library.isInWatchLater(video.id)
         library.setWatchLater(video, add)
         notice(if (add) "Saved to Watch later" else "Removed from Watch later")
-        mirror("update Watch later") {
-            if (add) yt.addToPlaylist(YouTube.WATCH_LATER, video.id) else yt.removeFromPlaylist(YouTube.WATCH_LATER, video.id)
+        mirror("update Watch later", "wl:${video.id}") {
+            if (library.isInWatchLater(video.id)) yt.addToPlaylist(YouTube.WATCH_LATER, video.id) else yt.removeFromPlaylist(YouTube.WATCH_LATER, video.id)
         }
         return add
     }
@@ -90,7 +126,7 @@ class LibraryActions(private val graph: AppGraph) {
 
     fun setSubscribed(channel: Channel, subscribed: Boolean) {
         library.setSubscribed(channel, subscribed)
-        mirror(if (subscribed) "subscribe" else "unsubscribe") { yt.subscribe(channel.id, subscribed) }
+        mirror(if (subscribed) "subscribe" else "unsubscribe", "sub:${channel.id}") { yt.subscribe(channel.id, library.isSubscribed(channel.id)) }
     }
 
     fun toggleSubscribed(channel: Channel): Boolean {
@@ -112,7 +148,7 @@ class LibraryActions(private val graph: AppGraph) {
         val saved = !isSaved(playlist)
         library.setPlaylistSaved(playlist, saved)
         notice(if (saved) "Saved to library" else "Removed from library")
-        if (!playlist.isMix) mirror("save this playlist") { yt.savePlaylist(playlist.id, saved) }
+        if (!playlist.isMix) mirror("save this playlist", "pl:${playlist.id}") { yt.savePlaylist(playlist.id, library.state.value.savedPlaylists.any { it.id == playlist.id }) }
         return saved
     }
 

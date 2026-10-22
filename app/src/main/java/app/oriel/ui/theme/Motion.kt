@@ -5,6 +5,7 @@ package app.oriel.ui.theme
 
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
@@ -36,6 +37,11 @@ val EaseOutCubic = CubicBezierEasing(0.215f, 0.61f, 0.355f, 1f)
 @ReadOnlyComposable
 fun <T> motion(spec: AnimationSpec<T>): AnimationSpec<T> = if (LocalReduceAnimation.current) snap() else spec
 
+/** The same for a finite spec, as enter and exit transitions and content-size animations take. */
 @Composable
 @ReadOnlyComposable
-fun <T> fade(ms: Int = 220): AnimationSpec<T> = if (LocalReduceAnimation.current) snap() else tween(ms)
+fun <T> motion(spec: FiniteAnimationSpec<T>): FiniteAnimationSpec<T> = if (LocalReduceAnimation.current) snap() else spec
+
+@Composable
+@ReadOnlyComposable
+fun <T> fade(ms: Int = 220): FiniteAnimationSpec<T> = if (LocalReduceAnimation.current) snap() else tween(ms)

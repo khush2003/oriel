@@ -146,9 +146,23 @@ class FeedModelTest {
         settle { m.state.value.moreFailed }
         assertEquals("the token is kept", "more", m.state.value.feed?.continuation)
         failMore = false
+        // The list's near-end ticks don't retry on their own: that would ask forever while offline.
         m.loadMore()
+        settle { true }
+        assertTrue("still waiting for Try again", m.state.value.moreFailed)
+        m.retryMore()
         settle { !m.state.value.loadingMore && m.state.value.feed?.items?.size == 2 }
         assertFalse(m.state.value.moreFailed)
+    }
+
+    /** A chip whose page fails shows the full-page error, not the last page under the new chip. */
+    @Test fun aChipThatFailsLeavesNoFeedUnderIt() {
+        val m = model()
+        settle { m.state.value.feed != null }
+        m.reload(false, replace = { throw java.io.IOException("dropped") }, key = "Music")
+        settle { m.state.value.error != null }
+        assertNull(m.state.value.feed)
+        assertFalse(m.state.value.loading)
     }
 
     private companion object {

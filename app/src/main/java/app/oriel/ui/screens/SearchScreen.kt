@@ -1,6 +1,6 @@
 package app.oriel.ui.screens
 
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -56,7 +57,9 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import app.oriel.AppGraph
@@ -71,6 +74,7 @@ import app.oriel.ui.components.LocalSheetClose
 import app.oriel.ui.components.OrielSheet
 import app.oriel.ui.components.RowDivider
 import app.oriel.ui.components.SettingsGroup
+import app.oriel.ui.components.SheetAction
 import app.oriel.ui.components.SheetTitle
 import app.oriel.ui.components.LoadingRow
 import app.oriel.ui.components.OrielIcons
@@ -112,13 +116,29 @@ data class SearchState(
     val allFilters: List<SearchFilter> = emptyList(),
 )
 
-class SearchModel(private val graph: AppGraph, initial: String?) : ViewModel() {
+class SearchModel(private val graph: AppGraph, initial: String?, private val saved: SavedStateHandle) : ViewModel() {
     private val _state = MutableStateFlow(SearchState(query = initial.orEmpty()))
     val state: StateFlow<SearchState> = _state.asStateFlow()
     private var job: Job? = null
     private var suggestJob: Job? = null
+    /** The chip picked before the process was let go, picked again once the results bring the chips back. */
+    private var pendingChip: String? = null
 
-    init { initial?.takeIf { it.isNotBlank() }?.let { submit(it) } }
+    init {
+        val submitted = saved.get<String>(KEY_SUBMITTED)
+        if (submitted != null) {
+            // Back after Android let the process go: the same search, filters and chip, not an empty page.
+            pendingChip = saved.get<String>(KEY_CHIP)
+            load(submitted, saved.get<String>(KEY_PARAMS), emptyList(), chip = null, record = false)
+        } else initial?.takeIf { it.isNotBlank() }?.let { submit(it) }
+        viewModelScope.launch {
+            _state.collect {
+                saved[KEY_SUBMITTED] = it.submitted
+                saved[KEY_PARAMS] = it.params
+                saved[KEY_CHIP] = it.selectedChip
+            }
+        }
+    }
 
     fun type(text: String) {
         _state.update { it.copy(query = text) }
@@ -131,32 +151,68 @@ class SearchModel(private val graph: AppGraph, initial: String?) : ViewModel() {
         }
     }
 
-    fun submit(query: String, params: String? = null, picked: List<SearchFilter> = emptyList(), voice: Boolean = false) {
+    fun submit(query: String, params: String? = null, picked: List<SearchFilter> = emptyList(), voice: Boolean = false) =
+        load(query, params, picked, chip = null, voice = voice)
+
+    /**
+     * Searches [query] with [params], showing [chip] as the picked chip. [onFail] puts back what
+     * a failed chip changed, so the chips match the results still shown.
+     */
+    private fun load(
+        query: String, params: String?, picked: List<SearchFilter>, chip: String?,
+        voice: Boolean = false, record: Boolean = true, onFail: (SearchState) -> SearchState = { it },
+    ) {
         val q = query.trim().ifEmpty { return }
-        if (!graph.settings.current.pauseSearchHistory) graph.library.addSearch(q)
+        if (record && !graph.settings.current.pauseSearchHistory) graph.library.addSearch(q)
         // Counts only: never the query.
-        if (_state.value.submitted != q) graph.telemetry.track("search", mapOf("voice" to voice))
+        if (record && _state.value.submitted != q) graph.telemetry.track("search", mapOf("voice" to voice))
         suggestJob?.cancel()
         job?.cancel()
         moreJob?.cancel()
-        _state.update { it.copy(query = q, submitted = q, params = params, picked = picked, allFilters = if (it.submitted == q) it.allFilters else emptyList(), loading = true, error = null, moreFailed = false, loadingMore = false, suggestions = emptyList(), page = if (it.submitted == q) it.page else null) }
+        _state.update { it.copy(query = q, submitted = q, params = params, picked = picked, selectedChip = chip, chips = if (it.submitted == q) it.chips else emptyList(), allFilters = if (it.submitted == q) it.allFilters else emptyList(), loading = true, error = null, moreFailed = false, loadingMore = false, suggestions = emptyList(), page = if (it.submitted == q) it.page else null) }
         job = viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { graph.yt.search(q, params) } }
-            result.onSuccess { page -> _state.update { it.copy(page = page, allFilters = if (params == null && page.filters.isNotEmpty()) page.filters else it.allFilters, loading = false, chips = if (params == null) page.feed.chips else it.chips, selectedChip = if (params == null) null else it.selectedChip) } }
+            result.onSuccess { page ->
+                _state.update {
+                    it.copy(
+                        page = page, loading = false,
+                        allFilters = if (params == null && page.filters.isNotEmpty()) page.filters else it.allFilters,
+                        // The chips come from the unfiltered page (a restored search may only have a filtered one).
+                        chips = if (params == null || it.chips.isEmpty()) page.feed.chips else it.chips,
+                    )
+                }
+                pendingChip?.let { title ->
+                    pendingChip = null
+                    val c = _state.value.chips.firstOrNull { it.title == title } ?: return@let
+                    if (c.params == null) chip(c) else _state.update { it.copy(selectedChip = c.title) }
+                }
+            }
                 // Never the query itself: a report may be posted publicly.
-                .onFailure { e -> graph.notePageFailure("Searching", e); if (e !is kotlinx.coroutines.CancellationException) _state.update { it.copy(loading = false, error = friendlyError(e)) } }
+                .onFailure { e -> graph.notePageFailure("Searching", e); if (e !is kotlinx.coroutines.CancellationException) _state.update { onFail(it).copy(loading = false, error = friendlyError(e)) } }
         }
     }
+
+    /** Try again: the search as it stands, filters and chip included. */
+    fun retry() {
+        val s = _state.value
+        // A chip with a page of its own can't be asked for again from here: the search itself is.
+        load(s.submitted ?: return, s.params, s.picked, s.selectedChip.takeIf { chipParams(s) != null }, record = false)
+    }
+
+    /** The params of the picked chip, when it's one that filters (Videos, Shorts) rather than a page of its own. */
+    private fun chipParams(s: SearchState): String? = s.chips.firstOrNull { it.title == s.selectedChip }?.params
 
     /**
      * Turns [f] on or off. A filter replaces any other in its slot (one upload date, one type,
      * one duration, one sort), features stack, and the set is combined into one params string.
-     * Null clears them all.
+     * Null clears them all. A chip that filters stays on with them.
      */
     fun filter(f: SearchFilter?) {
         val s = _state.value
         val q = s.submitted ?: return
-        if (f == null) return submit(q)
+        val chipParams = chipParams(s)
+        val chip = s.selectedChip.takeIf { chipParams != null }
+        if (f == null) return load(q, chipParams, emptyList(), chip)
         val single = s.allFilters.firstOrNull { it.label == f.label && it.group == f.group } ?: f
         val params = single.params
         val on = s.picked.any { it.label == single.label }
@@ -169,22 +225,35 @@ class SearchModel(private val graph: AppGraph, initial: String?) : ViewModel() {
                 s.picked.filterNot { p -> p.params?.let(app.oriel.core.SearchParams::slot) == slot } + single
             }
         }
-        submit(q, app.oriel.core.SearchParams.combine(picked.mapNotNull { it.params }), picked)
+        load(q, app.oriel.core.SearchParams.combine(listOfNotNull(chipParams) + picked.mapNotNull { it.params }), picked, chip)
     }
 
-    /** A result chip: params re-run the search, a token swaps in the chip's own results. */
+    /**
+     * A result chip: params re-run the search with the filters that are on, a token swaps in
+     * the chip's own results. One that fails puts the last chip back and says so.
+     */
     fun chip(c: Chip) {
         val s = _state.value
         val q = s.submitted ?: return
-        if (c.title == s.selectedChip || c.title == s.chips.firstOrNull()?.title) return submit(q)
-        c.params?.let { params -> submit(q, params); _state.update { it.copy(selectedChip = c.title) }; return }
+        val filters = s.picked.mapNotNull { it.params }
+        val restore: (SearchState) -> SearchState = { it.copy(selectedChip = s.selectedChip, params = s.params) }
+        // The first chip ("All"), or the picked one again: the search itself, filters kept.
+        if (c.title == s.selectedChip || c.title == s.chips.firstOrNull()?.title) {
+            return load(q, app.oriel.core.SearchParams.combine(filters), s.picked, chip = null, record = false, onFail = restore)
+        }
+        c.params?.let { params ->
+            return load(q, app.oriel.core.SearchParams.combine(listOf(params) + filters), s.picked, chip = c.title, record = false, onFail = restore)
+        }
         val token = c.token ?: return
         job?.cancel()
         moreJob?.cancel()
-        _state.update { it.copy(loading = true, selectedChip = c.title, loadingMore = false, moreFailed = false) }
+        _state.update { it.copy(loading = true, selectedChip = c.title, loadingMore = false, moreFailed = false, error = null) }
         job = viewModelScope.launch {
             val feed = withContext(Dispatchers.IO) { runCatching { graph.yt.searchMore(token) }.getOrNull() }
-            _state.update { st -> if (feed == null) st.copy(loading = false, error = "Couldn't load these results.") else st.copy(loading = false, page = (st.page ?: SearchPage(feed)).copy(feed = feed)) }
+            _state.update { st ->
+                if (feed == null) st.copy(loading = false, selectedChip = s.selectedChip, error = "Couldn't load these results.")
+                else st.copy(loading = false, page = (st.page ?: SearchPage(feed)).copy(feed = feed))
+            }
         }
     }
 
@@ -218,6 +287,12 @@ class SearchModel(private val graph: AppGraph, initial: String?) : ViewModel() {
         _state.update { it.copy(moreFailed = false) }
         loadMore()
     }
+
+    private companion object {
+        const val KEY_SUBMITTED = "submitted"
+        const val KEY_PARAMS = "params"
+        const val KEY_CHIP = "chip"
+    }
 }
 
 /**
@@ -230,7 +305,7 @@ class SearchModel(private val graph: AppGraph, initial: String?) : ViewModel() {
 fun SearchScreen(initial: String?) {
     val app = LocalAppState.current
     val graph = app.graph
-    val model: SearchModel = viewModel(key = "search:${initial.orEmpty()}") { SearchModel(graph, initial) }
+    val model: SearchModel = viewModel(key = "search:${initial.orEmpty()}") { SearchModel(graph, initial, createSavedStateHandle()) }
     val state by model.state.collectAsState()
     val library by graph.library.state.collectAsState()
     var focused by remember { mutableStateOf(false) }
@@ -291,7 +366,7 @@ fun SearchScreen(initial: String?) {
                 idleTrailing = if (!canListen) null else {
                     {
                         Box(
-                            Modifier.size(40.dp).clip(CircleShape).clickable(onClickLabel = "Search by voice") {
+                            Modifier.size(44.dp).clip(CircleShape).clickable(onClickLabel = "Search by voice") {
                                 haptics.play(Haptic.Tap)
                                 focusManager.clearFocus(); keyboard?.hide()
                                 runCatching { listen.launch(voiceIntent) }
@@ -332,11 +407,11 @@ fun SearchScreen(initial: String?) {
                         // YouTube's full filters (upload date, type, duration, features, sort) sit behind a
                         // leading button, as its own app has them, so they're there even when chips are.
                         ChipsRow(chips, onSelect = model::chip, leading = if (filters.isNotEmpty()) ({
-                            FilterChip(if (state.picked.isEmpty()) "Filters" else "Filters · ${state.picked.size}", state.picked.isNotEmpty(), leading = OrielIcons.Filter) { filtersOpen = true }
+                            FilterChip(if (state.picked.isEmpty()) "Filters" else "Filters · ${state.picked.size}", state.picked.isNotEmpty(), leading = OrielIcons.Tune) { filtersOpen = true }
                         }) else null)
                     } else if (filters.isNotEmpty()) item(key = "filters") {
                         ChipsRow(emptyList(), onSelect = {}, leading = {
-                            FilterChip(if (state.picked.isEmpty()) "Filters" else "Filters · ${state.picked.size}", state.picked.isNotEmpty(), leading = OrielIcons.Filter) { filtersOpen = true }
+                            FilterChip(if (state.picked.isEmpty()) "Filters" else "Filters · ${state.picked.size}", state.picked.isNotEmpty(), leading = OrielIcons.Tune) { filtersOpen = true }
                         })
                     }
                     // What's on, each with its own ✕, as YouTube lists applied filters under the bar.
@@ -345,17 +420,17 @@ fun SearchScreen(initial: String?) {
                             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = PAGE_GUTTER, vertical = 2.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            state.picked.forEach { f -> FilterChip(f.label, false, leading = OrielIcons.Close) { model.filter(f) } }
-                            if (state.picked.size > 1) FilterChip("Clear all", false) { model.filter(null) }
+                            state.picked.forEach { f -> FilterChip(f.label, false, leading = OrielIcons.Close, role = Role.Button) { model.filter(f) } }
+                            if (state.picked.size > 1) FilterChip("Clear all", false, role = Role.Button) { model.filter(null) }
                         }
                     }
                     when {
                         state.loading && page == null -> items(5) { VideoCardSkeleton(it) }
-                        state.error != null && page == null -> item(key = "error") { MessageState(state.error!!, action = "Try again", onAction = { model.submit(state.submitted!!, state.params, state.picked) }) }
+                        state.error != null && page == null -> item(key = "error") { MessageState(state.error!!, action = "Try again", onAction = model::retry) }
                         page != null && page.feed.isEmpty -> item { MessageState(page.feed.message ?: "No results for “${state.submitted}”.", icon = OrielIcons.Search) }
                         page != null -> {
                             if (state.loading) item(key = "reloading") { LoadingRow() }
-                            else state.error?.let { e -> item(key = "notice") { NoticeRow(e, action = "Try again", onAction = { model.submit(state.submitted!!, state.params, state.picked) }) } }
+                            else state.error?.let { e -> item(key = "notice") { NoticeRow(e, action = "Try again", onAction = model::retry) } }
                             feedShelves(page.feed, keyPrefix = "search")
                         }
                     }
@@ -388,8 +463,8 @@ fun SearchScreen(initial: String?) {
             val close = LocalSheetClose.current
             SheetTitle("Filters", trailing = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (state.picked.isNotEmpty()) TextAction("Reset", { model.filter(null) })
-                    TextAction("Done", { close {} })
+                    if (state.picked.isNotEmpty()) SheetAction("Reset") { model.filter(null) }
+                    SheetAction("Done") { close {} }
                 }
             })
             all.groupBy { it.group }.forEach { (group, options) ->
@@ -398,9 +473,7 @@ fun SearchScreen(initial: String?) {
                         if (i > 0) RowDivider(inset = false)
                         val on = state.picked.any { it.label == f.label } || (f.params == null && state.picked.none { it.group == f.group })
                         val disabled = !on && shown.any { it.label == f.label && it.disabled }
-                        androidx.compose.foundation.layout.Box(Modifier.graphicsLayer { alpha = if (disabled) 0.4f else 1f }) {
-                            ChoiceRow(f.label, on) { if (!disabled && !(on && f.params == null)) model.filter(f) }
-                        }
+                        ChoiceRow(f.label, on, enabled = !disabled) { if (!(on && f.params == null)) model.filter(f) }
                     }
                 }
             }
@@ -421,11 +494,17 @@ private fun completion(typed: String, suggestion: String): AnnotatedString = bui
 
 @Composable
 private fun SuggestionRow(text: AnnotatedString, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit, onFill: (() -> Unit)?, onRemove: (() -> Unit)? = null) {
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = PAGE_GUTTER, end = PAGE_GUTTER - 6.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    val haptics = rememberHaptics()
+    // The row's end buttons keep their 18-20dp glyphs in 44dp targets; the row stays 52dp tall.
+    Row(
+        Modifier.fillMaxWidth().clickable { haptics.play(Haptic.Tap); onClick() }.heightIn(min = 52.dp)
+            .padding(start = PAGE_GUTTER, end = PAGE_GUTTER - 10.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Icon(icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(16.dp))
         Text(text, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-        if (onRemove != null) Icon(OrielIcons.Close, "Remove", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(36.dp).clip(RoundedCornerShape(50)).clickable(onClick = onRemove).padding(9.dp))
-        if (onFill != null) Icon(OrielIcons.Fill, "Use", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(36.dp).clip(RoundedCornerShape(50)).clickable(onClick = onFill).padding(8.dp))
+        if (onRemove != null) Icon(OrielIcons.Close, "Remove", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(44.dp).clip(RoundedCornerShape(50)).clickable { haptics.play(Haptic.Tap); onRemove() }.padding(13.dp))
+        if (onFill != null) Icon(OrielIcons.Fill, "Use", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(44.dp).clip(RoundedCornerShape(50)).clickable { haptics.play(Haptic.Tap); onFill() }.padding(12.dp))
     }
 }

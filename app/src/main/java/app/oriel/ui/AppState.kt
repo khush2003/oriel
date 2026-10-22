@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.SearchManager
 import android.content.Intent
 import android.net.Uri
+import androidx.core.net.toUri
 import android.provider.MediaStore
 import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.Stable
@@ -16,6 +17,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
+import androidx.lifecycle.Lifecycle
 import app.oriel.AppGraph
 import app.oriel.core.YouTube
 import app.oriel.core.model.Channel
@@ -28,6 +30,7 @@ import app.oriel.playback.QueueContext
 import app.oriel.ui.components.HeldItem
 import app.oriel.ui.components.LongPressOrigin
 import app.oriel.ui.navigation.ChannelRoute
+import app.oriel.ui.navigation.HistoryRoute
 import app.oriel.ui.navigation.HomeRoute
 import app.oriel.ui.navigation.PlaylistRoute
 import app.oriel.ui.navigation.SearchRoute
@@ -35,6 +38,7 @@ import app.oriel.ui.navigation.ShortsRoute
 import app.oriel.ui.navigation.SubscriptionsRoute
 import app.oriel.ui.navigation.Tab
 import app.oriel.ui.navigation.YouRoute
+import app.oriel.ui.navigation.isRoute
 import app.oriel.ui.navigation.tabRoot
 import app.oriel.ui.player.WatchModel
 import app.oriel.ui.theme.PlayerSpring
@@ -153,9 +157,9 @@ class AppState(
         sheet.expand()
     }
 
-    fun openShort(video: Video) {
+    fun openShort(video: Video, fromLink: Boolean = false) {
         connection.pause()
-        navigate(ShortsRoute(startId = video.id))
+        navigate(ShortsRoute(startId = video.id), fromLink)
     }
 
     fun openItem(item: Item) {
@@ -169,19 +173,19 @@ class AppState(
         }
     }
 
-    fun openChannel(id: String, params: String? = null) {
+    fun openChannel(id: String, params: String? = null, fromLink: Boolean = false) {
         if (sheet.expanded) sheet.collapse()
-        navigate(ChannelRoute(id, params))
+        navigate(ChannelRoute(id, params), fromLink)
     }
 
-    fun openPlaylist(id: String) {
+    fun openPlaylist(id: String, fromLink: Boolean = false) {
         if (sheet.expanded) sheet.collapse()
-        navigate(PlaylistRoute(id))
+        navigate(PlaylistRoute(id), fromLink)
     }
 
-    fun search(query: String) {
+    fun search(query: String, fromLink: Boolean = false) {
         if (sheet.expanded) sheet.collapse()
-        navigate(SearchRoute(query))
+        navigate(SearchRoute(query), fromLink)
     }
 
     /** "Play … on Oriel": the top video result plays; if there isn't one, the search opens instead. */
@@ -189,7 +193,7 @@ class AppState(
         scope.launch {
             val top = runCatching { withContext(Dispatchers.IO) { graph.yt.search(query) } }.getOrNull()
                 ?.feed?.items?.filterIsInstance<Video>()?.firstOrNull { !it.isShort && !it.isLive }
-            if (top != null) openVideo(top) else search(query)
+            if (top != null) openVideo(top) else search(query, fromLink = true)
         }
     }
 
@@ -228,14 +232,28 @@ class AppState(
 
     // ---- navigation --------------------------------------------------------------------
 
-    fun navigate(route: Any) {
+    /**
+     * Pushes [route], unless it's the page already on top (the same channel, not just any
+     * channel: channel B opened from channel A stacks on it). A tap on a page that's still
+     * sliding in or out is dropped, so a double tap doesn't push twice; [fromLink] lets links
+     * through, as they arrive in onNewIntent, before the activity resumes.
+     */
+    fun navigate(route: Any, fromLink: Boolean = false) {
+        val current = nav.currentBackStackEntry
+        if (!fromLink && current != null && !current.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return
+        if (current?.isRoute(route) == true) return
         // A push from here on is a push, even back onto the page a tab switch landed on.
         tabSwitchEntry = null
-        nav.navigate(route) { launchSingleTop = true }
+        nav.navigate(route)
     }
 
     fun back() {
-        if (!nav.popBackStack()) activity.moveTaskToBack(true)
+        // A second tap while the last pop is still settling would pop a page too many, or
+        // leave the app from Home.
+        val current = nav.currentBackStackEntry ?: return
+        if (!current.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return
+        if (nav.popBackStack()) return
+        if (current.tabRoot() != null) activity.moveTaskToBack(true)
     }
 
     fun selectTab(tab: Tab) {
@@ -246,7 +264,13 @@ class AppState(
             Tab.SUBSCRIPTIONS -> SubscriptionsRoute
             Tab.YOU -> YouRoute
         }
-        if (nav.currentBackStackEntry?.tabRoot() == tab) {
+        // Search sits over the tabs without being part of one: leaving it for any tab saves it on
+        // its own, under Search's destination, which is what openSearch restores. (Saved under
+        // Home's, as a tab switch saves, Home restored Search straight back: the tap seemed to do
+        // nothing; and a later switch saved over it.)
+        val search = nav.currentBackStackEntry?.takeIf { it.destination.hasRoute(SearchRoute::class) }
+        search?.let { nav.popBackStack(it.destination.id, inclusive = true, saveState = true) }
+        if (search == null && nav.currentBackStackEntry?.tabRoot() == tab) {
             _reselect.value = tab to System.nanoTime()
             return
         }
@@ -254,15 +278,14 @@ class AppState(
         // its root. Navigating to the tab instead would restore the very stack it's in, and the
         // tap would seem to do nothing.
         val owner = nav.currentBackStack.value.asReversed().firstNotNullOfOrNull { it.tabRoot() }
-        // Search sits over Home's root without being part of it: leaving it for Home saves it,
-        // as leaving it for any other tab does, rather than popping it and losing the results.
-        val inSearch = nav.currentBackStackEntry?.destination?.hasRoute(SearchRoute::class) == true
-        if (owner == tab && inSearch) {
-            // Saved under Search's own destination, which is what openSearch restores. (Saving it
-            // under Home's, as a tab switch does, had Home restore Search straight back: the tap
-            // seemed to do nothing.)
-            nav.currentBackStackEntry?.destination?.id?.let { nav.popBackStack(it, inclusive = true, saveState = true) }
-            while (nav.currentBackStackEntry?.tabRoot() != tab && nav.popBackStack()) Unit
+        if (owner == tab && search != null) {
+            // Out of Search to the tab it sat over: the tab comes back as it was left.
+            nav.navigate(route) {
+                popUpTo(nav.graph.findStartDestination().id) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
+            tabSwitchEntry = nav.currentBackStackEntry?.id
             return
         }
         if (owner == tab) {
@@ -320,42 +343,77 @@ class AppState(
             Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)
             Intent.ACTION_VIEW -> intent.dataString
             else -> null
-        } ?: return false
-        val url = URL_IN_TEXT.find(text)?.value
-        if (url == null) {
-            search(text.trim())
+        }?.takeIf { it.isNotBlank() } ?: return false
+        // Shared text is often a sentence around the link ("Watch this: https://youtu.be/…!"), and
+        // sometimes several links: the first YouTube one, without the punctuation after it.
+        val urls = URL_IN_TEXT.findAll(text).map { it.value.trimEnd { c -> c in TRAILING } }.toList()
+        if (urls.isEmpty()) {
+            search(text.trim(), fromLink = true)
             return true
         }
+        val url = urls.firstOrNull(::isYouTubeUrl) ?: return false
         return openLink(url)
     }
 
+    /**
+     * Opens a YouTube link in the app. Returns false when it isn't one it can open, for the
+     * caller to say so or hand it on; one that has to be asked of YouTube first returns true
+     * and shows a notice if it leads nowhere.
+     */
     fun openLink(url: String): Boolean {
         val uri = Uri.parse(url)
         val host = uri.host?.removePrefix("www.")?.removePrefix("m.") ?: return false
         val start = (uri.getQueryParameter("t") ?: uri.getQueryParameter("start"))?.let(::parseTime)
         val segments = uri.pathSegments
-        when {
-            host == "youtu.be" && segments.isNotEmpty() -> openVideo(Video(segments[0], ""), QueueContext(playlistId = uri.getQueryParameter("list")), start)
-            host.endsWith("youtube.com") -> when {
-                segments.firstOrNull() == "watch" -> uri.getQueryParameter("v")?.let { openVideo(Video(it, ""), QueueContext(playlistId = uri.getQueryParameter("list")), start) }
-                    ?: uri.getQueryParameter("list")?.let(::openPlaylist) ?: return false
-                segments.firstOrNull() == "shorts" && segments.size > 1 -> openShort(Video(segments[1], "", isShort = true))
-                segments.firstOrNull() == "live" && segments.size > 1 -> openVideo(Video(segments[1], "", isLive = true))
-                segments.firstOrNull() == "playlist" -> uri.getQueryParameter("list")?.let(::openPlaylist) ?: return false
-                segments.firstOrNull() == "channel" && segments.size > 1 -> openChannel(segments[1])
-                segments.firstOrNull() == "results" -> uri.getQueryParameter("search_query")?.let(::search) ?: return false
-                segments.isNotEmpty() -> scope.launch {
+        val list = uri.getQueryParameter("list")
+        fun video(id: String?, live: Boolean = false): Boolean {
+            if (id == null || !VIDEO_ID.matches(id)) return false
+            openVideo(Video(id, "", isLive = live), QueueContext(playlistId = list), start)
+            return true
+        }
+        fun playlist(id: String?): Boolean = id?.takeIf { it.isNotBlank() }?.let { openPlaylist(it, fromLink = true); true } ?: false
+        if (host == "youtu.be") return video(segments.firstOrNull())
+        if (!host.endsWith("youtube.com")) return false
+        val first = segments.firstOrNull() ?: return false
+        return when {
+            first == "watch" -> video(uri.getQueryParameter("v")) || playlist(list)
+            first == "shorts" && segments.size > 1 -> {
+                val id = segments[1].takeIf { VIDEO_ID.matches(it) } ?: return false
+                openShort(Video(id, "", isShort = true), fromLink = true)
+                true
+            }
+            first == "live" && segments.size > 1 -> video(segments[1], live = true)
+            first == "playlist" -> playlist(list)
+            first == "channel" && segments.size > 1 -> openBrowse(segments[1], null)
+            first == "hashtag" && segments.size > 1 -> { search("#" + segments[1], fromLink = true); true }
+            first == "results" -> uri.getQueryParameter("search_query")?.takeIf { it.isNotBlank() }?.let { search(it, fromLink = true); true } ?: false
+            first == "feed" && segments.size > 1 -> openBrowse("FE" + segments[1], null)
+            else -> {
+                scope.launch {
                     // @handles, /c/ and /user/ names: ask YouTube where they lead.
                     val resolved = withContext(Dispatchers.IO) { runCatching { graph.yt.resolveUrl(url) }.getOrNull() }
-                    when {
-                        resolved?.browseId != null -> openChannel(resolved.browseId!!, resolved.params)
-                        resolved?.playlistId != null && resolved.videoId == null -> openPlaylist(resolved.playlistId!!)
-                        resolved?.videoId != null -> openVideo(Video(resolved.videoId!!, ""))
-                        else -> notice("Couldn't open this link")
+                    val opened = when {
+                        resolved == null -> false
+                        resolved.browseId != null && openBrowse(resolved.browseId!!, resolved.params) -> true
+                        resolved.playlistId != null && resolved.videoId == null -> playlist(resolved.playlistId)
+                        else -> video(resolved.videoId)
                     }
+                    if (!opened) notice("Couldn't open this link")
                 }
-                else -> return false
+                true
             }
+        }
+    }
+
+    /** A browse page from a link: a channel, a playlist, or one of the app's own places. */
+    private fun openBrowse(id: String, params: String?): Boolean {
+        when {
+            id.startsWith("UC") -> openChannel(id, params, fromLink = true)
+            id.startsWith("VL") && id.length > 2 -> openPlaylist(id.removePrefix("VL"), fromLink = true)
+            id == "FEsubscriptions" -> selectTab(Tab.SUBSCRIPTIONS)
+            id == "FEwhat_to_watch" -> selectTab(Tab.HOME)
+            id == "FEhistory" -> navigate(HistoryRoute, fromLink = true)
+            id == "FElibrary" || id == "FEyou" -> selectTab(Tab.YOU)
             else -> return false
         }
         return true
@@ -370,5 +428,13 @@ class AppState(
 
     private companion object {
         val URL_IN_TEXT = Regex("""https?://\S+""")
+        /** What ends a sentence or closes a bracket around a link, never part of a YouTube URL's end. */
+        const val TRAILING = ".,)]}>!?\"'»”"
+        val VIDEO_ID = Regex("[A-Za-z0-9_-]{11}")
+
+        fun isYouTubeUrl(url: String): Boolean {
+            val host = url.toUri().host?.removePrefix("www.")?.removePrefix("m.") ?: return false
+            return host == "youtu.be" || host == "youtube.com" || host.endsWith(".youtube.com")
+        }
     }
 }

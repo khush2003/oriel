@@ -23,6 +23,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
@@ -41,6 +44,7 @@ import app.oriel.ui.components.RemoteImage
 import app.oriel.ui.components.SkeletonLine
 import app.oriel.ui.components.feedItem
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -73,11 +77,18 @@ class InboxModel(private val graph: AppGraph) : ViewModel() {
         }
     }
 
+    private var job: Job? = null
+    private var moreJob: Job? = null
+
     fun load(refresh: Boolean = false) {
-        _state.update { it.copy(loading = it.items.isEmpty(), refreshing = refresh, error = null) }
-        viewModelScope.launch {
+        // A reload replaces the list: a load or next page still on its way belongs to the old one.
+        job?.cancel()
+        moreJob?.cancel()
+        _state.update { it.copy(loading = it.items.isEmpty(), refreshing = refresh, error = null, loadingMore = false, moreFailed = false) }
+        val generation = graph.pages.generation
+        job = viewModelScope.launch {
             val r = withContext(Dispatchers.IO) { runCatching { graph.yt.inbox() } }
-            r.onSuccess { p -> withContext(Dispatchers.IO) { graph.pages.write(cacheKey, InboxPage.serializer(), p) } }
+            r.onSuccess { p -> withContext(Dispatchers.IO) { graph.pages.write(cacheKey, InboxPage.serializer(), p, generation) } }
             _state.update { s ->
                 r.fold(
                     { p -> s.copy(items = p.items, continuation = p.continuation, loading = false, refreshing = false, moreFailed = false) },
@@ -92,9 +103,11 @@ class InboxModel(private val graph: AppGraph) : ViewModel() {
         val token = s.continuation ?: return
         if (s.loadingMore || s.moreFailed) return
         _state.update { it.copy(loadingMore = true) }
-        viewModelScope.launch {
+        moreJob = viewModelScope.launch {
             val r = withContext(Dispatchers.IO) { runCatching { graph.yt.inbox(token) } }
             _state.update { st ->
+                // The list was reloaded meanwhile: this page followed the old one.
+                if (st.continuation != token) return@update st
                 r.fold(
                     { p ->
                         val seen = st.items.mapTo(HashSet()) { it.id }
@@ -147,7 +160,10 @@ fun NotificationsScreen() {
 @Composable
 private fun InboxRow(n: InboxNotification, modifier: Modifier, onClick: () -> Unit) {
     Row(
-        modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = PAGE_GUTTER, vertical = 10.dp),
+        modifier.fillMaxWidth()
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { stateDescription = if (n.read) "Read" else "Unread" }
+            .padding(horizontal = PAGE_GUTTER, vertical = 10.dp),
         verticalAlignment = Alignment.Top,
     ) {
         // The unread dot, as Mail's: a blue point in the gutter, gone once seen.

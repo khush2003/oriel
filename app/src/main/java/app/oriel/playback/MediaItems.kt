@@ -1,6 +1,7 @@
 package app.oriel.playback
 
 import android.os.Bundle
+import android.util.LruCache
 import androidx.core.net.toUri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -26,13 +27,29 @@ import app.oriel.util.Thumbnails
 object MediaItems {
     const val EXTRA_VIDEO = "oriel.video"
 
+    /** The URI host naming each kind of item; see the class comment. */
+    const val KIND_ABR = "abr"
+    const val KIND_AV = "av"
+    const val KIND_AUDIO = "audio"
+    const val KIND_HLS = "hls"
+
+    /** The picture's height when an item names none. */
+    const val DEFAULT_HEIGHT = 720
+
+    /**
+     * Decoded extras by their JSON. [video] is asked for on the main thread many times a second
+     * (the queue, the transition listener, every recomposition that reads the current item), and
+     * decoding the same string each time showed up as jank.
+     */
+    private val decoded = LruCache<String, Video>(512)
+
     fun build(video: Video, height: Int?, adaptive: Boolean = false): MediaItem {
         val builder = MediaItem.Builder().setMediaId(video.id).setMediaMetadata(metadata(video))
         when {
-            video.isLive -> builder.setUri("oriel://hls/${video.id}${height?.let { "?h=$it" } ?: ""}".toUri()).setMimeType(MimeTypes.APPLICATION_M3U8)
-            height != null && adaptive -> builder.setUri("oriel://abr/${video.id}?h=$height".toUri()).setMimeType(MimeTypes.APPLICATION_M3U8)
-            height != null -> builder.setUri("oriel://av/${video.id}?h=$height".toUri())
-            else -> builder.setUri("oriel://audio/${video.id}".toUri())
+            video.isLive -> builder.setUri("oriel://$KIND_HLS/${video.id}${height?.let { "?h=$it" } ?: ""}".toUri()).setMimeType(MimeTypes.APPLICATION_M3U8)
+            height != null && adaptive -> builder.setUri("oriel://$KIND_ABR/${video.id}?h=$height".toUri()).setMimeType(MimeTypes.APPLICATION_M3U8)
+            height != null -> builder.setUri("oriel://$KIND_AV/${video.id}?h=$height".toUri())
+            else -> builder.setUri("oriel://$KIND_AUDIO/${video.id}".toUri())
         }
         return builder.build()
     }
@@ -47,7 +64,7 @@ object MediaItems {
     /** The same item on the fixed-quality streams (its HLS ladder wasn't offered or was refused). */
     fun asProgressive(item: MediaItem): MediaItem {
         val video = video(item) ?: return item
-        return build(video, height(item) ?: 720)
+        return build(video, height(item) ?: DEFAULT_HEIGHT)
     }
 
     fun metadata(video: Video): MediaMetadata = MediaMetadata.Builder()
@@ -66,7 +83,8 @@ object MediaItems {
     fun video(item: MediaItem?): Video? {
         item ?: return null
         item.mediaMetadata.extras?.getString(EXTRA_VIDEO)?.let { json ->
-            runCatching { return AppJson.decodeFromString(Video.serializer(), json) }
+            decoded.get(json)?.let { return it }
+            runCatching { AppJson.decodeFromString(Video.serializer(), json) }.getOrNull()?.let { decoded.put(json, it); return it }
         }
         if (item.mediaId.isBlank()) return null
         return Video(
@@ -82,7 +100,7 @@ object MediaItems {
 
     fun kind(item: MediaItem?): String? = item?.localConfiguration?.uri?.host
 
-    fun hasPicture(item: MediaItem?): Boolean = kind(item).let { it == "av" || it == "hls" || it == "abr" }
+    fun hasPicture(item: MediaItem?): Boolean = kind(item).let { it == KIND_AV || it == KIND_HLS || it == KIND_ABR }
 
     fun height(item: MediaItem?): Int? = item?.localConfiguration?.uri?.getQueryParameter("h")?.toIntOrNull()
 }

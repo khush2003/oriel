@@ -356,7 +356,7 @@ class PlayerConnection(private val context: Context, private val graph: AppGraph
     fun currentHeight(): Int? = PlaybackService.instance.value?.queue?.height()
 
     /** Whether what's playing is Auto's HLS ladder, its height moving with the connection. */
-    fun currentAdaptive(): Boolean = MediaItems.kind(PlaybackService.instance.value?.exoPlayer?.currentMediaItem) == "abr"
+    fun currentAdaptive(): Boolean = MediaItems.kind(PlaybackService.instance.value?.exoPlayer?.currentMediaItem) == MediaItems.KIND_ABR
     fun undoSkip() = withService { it.undoSkip() }
     fun retry() = withService { it.retry() }
 

@@ -112,6 +112,8 @@ class FeedModel(
                 moreFailed = false,
             )
         }
+        // A cache cleared while this loads (signing out, a new country) mustn't get the old page back.
+        val generation = graph.pages.generation
         job = viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { (replace ?: load)(fresh) } }
             result.onSuccess { feed ->
@@ -125,11 +127,16 @@ class FeedModel(
                 loadedAt = now
                 _state.value = FeedState(feed = feed, updatedAt = now)
                 if (replace == null && feed.chips.isNotEmpty()) baseChips = feed.chips
-                if (replace == null) cacheKey?.let { key -> withContext(Dispatchers.IO) { graph.pages.write(key, Feed.serializer(), feed) } }
+                // An empty page with nothing to say (everything failed) isn't worth keeping: the next
+                // launch would paint it over nothing instead of the last good copy.
+                val keep = !feed.isEmpty || feed.message != null
+                if (replace == null && keep) cacheKey?.let { key -> withContext(Dispatchers.IO) { graph.pages.write(key, Feed.serializer(), feed, generation) } }
             }.onFailure { e ->
                 if (e is CancellationException) throw e
                 graph.notePageFailure("Loading ${cacheKey?.substringBefore('-') ?: "a feed"}", e)
-                _state.update { it.copy(loading = false, refreshing = false, error = friendlyError(e)) }
+                // A chip that failed to load leaves no feed under it: the old page under the new
+                // chip read as the chip's results. The full-page error offers Try again.
+                _state.update { it.copy(feed = if (switching) null else it.feed, stale = it.stale && !switching, loading = false, refreshing = false, error = friendlyError(e)) }
             }
         }
     }
@@ -157,7 +164,8 @@ class FeedModel(
         val s = _state.value
         val token = s.feed?.continuation ?: return
         // While the network copy of a disk feed is on its way, its own continuation is what's wanted.
-        if (s.loadingMore || s.loading || (s.stale && job?.isActive == true) || moreJob?.isActive == true) return
+        // After a failure only "Try again" asks again ([retryMore]): the near-end ticks would retry forever.
+        if (s.loadingMore || s.moreFailed || s.loading || (s.stale && job?.isActive == true) || moreJob?.isActive == true) return
         _state.update { it.copy(loadingMore = true, moreFailed = false) }
         moreJob = viewModelScope.launch {
             val next = withContext(Dispatchers.IO) { runCatching { more(token) } }
@@ -170,6 +178,12 @@ class FeedModel(
                 else st.copy(loadingMore = false, feed = feed + page)
             }
         }
+    }
+
+    /** The footer's "Try again" after a page failed. */
+    fun retryMore() {
+        _state.update { it.copy(moreFailed = false) }
+        loadMore()
     }
 
     private companion object {

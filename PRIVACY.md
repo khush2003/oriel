@@ -7,7 +7,8 @@ everything it sends, and to whom.
 
 - Watch history, search history, resume positions, likes, saved and local playlists, followed
   channels and settings. They stay in the app's private storage and are excluded from
-  Android backups. Pausing or clearing history is in Settings › Privacy & storage.
+  Android backups and device-to-device transfers. Pausing or clearing history is in
+  Settings › Privacy & storage.
 - If you sign in: your YouTube session cookie, in the app's private storage. It's never logged,
   and it's sent only to YouTube's own servers.
 - Problem reports: the last five crashes and the last forty errors (playback errors and failed
@@ -25,8 +26,10 @@ history). Google's [privacy policy](https://policies.google.com/privacy) applies
 
 ## Sent to community services (each can be turned off in Settings)
 
-- **SponsorBlock** (sponsor.ajay.app): the ID of the video you open, to fetch its skip segments.
-- **Return YouTube Dislike** (returnyoutubedislike.com): the ID of the video you open, to fetch
+- **SponsorBlock** (sponsor.ajay.app): the first four characters of a hash of the ID of the video
+  you open, never the ID itself. The server answers with the segments of every video whose hash
+  starts the same way, and the app picks out the one it's playing.
+- **Return YouTube Dislike** (returnyoutubedislikeapi.com): the ID of the video you open, to fetch
   its dislike count.
 
 These services see your IP address, as any server you connect to does.
@@ -42,7 +45,7 @@ analytics service that doesn't store IP addresses or use device identifiers:
 
 | Event | Extra details |
 |---|---|
-| App opened | whether you're signed in |
+| App opened | whether you're signed in, and whether it's the first time the app was opened |
 | Video played | whether it was a Short, part of a queue, or shuffled |
 | Shorts opened | none |
 | Search made | whether it was by voice |

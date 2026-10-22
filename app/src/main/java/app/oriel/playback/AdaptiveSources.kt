@@ -35,7 +35,11 @@ class AdaptiveSources(private val graph: AppGraph) {
      * its preloads and the main player overwrite each other's, and a segment fetched under
      * another client's agent is refused.
      */
-    private val agents = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val agents: MutableMap<String, String> = java.util.Collections.synchronizedMap(
+        object : LinkedHashMap<String, String>(64, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) = size > MAX_AGENTS
+        },
+    )
     @Volatile private var lastAgent: String? = null
 
     private fun streamId(uri: android.net.Uri): String? {
@@ -67,12 +71,16 @@ class AdaptiveSources(private val graph: AppGraph) {
             // A network failure is an IOException as it is and gets retried; a missing ladder is final.
             val manifest = runBlocking { graph.yt.adaptiveManifest(id) } ?: throw AdaptiveUnavailableIOException(id)
             lastAgent = manifest.userAgent
-            if (agents.size > 200) agents.clear()
             streamId(manifest.url.toUri())?.let { agents[it] = manifest.userAgent }
             return dataSpec.buildUpon()
                 .setUri(manifest.url.toUri())
                 .setHttpRequestHeaders(dataSpec.httpRequestHeaders + ("User-Agent" to manifest.userAgent))
                 .build()
         }
+    }
+
+    private companion object {
+        /** Streams whose agent is remembered; the oldest go first, never the one playing. */
+        const val MAX_AGENTS = 200
     }
 }

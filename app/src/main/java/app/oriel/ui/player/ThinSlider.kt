@@ -26,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.animation.core.Animatable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,9 +44,15 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.oriel.core.extras.Segment
+import app.oriel.ui.theme.motion
 
 /** SponsorBlock's own category colours, so a sponsor reads as one wherever it's seen. */
 fun segmentColor(category: String): Color = when (category) {
@@ -60,14 +67,18 @@ fun segmentColor(category: String): Color = when (category) {
     else -> Color.White
 }
 
+/**
+ * [value] and [buffered] are read while drawing, so the playing position moves the fill
+ * without recomposing anything.
+ */
 @Composable
 fun ThinSlider(
-    value: Float,
+    value: () -> Float,
     onValueChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
     onDragStateChange: (Boolean) -> Unit = {},
     onValueChangeFinished: (() -> Unit)? = null,
-    buffered: Float = 0f,
+    buffered: () -> Float = { 0f },
     loading: Boolean = false,
     durationMs: Long = 0,
     chapterStartsMs: List<Long> = emptyList(),
@@ -83,9 +94,13 @@ fun ThinSlider(
     val onChange by rememberUpdatedState(onValueChange)
     val onFinished by rememberUpdatedState(onValueChangeFinished)
     val onDrag by rememberUpdatedState(onDragStateChange)
+    val currentValue by rememberUpdatedState(value)
     // Read in draw only: the capsule swells under the finger without re-measuring anything.
-    val grow = animateFloatAsState(if (dragging) 1f else 0f, spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMedium), label = "sliderHeight")
-    val fillFactor = animateFloatAsState(if (loading && value <= 0f) 0f else 1f, tween(450, easing = FastOutSlowInEasing), label = "fill")
+    val grow = animateFloatAsState(if (dragging) 1f else 0f, motion(spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMedium)), label = "sliderHeight")
+    val atStart by remember { derivedStateOf { currentValue() <= 0f } }
+    val fillFactor = animateFloatAsState(if (loading && atStart) 0f else 1f, motion(tween(450, easing = FastOutSlowInEasing)), label = "fill")
+    // One path, refilled each frame, rather than a new one per frame of a drag.
+    val capsule = remember { Path() }
     // The loading sheen runs only while loading, not every frame the controls are up.
     val sheen = remember { Animatable(0f) }
     LaunchedEffect(loading) {
@@ -97,6 +112,16 @@ fun ThinSlider(
         modifier
             .fillMaxWidth()
             .height(activeHeight + 22.dp)
+            // TalkBack: announced as a position, and swiping up or down (or "set progress") seeks.
+            .semantics {
+                contentDescription = "Seek"
+                progressBarRangeInfo = ProgressBarRangeInfo(currentValue().coerceIn(0f, 1f), 0f..1f)
+                if (enabled) setProgress { target ->
+                    onChange(target.coerceIn(0f, 1f))
+                    onFinished?.invoke()
+                    true
+                }
+            }
             .then(
                 if (!enabled) Modifier else Modifier.pointerInput(Unit) {
                     awaitEachGesture {
@@ -128,17 +153,19 @@ fun ThinSlider(
         Canvas(Modifier.fillMaxWidth().height(activeHeight)) {
             val h = idleHeight.toPx() + (activeHeight.toPx() - idleHeight.toPx()) * grow.value
             val radius = CornerRadius(h / 2f)
-            val capsule = Path().apply { addRoundRect(RoundRect(0f, (size.height - h) / 2f, size.width, (size.height + h) / 2f, radius)) }
-            translate(top = (size.height - h) / 2f) { clipPath(capsule.apply { translate(Offset(0f, -(size.height - h) / 2f)) }) {
+            capsule.reset()
+            capsule.addRoundRect(RoundRect(0f, 0f, size.width, h, radius))
+            translate(top = (size.height - h) / 2f) { clipPath(capsule) {
                 val size = Size(this.size.width, h)
                 drawRect(inactiveColor)
+                val buffered = buffered()
                 if (buffered > 0f) drawRect(bufferedColor, size = Size(size.width * buffered.coerceIn(0f, 1f), size.height))
                 if (durationMs > 0) segments.forEach { s ->
                     val from = size.width * (s.startMs.toFloat() / durationMs).coerceIn(0f, 1f)
                     val to = size.width * (s.endMs.toFloat() / durationMs).coerceIn(0f, 1f)
                     if (to > from) drawRect(segmentColor(s.category).copy(alpha = 0.85f), Offset(from, 0f), Size(to - from, size.height))
                 }
-                val filled = size.width * value.coerceIn(0f, 1f) * fillFactor.value
+                val filled = size.width * value().coerceIn(0f, 1f) * fillFactor.value
                 if (filled > 0f) drawRoundRect(activeColor, size = Size(filled.coerceAtLeast(size.height).coerceAtMost(size.width), size.height), cornerRadius = radius)
                 if (loading) {
                     val band = size.width * 0.34f

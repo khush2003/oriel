@@ -8,6 +8,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import app.oriel.AppGraph
 import app.oriel.core.model.Video
 import app.oriel.util.AppJson
+import app.oriel.util.AtomicJson
+import app.oriel.util.CrashLog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -75,6 +77,11 @@ class QueueController(
     val heightOverride: StateFlow<Int?> = _heightOverride.asStateFlow()
 
     private var extending: Job? = null
+    /**
+     * The last video an extension was asked for, and when. [onNearEnd] runs four times a second
+     * near the end, and a fetch that keeps failing would otherwise be asked for again every time.
+     */
+    private var extendTried: Pair<String, Long>? = null
     /** The speed play() last set; the player's differing from it means the user chose another. */
     private var appliedSpeed: Float? = null
     private var saveJob: Job? = null
@@ -121,6 +128,7 @@ class QueueController(
         // Counts only: never which video.
         graph.telemetry.track("video_play", mapOf("short" to videos[startIndex.coerceIn(videos.indices)].isShort, "queue" to (videos.size > 1), "shuffle" to shuffle))
         extending?.cancel()
+        extendTried = null
         _context.value = context
         player.shuffleModeEnabled = shuffle
         val start = if (shuffle && startIndex == 0) videos.indices.random() else startIndex.coerceIn(videos.indices)
@@ -174,6 +182,9 @@ class QueueController(
         if (extending?.isActive == true) return
         val ctx = _context.value
         val last = MediaItems.video(player.getMediaItemAt(player.mediaItemCount - 1)) ?: return
+        val now = android.os.SystemClock.elapsedRealtime()
+        extendTried?.let { (id, at) -> if (!force && id == last.id && now - at < EXTEND_RETRY_MS) return }
+        extendTried = last.id to now
         extending = scope.launch {
             when {
                 ctx.continuation != null -> {
@@ -234,7 +245,7 @@ class QueueController(
         val current = player.currentMediaItem
         if (index + 1 < videos.size) player.replaceMediaItems(index + 1, videos.size, videos.drop(index + 1).map(::item))
         // A live stream keeps its manifest; only on-demand video switches streams.
-        if (MediaItems.kind(current) != "hls") {
+        if (MediaItems.kind(current) != MediaItems.KIND_HLS) {
             player.replaceMediaItem(index, item(videos[index]))
             player.seekTo(index, position)
         }
@@ -246,7 +257,7 @@ class QueueController(
     fun switchToProgressive(index: Int) {
         if (index !in 0 until player.mediaItemCount) return
         val item = player.getMediaItemAt(index)
-        if (MediaItems.kind(item) != "abr") return
+        if (MediaItems.kind(item) != MediaItems.KIND_ABR) return
         noLadder += item.mediaId
         graph.yt.forgetAdaptiveManifest(item.mediaId)
         val position = if (index == player.currentMediaItemIndex) player.currentPosition else 0L
@@ -286,19 +297,22 @@ class QueueController(
 
     private fun snapshot(): SavedQueue {
         val videos = (0 until player.mediaItemCount).mapNotNull { MediaItems.video(player.getMediaItemAt(it)) }
-        return SavedQueue(videos.take(MAX_SAVED), player.currentMediaItemIndex.coerceAtMost(MAX_SAVED - 1), player.currentPosition, _context.value, _audioOnly.value)
+        val index = player.currentMediaItemIndex.coerceIn(0, (videos.size - 1).coerceAtLeast(0))
+        // A window around what's playing, so a long queue played deep into still restores to it.
+        val window = savedWindow(videos.size, index)
+        return SavedQueue(videos.subList(window.first, window.last + 1), index - window.first, player.currentPosition, _context.value, _audioOnly.value)
     }
 
-    private fun write(saved: SavedQueue) {
-        runCatching {
-            val tmp = File(file.parentFile, "queue.json.tmp")
-            tmp.writeText(AppJson.encodeToString(SavedQueue.serializer(), saved))
-            tmp.renameTo(file)
-        }
+    /** From the main thread's [saveNow] and the IO dispatcher's scheduled saves alike, one at a time. */
+    private fun write(saved: SavedQueue) = synchronized(file) {
+        runCatching { AtomicJson.write(file, AppJson.encodeToString(SavedQueue.serializer(), saved)) }
+            .onFailure { CrashLog.nonFatal(graph.context, "Queue save", it) }
+        Unit
     }
 
-    private fun readSaved(): SavedQueue? =
-        runCatching { AppJson.decodeFromString(SavedQueue.serializer(), file.readText()) }.getOrNull()?.takeIf { it.videos.isNotEmpty() }
+    private fun readSaved(): SavedQueue? = synchronized(file) {
+        runCatching { AtomicJson.read(file)?.let { AppJson.decodeFromString(SavedQueue.serializer(), it) } }.getOrNull()?.takeIf { it.videos.isNotEmpty() }
+    }
 
     /**
      * Restores the last session's queue, paused where it was left. It isn't
@@ -328,8 +342,15 @@ class QueueController(
         return saved.videos.map(::item) to (saved.index.coerceIn(saved.videos.indices) to saved.positionMs)
     }
 
-    private companion object {
-        const val EXTEND_WHEN_REMAINING = 2
+    internal companion object {
+        private const val EXTEND_WHEN_REMAINING = 2
         const val MAX_SAVED = 300
+        private const val EXTEND_RETRY_MS = 30_000L
+
+        /** Which of [size] queued videos are saved: at most [MAX_SAVED], centred on [index] where the ends allow. */
+        fun savedWindow(size: Int, index: Int, max: Int = MAX_SAVED): IntRange {
+            val from = (index - max / 2).coerceIn(0, (size - max).coerceAtLeast(0))
+            return from until (from + max).coerceAtMost(size)
+        }
     }
 }

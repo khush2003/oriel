@@ -32,7 +32,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavBackStackEntry
-import androidx.navigation.NavDestination
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -108,15 +107,8 @@ private val TABS = listOf(
     BottomTab("You", OrielIcons.You, OrielIcons.YouSelected),
 )
 
-private fun NavDestination.tab(): Tab? = when {
-    hasRoute(HomeRoute::class) -> Tab.HOME
-    hasRoute(ShortsRoute::class) -> Tab.SHORTS
-    hasRoute(SubscriptionsRoute::class) -> Tab.SUBSCRIPTIONS
-    hasRoute(YouRoute::class) -> Tab.YOU
-    else -> null
-}
-
-private fun NavDestination.isRoot(): Boolean = tab() != null || hasRoute(SearchRoute::class)
+/** A tab's root or Search: moving between these is a tab switch. A short pushed from a feed isn't one. */
+private fun NavBackStackEntry.isRoot(): Boolean = tabRoot() != null || destination.hasRoute(SearchRoute::class)
 
 /**
  * The app's frame: pages in a NavHost recorded into the glass backdrop, the
@@ -145,6 +137,8 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
         val graph = app.graph
         if (graph.telemetry.available && graph.settings.current.telemetry == null) {
             kotlinx.coroutines.delay(4_000)
+            // Never over an alert or a report already open: it waits its turn.
+            snapshotFlow { app.alert == null && app.report == null }.first { it }
             app.alert = AlertSpec(
                 "Help improve Oriel?",
                 "Share anonymous usage counts: app opens, which features get used, crashes, and the app and Android version. Never what you watch or search, and nothing tied to you or your account. You can change this in Settings.",
@@ -196,10 +190,11 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
                     navController = nav,
                     startDestination = HomeRoute,
                     modifier = Modifier.fillMaxSize(),
-                    enterTransition = { if (reduce) fadeIn(tween(120)) else push(true, app.tabSwitchEntry) },
-                    exitTransition = { if (reduce) fadeOut(tween(120)) else pushAway(true, app.tabSwitchEntry) },
-                    popEnterTransition = { if (reduce) fadeIn(tween(120)) else push(false, app.tabSwitchEntry) },
-                    popExitTransition = { if (reduce) fadeOut(tween(120)) else pushAway(false, app.tabSwitchEntry) },
+                    // Reduce motion snaps pages in and out, as it does every other animation.
+                    enterTransition = { if (reduce) EnterTransition.None else push(true, app.tabSwitchEntry) },
+                    exitTransition = { if (reduce) ExitTransition.None else pushAway(true, app.tabSwitchEntry) },
+                    popEnterTransition = { if (reduce) EnterTransition.None else push(false, app.tabSwitchEntry) },
+                    popExitTransition = { if (reduce) ExitTransition.None else pushAway(false, app.tabSwitchEntry) },
                 ) {
                     composable<HomeRoute> { HomeScreen() }
                     composable<ShortsRoute> { ShortsScreen(it.toRoute<ShortsRoute>().startId) }
@@ -268,11 +263,15 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
  * iOS push: the new page slides in whole from the right over the old one, which drifts a
  * third of the way left and dims rather than fading away. Forward is a critically damped
  * spring; back stays a tween, since predictive back seeks through it with the finger.
+ * Kept here rather than in Motion.kt: it's the one IntOffset spring, and only pushes use it.
  */
 private val PushSpring = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 380f, visibilityThreshold = IntOffset.VisibilityThreshold)
 
+/** The old page's dim, on the same spring as the slide so the two finish together. */
+private val PushDimSpring = spring<Float>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 380f)
+
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.isTabSwitch(tabSwitchEntry: String?) =
-    (initialState.destination.isRoot() && targetState.destination.isRoot()) || targetState.id == tabSwitchEntry
+    (initialState.isRoot() && targetState.isRoot()) || targetState.id == tabSwitchEntry
 
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.push(forward: Boolean, tabSwitchEntry: String?): EnterTransition {
     if (isTabSwitch(tabSwitchEntry)) return fadeIn(tween(160))
@@ -282,6 +281,6 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.push(forward: Bool
 
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.pushAway(forward: Boolean, tabSwitchEntry: String?): ExitTransition {
     if (isTabSwitch(tabSwitchEntry)) return fadeOut(tween(120))
-    return if (forward) slideOutHorizontally(PushSpring) { -it / 3 } + fadeOut(spring(stiffness = 380f), targetAlpha = 0.7f)
+    return if (forward) slideOutHorizontally(PushSpring) { -it / 3 } + fadeOut(PushDimSpring, targetAlpha = 0.7f)
     else slideOutHorizontally(tween(300, easing = EaseOutCubic)) { it }
 }

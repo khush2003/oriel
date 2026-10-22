@@ -2,8 +2,18 @@ package app.oriel.ui.screens
 
 import app.oriel.util.CrashLog
 import app.oriel.util.ReportKind
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
+import app.oriel.ui.player.enterMotion
+import app.oriel.ui.player.exitMotion
+import app.oriel.ui.player.pressClickable
+import app.oriel.ui.theme.LocalReduceAnimation
+import app.oriel.ui.theme.motion
 import app.oriel.core.model.ShortSound
 import app.oriel.core.model.SoundPage
 import androidx.compose.foundation.basicMarquee
@@ -110,6 +120,8 @@ import app.oriel.core.model.ShortInfo
 import app.oriel.core.model.Video
 import app.oriel.playback.OrielMediaSourceFactory
 import app.oriel.playback.MediaItems
+import app.oriel.playback.OrielLoadErrorPolicy
+import app.oriel.playback.StreamResolveIOException
 import app.oriel.playback.WatchReporter
 import app.oriel.ui.AppState
 import app.oriel.ui.LocalAppState
@@ -128,6 +140,7 @@ import app.oriel.ui.player.CommentRow
 import app.oriel.ui.player.CommentSkeleton
 import app.oriel.ui.player.PanelHeader
 import app.oriel.ui.theme.DarkIsland
+import app.oriel.ui.theme.HeartRed
 import app.oriel.ui.theme.themePalette
 import app.oriel.util.Thumbnails
 import app.oriel.util.Format
@@ -258,8 +271,8 @@ private class ShortsPlayback(context: android.content.Context, private val graph
     /** The person paused this short: nothing but a tap, or a new short, plays it again. */
     var held = false
 
-    /** The short that failed past every retry, for the page to say so. */
-    val failed = MutableStateFlow<String?>(null)
+    /** The short that failed past every retry, and why, for the page to say so. */
+    val failed = MutableStateFlow<ShortFailure?>(null)
 
     fun togglePlay(): Boolean {
         held = player.isPlaying
@@ -280,38 +293,60 @@ private class ShortsPlayback(context: android.content.Context, private val graph
     private val retryScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate)
 
     /**
-     * A failed short is never left stuck. A dropped connection waits for the network and
-     * tries again from where it was, backing off. A refusal or a broken ladder moves the
+     * A failed short is never left stuck. A refused URL benches the client that minted it and
+     * asks for a fresh one, as the main player does. A dropped connection waits for the network
+     * and tries again from where it was, backing off. A refusal or a broken ladder moves the
      * short to its progressive stream (and the preload map with it). Past three tries it
-     * steps to the progressive stream regardless, then just retries in place.
+     * steps to the progressive stream regardless, then just retries in place. A progressive
+     * stream that can't be played at all (private, removed, a bot check) says why at once.
      */
     private fun recover(error: androidx.media3.common.PlaybackException) {
         val item = player.currentMediaItem ?: return
         val id = item.mediaId
         val n = (attempts[id] ?: 0) + 1
         attempts[id] = n
+        val causes = generateSequence(error.cause) { it.cause }.toList()
+        val refused = causes.filterIsInstance<androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException>().firstOrNull { it.responseCode in REFUSED_HTTP }
+        if (refused != null) {
+            graph.resolver.onRefused(refused.dataSpec.uri.toString())
+            graph.resolver.invalidate(id)
+        }
         val network = error.errorCode in 2000..2999 && error.errorCode != androidx.media3.common.PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS
-        val abr = MediaItems.kind(item) == "abr"
+        val abr = MediaItems.kind(item) == MediaItems.KIND_ABR
+        // Waiting can't fix these: a ladder goes to its progressive stream at once, and a
+        // progressive stream fails, except that a refusal gets fresh URLs a few times first.
+        val final = OrielLoadErrorPolicy.isFinal(error)
+        if (!abr && ((final && (refused == null || n > 3)) || n > 6)) {
+            fail(id, error, causes)
+            return
+        }
         retryScope.launch {
-            if (network && n <= 3) {
-                graph.network.online.first { it }
-                delay(400L * n)
-            } else if (abr) {
-                val progressive = MediaItems.asProgressive(item)
-                items[id] = progressive
-                if (id in ranked) { preload.remove(item); preload.add(progressive, ranked.getValue(id)) }
-                val at = player.currentPosition
-                player.setMediaItem(progressive, at)
-            } else if (n > 6) {
-                failed.value = id
-                CrashLog.note(graph.context, "Short $id ${error.errorCodeName} ← " + generateSequence(error.cause) { it.cause }.joinToString(" ← ") { "${it::class.simpleName}: ${it.message?.take(160)}" })
-                return@launch
+            when {
+                // A fresh URL, at once.
+                refused != null && !abr -> Unit
+                network && n <= 3 && !final -> {
+                    graph.network.online.first { it }
+                    delay(400L * n)
+                }
+                abr -> {
+                    val progressive = MediaItems.asProgressive(item)
+                    items[id] = progressive
+                    if (id in ranked) { preload.remove(item); preload.add(progressive, ranked.getValue(id)) }
+                    val at = player.currentPosition
+                    player.setMediaItem(progressive, at)
+                }
+                else -> delay(600L * n)
             }
-            else delay(600L * n)
             if (player.currentMediaItem?.mediaId != id) return@launch
             player.prepare()
             if (!held) player.play()
         }
+    }
+
+    private fun fail(id: String, error: androidx.media3.common.PlaybackException, causes: List<Throwable>) {
+        val reason = causes.filterIsInstance<StreamResolveIOException>().firstOrNull()?.message
+        failed.value = ShortFailure(id, reason ?: "Couldn't play this short.")
+        CrashLog.note(graph.context, "Short $id ${error.errorCodeName} ← " + causes.joinToString(" ← ") { "${it::class.simpleName}: ${it.message?.take(160)}" })
     }
 
     /** Vertical or not, nothing past the quality's long side. */
@@ -352,6 +387,12 @@ private class ShortsPlayback(context: android.content.Context, private val graph
         player.release()
     }
 }
+
+/** A short that couldn't be played, and the reason to show. */
+private data class ShortFailure(val id: String, val message: String)
+
+/** googlevideo refusing a URL: expired, minted by a client it no longer trusts, or gone. */
+private val REFUSED_HTTP = setOf(401, 403, 410)
 
 @OptIn(UnstableApi::class)
 @Composable
@@ -428,6 +469,8 @@ fun ShortsScreen(startId: String?) {
 
     LaunchedEffect(pager.settledPage, ids.size) {
         val id = ids.getOrNull(pager.settledPage) ?: return@LaunchedEffect
+        // The short swiped away is over: its viewing is reported before the next one's begins.
+        if (playback.player.currentMediaItem?.mediaId != id) reporter.finish()
         playback.show(ids, pager.settledPage)
         model.loadInfo(id)
         ids.drop(pager.settledPage + 1).take(2).forEach { model.loadInfo(it) }
@@ -481,7 +524,8 @@ private fun ShortPage(app: AppState, id: String, info: ShortInfo?, playback: Sho
     val haptics = rememberHaptics()
     val scope = rememberCoroutineScope()
     var paused by remember { mutableStateOf(false) }
-    val failedId by playback.failed.collectAsState()
+    val failure by playback.failed.collectAsState()
+    val reduceMotion by rememberUpdatedState(LocalReduceAnimation.current)
     var fast by remember { mutableStateOf(false) }
     val heart = remember { Animatable(0f) }
     var heartAt by remember { mutableStateOf(Offset.Zero) }
@@ -493,42 +537,58 @@ private fun ShortPage(app: AppState, id: String, info: ShortInfo?, playback: Sho
     // The tap detector lives across recompositions, so it reads these fresh rather than the values it started with.
     val currentStatus by rememberUpdatedState(status)
     val currentVideo by rememberUpdatedState(video)
-    var progress by remember { mutableStateOf(0f) }
     // Scrubbing: the bar along the bottom follows a finger, the picture seeking as it goes.
     var scrubbing by remember { mutableStateOf(false) }
     var scrubAt by remember { mutableStateOf(0f) }
-    val overlay by animateFloatAsState(if (scrubbing) 0f else 1f, tween(160), label = "shortOverlay")
+    val overlay by animateFloatAsState(if (scrubbing) 0f else 1f, motion(tween(160)), label = "shortOverlay")
+    // Polled ten times a second, glided between: the line moves on every frame, not in steps.
+    // (A loop back to the start jumps rather than running backwards across the bar.) Only the
+    // bar's drawing reads it, so the page doesn't recompose with each poll.
+    val shownProgress = remember { Animatable(0f) }
     LaunchedEffect(active) {
         paused = playback.held && active
-        progress = 0f
+        shownProgress.snapTo(0f)
         while (active && isActive) {
             val d = player.duration
-            progress = if (d > 0) (player.currentPosition.toFloat() / d).coerceIn(0f, 1f) else 0f
+            val p = if (d > 0) (player.currentPosition.toFloat() / d).coerceIn(0f, 1f) else 0f
+            if (p < shownProgress.value - 0.05f || scrubbing || reduceMotion) shownProgress.snapTo(p)
+            else launch { shownProgress.animateTo(p, tween(110, easing = LinearEasing)) }
             delay(100)
         }
     }
-    // Polled ten times a second, glided between: the line moves on every frame, not in steps.
-    // (A loop back to the start jumps rather than running backwards across the bar.)
-    val shownProgress = remember { Animatable(0f) }
-    LaunchedEffect(progress) {
-        if (progress < shownProgress.value - 0.05f || scrubbing) shownProgress.snapTo(progress)
-        else shownProgress.animateTo(progress, tween(110, easing = LinearEasing))
+    fun togglePlay() {
+        val playing = playback.togglePlay()
+        paused = !playing
+        haptics.play(if (playing) Haptic.Resume else Haptic.Pause)
+    }
+    fun seekTo(f: Float) {
+        val d = player.duration
+        if (d <= 0) return
+        player.setSeekParameters(androidx.media3.exoplayer.SeekParameters.EXACT)
+        player.seekTo((f * d).toLong())
+        scope.launch { shownProgress.snapTo(f) }
     }
 
     Box(
-        Modifier.fillMaxSize().pointerInput(active) {
+        Modifier.fillMaxSize()
+            // TalkBack: a double tap plays or pauses, as a tap does; liking is the Like button's.
+            .semantics { if (active) onClick(label = if (paused) "Play" else "Pause") { togglePlay(); true } }
+            .pointerInput(active) {
             detectTapGestures(
                 onTap = {
                     if (!active) return@detectTapGestures
-                    val playing = playback.togglePlay()
-                    paused = !playing
-                    haptics.play(if (playing) Haptic.Resume else Haptic.Pause)
+                    togglePlay()
                 },
                 onDoubleTap = { at ->
                     heartAt = at
                     if (currentStatus != LikeStatus.LIKE) graph.actions.toggleLike(currentVideo)
                     haptics.play(Haptic.ToggleOn)
-                    scope.launch { heart.snapTo(0f); heart.animateTo(1f, tween(900, easing = LinearEasing)) }
+                    scope.launch {
+                        heart.snapTo(0f)
+                        // Reduced, the heart just shows at its full size for a moment.
+                        if (reduceMotion) { heart.snapTo(0.5f); delay(700); heart.snapTo(1f) }
+                        else heart.animateTo(1f, tween(900, easing = LinearEasing))
+                    }
                 },
                 onLongPress = { if (active) { fast = true; player.setPlaybackSpeed(2f); haptics.play(Haptic.Tick) } },
                 onPress = {
@@ -550,14 +610,15 @@ private fun ShortPage(app: AppState, id: String, info: ShortInfo?, playback: Sho
         // Legibility: a soft shade at the bottom under the text and buttons.
         Box(Modifier.fillMaxWidth().fillMaxHeight(0.45f).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.55f)))))
 
-        AnimatedVisibility(paused, Modifier.align(Alignment.Center), enter = fadeIn() + scaleIn(initialScale = 1.3f), exit = fadeOut() + scaleOut(targetScale = 0.8f)) {
+        AnimatedVisibility(paused, Modifier.align(Alignment.Center), enter = enterMotion(fadeIn() + scaleIn(initialScale = 1.3f)), exit = exitMotion(fadeOut() + scaleOut(targetScale = 0.8f))) {
             Box(Modifier.size(72.dp).videoGlass(CircleShape, 0.45f), contentAlignment = Alignment.Center) {
                 Icon(OrielIcons.Play, "Play", tint = Color.White, modifier = Modifier.size(40.dp))
             }
         }
-        if (active && failedId == id) {
+        val failed = failure?.takeIf { it.id == id }
+        if (active && failed != null) {
             MessageState(
-                "Couldn't play this short.", Modifier.align(Alignment.Center).padding(horizontal = 32.dp),
+                failed.message, Modifier.align(Alignment.Center).padding(horizontal = 32.dp),
                 action = "Try again", onAction = { playback.retry(); paused = false },
                 secondary = "Report", onSecondary = { app.reportProblem(ReportKind.PLAYBACK, id) },
             )
@@ -570,7 +631,7 @@ private fun ShortPage(app: AppState, id: String, info: ShortInfo?, playback: Sho
         // Read only in the layer, so the pop doesn't recompose the page each frame: it springs
         // up past full size, settles, then floats up and fades.
         Icon(
-            OrielIcons.Heart, null, tint = Color(0xFFFF3B5C),
+            OrielIcons.Heart, null, tint = HeartRed,
             modifier = Modifier.size(96.dp).graphicsLayer {
                 val t = heart.value
                 val pop = if (t < 0.25f) { val k = t / 0.25f; 0.4f + 0.85f * (1f - (1f - k) * (1f - k)) } else 1.25f - 0.15f * ((t - 0.25f) / 0.2f).coerceAtMost(1f)
@@ -584,24 +645,29 @@ private fun ShortPage(app: AppState, id: String, info: ShortInfo?, playback: Sho
         Row(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(bottom = 26.dp).graphicsLayer { alpha = overlay }, verticalAlignment = Alignment.Bottom) {
             Column(Modifier.weight(1f).padding(start = PAGE_GUTTER, end = 12.dp)) {
                 info?.channel?.let { ch ->
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clip(RoundedCornerShape(20.dp)).clickable(enabled = ch.id != null) { app.openChannel(ch.id!!) }) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.heightIn(min = 44.dp).pressClickable(enabled = ch.id != null, onClickLabel = "Open the channel") { app.openChannel(ch.id!!) }) {
                         Avatar(ch.avatar, 32.dp, name = ch.name)
                         Spacer(Modifier.width(8.dp))
                         Text(ch.name, style = MaterialTheme.typography.titleSmall, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                         ch.id?.let { cid ->
                             val sub = cid in subscribed
                             Spacer(Modifier.width(10.dp))
-                            Text(
-                                if (sub) "Subscribed" else "Subscribe",
-                                style = MaterialTheme.typography.labelLarge, color = if (sub) Color.White else Color.Black,
-                                modifier = Modifier.clip(RoundedCornerShape(50)).background(if (sub) Color.White.copy(alpha = 0.22f) else Color.White).clickable {
-                                    haptics.play(if (sub) Haptic.ToggleOff else Haptic.ToggleOn)
+                            // A 44dp-tall target around the pill.
+                            Box(
+                                Modifier.heightIn(min = 44.dp).pressClickable(haptic = if (sub) Haptic.ToggleOff else Haptic.ToggleOn) {
                                     app.toggleSubscribe(Channel(cid, ch.name, ch.avatar, verified = ch.verified))
-                                }.padding(horizontal = 12.dp, vertical = 6.dp),
-                            )
+                                },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    if (sub) "Subscribed" else "Subscribe",
+                                    style = MaterialTheme.typography.labelLarge, color = if (sub) Color.White else Color.Black,
+                                    modifier = Modifier.clip(RoundedCornerShape(50)).background(if (sub) Color.White.copy(alpha = 0.22f) else Color.White).padding(horizontal = 12.dp, vertical = 6.dp),
+                                )
+                            }
                         }
                     }
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(4.dp))
                 }
                 info?.title?.let { title ->
                     // Hashtags are links, as on YouTube: each opens a search for it.
@@ -620,9 +686,10 @@ private fun ShortPage(app: AppState, id: String, info: ShortInfo?, playback: Sho
                     Text(text, style = MaterialTheme.typography.bodyMedium, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
                 info?.sound?.let { sound ->
-                    Spacer(Modifier.height(8.dp))
+                    // A 44dp-tall target around the chip; it stands in for the space above it.
+                    Box(Modifier.heightIn(min = 44.dp).pressClickable(onClickLabel = "Shorts with this sound") { onSound(sound) }, contentAlignment = Alignment.CenterStart) {
                     Row(
-                        Modifier.clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.16f)).clickable { haptics.play(Haptic.Tap); onSound(sound) }
+                        Modifier.clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.16f))
                             .padding(start = 8.dp, end = 10.dp, top = 5.dp, bottom = 5.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -632,6 +699,7 @@ private fun ShortPage(app: AppState, id: String, info: ShortInfo?, playback: Sho
                             sound.title, style = MaterialTheme.typography.labelLarge, color = Color.White, maxLines = 1,
                             modifier = Modifier.widthIn(max = 210.dp).basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 1_200),
                         )
+                    }
                     }
                 }
             }
@@ -644,7 +712,7 @@ private fun ShortPage(app: AppState, id: String, info: ShortInfo?, playback: Sho
                 }
                 ShortAction(OrielIcons.Comments, info?.commentsCount ?: "Comments", description = "Comments", enabled = info?.commentsToken != null) { info?.let(onComments) }
                 ShortAction(OrielIcons.Share, "Share") { app.share(video) }
-                ShortAction(OrielIcons.MoreHoriz, "More") { app.sheetItem = video }
+                ShortAction(OrielIcons.More, "More") { app.sheetItem = video }
                 // The sound's artwork, as YouTube ends the column with it: a tap opens the sound.
                 info?.sound?.let { sound ->
                     Box(
@@ -658,12 +726,12 @@ private fun ShortPage(app: AppState, id: String, info: ShortInfo?, playback: Sho
         }
         // The progress bar along the bottom, and a scrubber: drag along it (or tap it) to seek.
         // It swells while held, the overlay steps aside, and the time shows above it.
-        val thick by animateFloatAsState(if (scrubbing) 1f else 0f, spring(dampingRatio = 0.8f, stiffness = 700f), label = "scrubThick")
+        val thick by animateFloatAsState(if (scrubbing) 1f else 0f, motion(spring(dampingRatio = 0.8f, stiffness = 700f)), label = "scrubThick")
         if (scrubbing) {
             val d = player.duration.coerceAtLeast(0)
             Text(
                 "${Format.durationMs((scrubAt * d).toLong())} / ${Format.durationMs(d)}",
-                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.W700, shadow = androidx.compose.ui.graphics.Shadow(Color.Black.copy(alpha = 0.5f), blurRadius = 12f)),
+                style = MaterialTheme.typography.headlineSmall.copy(shadow = androidx.compose.ui.graphics.Shadow(Color.Black.copy(alpha = 0.5f), blurRadius = 12f)),
                 color = Color.White, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 64.dp),
             )
         }
@@ -684,7 +752,7 @@ private fun ShortPage(app: AppState, id: String, info: ShortInfo?, playback: Sho
                     }
                     detectHorizontalDragGestures(
                         onDragStart = { o -> scrubbing = true; scrubAt = ((o.x - inset) / track).coerceIn(0f, 1f); haptics.play(Haptic.Tick); seek(scrubAt, false) },
-                        onDragEnd = { seek(scrubAt, true); progress = scrubAt; scrubbing = false },
+                        onDragEnd = { seek(scrubAt, true); scope.launch { shownProgress.snapTo(scrubAt) }; scrubbing = false },
                         onDragCancel = { scrubbing = false },
                     ) { change, dx ->
                         change.consume()
@@ -698,9 +766,13 @@ private fun ShortPage(app: AppState, id: String, info: ShortInfo?, playback: Sho
                     val inset = SHORT_CORNER.toPx()
                     detectTapGestures { o ->
                         val f = ((o.x - inset) / (size.width - inset * 2).coerceAtLeast(1f)).coerceIn(0f, 1f)
-                        val d = player.duration
-                        if (d > 0) { player.setSeekParameters(androidx.media3.exoplayer.SeekParameters.EXACT); player.seekTo((f * d).toLong()); progress = f; haptics.play(Haptic.Tick) }
+                        if (player.duration > 0) { seekTo(f); haptics.play(Haptic.Tick) }
                     }
+                }
+                .semantics {
+                    contentDescription = "Seek"
+                    progressBarRangeInfo = ProgressBarRangeInfo(shownProgress.value, 0f..1f)
+                    if (active) setProgress { f -> seekTo(f.coerceIn(0f, 1f)); true }
                 }
                 .drawBehind {
                     val f = if (scrubbing) scrubAt else shownProgress.value
@@ -796,7 +868,7 @@ private fun ShortCommentsSheet(app: AppState, info: ShortInfo, onDismiss: () -> 
             val open = thread
             if (open != null) {
                 item(key = "back") {
-                    Row(Modifier.fillMaxWidth().clickable { thread = null }.padding(horizontal = PAGE_GUTTER, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).pressClickable(onClickLabel = "Back to all comments") { thread = null }.padding(horizontal = PAGE_GUTTER, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(OrielIcons.Back, null, tint = palette.onBackground, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(8.dp))
                         Text("All comments", style = MaterialTheme.typography.labelLarge, color = palette.onBackground)
@@ -864,7 +936,7 @@ private fun SoundSheet(app: AppState, sound: ShortSound, onDismiss: () -> Unit) 
                     Text("SOUND", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Spacer(Modifier.height(2.dp))
-                Text(sound.title, style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.W700), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(sound.title, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 val from = listOfNotNull(page?.title?.takeIf { it != sound.title }, page?.subtitle).joinToString(" · ")
                 if (from.isNotEmpty()) Text(from, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }

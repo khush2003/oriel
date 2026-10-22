@@ -2,6 +2,7 @@ package app.oriel
 
 import android.app.Application
 import android.content.Context
+import android.content.res.Configuration
 import app.oriel.util.CrashLog
 import coil3.ImageLoader
 import coil3.PlatformContext
@@ -21,6 +22,12 @@ open class OrielApp : Application(), SingletonImageLoader.Factory {
         CrashLog.install(this)
         graph = AppGraph(this)
         startGraph(graph)
+    }
+
+    // The device's language or region can change while the app runs; feeds follow it.
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (::graph.isInitialized) graph.applyLocale()
     }
 
     /** Warms the session and the stream resolver; tests replace this to stay offline. */

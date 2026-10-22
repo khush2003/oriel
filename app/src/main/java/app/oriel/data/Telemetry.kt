@@ -24,8 +24,8 @@ import java.util.UUID
  * `APTABASE_KEY` environment variable): a fork or a build from source reports nowhere.
  *
  * What's sent: the event's name (the app opened, a video played, a feature used), a few coarse
- * props (signed in or not, a quality like "1080p"; for a crash, its kind and exception class,
- * never a trace or message), and what Aptabase attaches itself: app
+ * props (signed in or not, whether it's the first run; for a crash, its kind and exception
+ * class, never a trace or message), and what Aptabase attaches itself: app
  * version, Android version, device model, locale, and a random session id that changes every
  * hour of quiet. Never what was watched or searched, nor anything about the account.
  *
@@ -38,18 +38,23 @@ class Telemetry(private val settings: Settings, private val scope: CoroutineScop
 
     private val enabled get() = available && settings.current.telemetry == true
 
+    // Events come from the main thread, playback and IO alike.
+    private val lock = Any()
     private var session = UUID.randomUUID().toString()
     private var touched = 0L
 
     fun track(event: String, props: Map<String, Any?> = emptyMap()) {
         if (!enabled) return
         val now = System.currentTimeMillis()
-        // A new session after an hour of quiet, as Aptabase's own SDKs do.
-        if (now - touched > SESSION_MS) session = UUID.randomUUID().toString()
-        touched = now
+        val sessionId = synchronized(lock) {
+            // A new session after an hour of quiet, as Aptabase's own SDKs do.
+            if (now - touched > SESSION_MS) session = UUID.randomUUID().toString()
+            touched = now
+            session
+        }
         val body = buildJsonObject {
             put("timestamp", stamp.get().format(Date(now)))
-            put("sessionId", session)
+            put("sessionId", sessionId)
             put("eventName", event)
             put("systemProps", buildJsonObject {
                 put("isDebug", BuildConfig.DEBUG)

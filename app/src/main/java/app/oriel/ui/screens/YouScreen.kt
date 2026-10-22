@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.graphics.Color
 import app.oriel.ui.components.DestructiveRed
+import app.oriel.ui.components.GroupShape
+import app.oriel.ui.components.PillSize
 import app.oriel.ui.navigation.NotificationsRoute
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
@@ -39,7 +41,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.oriel.core.model.Playlist
+import app.oriel.data.AccountManager
+import app.oriel.ui.AppState
 import app.oriel.ui.LocalAppState
+import app.oriel.ui.components.ActionPill
 import app.oriel.ui.components.Avatar
 import app.oriel.ui.components.OrielIcons
 import app.oriel.ui.components.PAGE_GUTTER
@@ -60,6 +65,8 @@ import app.oriel.ui.navigation.SettingsRoute
 import app.oriel.ui.navigation.Tab
 import app.oriel.ui.navigation.WatchLaterRoute
 import kotlinx.coroutines.launch
+import app.oriel.ui.haptics.Haptic
+import app.oriel.ui.haptics.rememberHaptics
 
 /** You: the account, what you watched, and everything you kept. */
 @Composable
@@ -70,20 +77,34 @@ fun YouScreen() {
     val account by graph.account.account.collectAsState()
     val syncing by graph.account.syncing.collectAsState()
     val library by graph.library.state.collectAsState()
+    val expired by graph.account.sessionExpired.collectAsState()
+    val haptics = rememberHaptics()
+    // The bell's count, asked each time You comes into view; opening the inbox clears it on YouTube's side.
+    // Up here rather than in the row, which the list recomposes and disposes as it scrolls.
+    var unseen by remember { mutableIntStateOf(0) }
+    LaunchedEffect(signedIn) {
+        unseen = if (!signedIn) 0 else withContext(Dispatchers.IO) { runCatching { graph.yt.unseenNotifications() }.getOrDefault(0) }
+    }
 
     PageScaffold(
         title = "You",
         tab = Tab.YOU,
         refreshing = syncing,
-        onRefresh = if (signedIn) ({ app.scope.launch { graph.account.sync() } }) else null,
+        onRefresh = if (signedIn) ({ syncLibrary(app) }) else null,
         // In the title row, as Home's avatar is, so the page needs no bar row above its title.
         titleTrailing = {
+            // Drawn at 36dp inside a 44dp target.
             Box(
-                Modifier.size(36.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant).clickable { app.navigate(SettingsRoute) },
+                Modifier.size(44.dp).clip(CircleShape).clickable(onClickLabel = "Open Settings") { haptics.play(Haptic.Tap); app.navigate(SettingsRoute) },
                 contentAlignment = Alignment.Center,
-            ) { Icon(OrielIcons.Settings, "Settings", tint = MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(20.dp)) }
+            ) {
+                Box(Modifier.size(36.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+                    Icon(OrielIcons.Settings, "Settings", tint = MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(20.dp))
+                }
+            }
         },
     ) {
+        if (signedIn && expired) item(key = "expired") { SessionExpiredCard(onSignIn = { app.navigate(LoginRoute) }) }
         item(key = "account") {
             if (signedIn) {
                 Row(
@@ -103,7 +124,7 @@ fun YouScreen() {
         }
         if (library.history.isNotEmpty()) item(key = "history") {
             Column {
-                SectionHeader("History", onMore = { app.navigate(HistoryRoute) }, moreLabel = "View all")
+                SectionHeader("History", onMore = { app.navigate(HistoryRoute) })
                 ShelfRow(library.history.take(16).map { it.video }) { v ->
                     val video = v as Video
                     val pos = library.positions[video.id]
@@ -113,9 +134,6 @@ fun YouScreen() {
             }
         }
         if (signedIn) item(key = "inbox") {
-            // The bell's count, asked each time You comes into view; opening the inbox clears it on YouTube's side.
-            var unseen by remember { mutableIntStateOf(0) }
-            LaunchedEffect(Unit) { unseen = withContext(Dispatchers.IO) { runCatching { graph.yt.unseenNotifications() }.getOrDefault(0) } }
             SettingsGroup(top = 14.dp) {
                 SettingsRow("Notifications", OrielIcons.Bell, chevron = true, onClick = { unseen = 0; app.navigate(NotificationsRoute) }, trailing = if (unseen > 0) ({ CountBadge(unseen) }) else null)
             }
@@ -137,19 +155,48 @@ fun YouScreen() {
             }
         }
         val playlists: List<Playlist> = library.localPlaylists.map { p ->
-            Playlist(id = "local:" + p.id, title = p.name, thumbnail = p.videos.firstOrNull()?.let { Thumbnails.of(it, 480) }, countText = "${p.videos.size} videos")
+            Playlist(id = "local:" + p.id, title = p.name, thumbnail = p.videos.firstOrNull()?.let { Thumbnails.of(it, 480) }, countText = Plurals.count(p.videos.size, "video"))
         } + library.savedPlaylists
         if (playlists.isNotEmpty()) item(key = "playlists") {
             Column {
-                SectionHeader("Your playlists", onMore = { app.navigate(PlaylistsRoute) }, moreLabel = "View all")
+                SectionHeader("Your playlists", onMore = { app.navigate(PlaylistsRoute) })
                 ShelfRow(playlists.take(12)) { item ->
                     val p = item as Playlist
                     if (p.id.startsWith("local:")) {
-                        Column(Modifier.clip(RoundedCornerShape(14.dp)).clickable { app.navigate(LocalPlaylistRoute(p.id.removePrefix("local:"))) }) { PlaylistShelfCardStatic(p) }
+                        Column(Modifier.clip(GroupShape).clickable { app.navigate(LocalPlaylistRoute(p.id.removePrefix("local:"))) }) { PlaylistShelfCardStatic(p) }
                     } else PlaylistShelfCard(p, width = 200.dp)
                 }
             }
         }
+    }
+}
+
+/** Syncs the library with the account, and says so when some or all of it didn't come through. */
+fun syncLibrary(app: AppState) {
+    app.scope.launch {
+        when (app.graph.account.sync()) {
+            AccountManager.SyncResult.FAILED -> app.notice("Couldn't sync with YouTube", "Try again") { syncLibrary(app) }
+            AccountManager.SyncResult.PARTIAL -> app.notice("Some of your library didn't sync", "Try again") { syncLibrary(app) }
+            else -> Unit
+        }
+    }
+}
+
+/** YouTube stopped accepting the saved sign-in: the library still works, the account doesn't until it's signed in again. */
+@Composable
+fun SessionExpiredCard(onSignIn: () -> Unit) {
+    Column(
+        Modifier.padding(horizontal = PAGE_GUTTER, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.surfaceVariant).padding(16.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(OrielIcons.SignIn, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+            Spacer(Modifier.width(10.dp))
+            Text("Signed out by YouTube", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+        }
+        Spacer(Modifier.padding(top = 6.dp))
+        Text("Sign in again to bring back your recommendations, subscriptions and playlists. Your library on this device is still here.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.padding(top = 12.dp))
+        ActionPill("Sign in again", OrielIcons.SignIn, onSignIn, filled = true, size = PillSize.Medium)
     }
 }
 

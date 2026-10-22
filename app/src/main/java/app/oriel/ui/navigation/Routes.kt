@@ -42,3 +42,21 @@ fun NavBackStackEntry.tabRoot(): Tab? {
         else -> null
     }
 }
+
+/**
+ * Whether this entry is [route] itself, arguments and all: another channel, playlist or search
+ * is a new page on top, while the same one again is no push at all.
+ */
+fun NavBackStackEntry.isRoute(route: Any): Boolean {
+    if (!destination.hasRoute(route::class)) return false
+    return when (route) {
+        is ShortsRoute -> toRoute<ShortsRoute>() == route
+        is SearchRoute -> toRoute<SearchRoute>() == route
+        is ChannelRoute -> toRoute<ChannelRoute>() == route
+        is PlaylistRoute -> toRoute<PlaylistRoute>() == route
+        is LocalPlaylistRoute -> toRoute<LocalPlaylistRoute>() == route
+        is TopicRoute -> toRoute<TopicRoute>() == route
+        // The rest are objects: the class is the route.
+        else -> true
+    }
+}

@@ -10,11 +10,10 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.EaseInCubic
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.foundation.clickable
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -41,8 +40,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBackIos
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -55,7 +52,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -68,11 +64,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.layout
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -190,6 +191,8 @@ fun FloatingTabBar(
     val currentTarget by rememberUpdatedState(restTargetPx)
     val currentSelect by rememberUpdatedState(select)
     val tint = if (glass) glassContentColor() else null
+    // The pill's place is kept in reading order; right to left it's drawn, and dragged, mirrored.
+    val sign = if (LocalLayoutDirection.current == LayoutDirection.Rtl) -1f else 1f
 
     Row(
         modifier = modifier
@@ -214,7 +217,7 @@ fun FloatingTabBar(
                         .height(with(density) { rowSize.height.toDp() })
                         .graphicsLayer {
                             val lag = if (currentStep > 0f) (abs(currentTarget - pill.value) / currentStep).coerceIn(0f, 1f) else 0f
-                            translationX = pill.value
+                            translationX = pill.value * sign
                             scaleX = 1f + lag * STRETCH
                             scaleY = 1f - lag * STRETCH * SQUASH
                             alpha = pillAlpha.value
@@ -226,6 +229,7 @@ fun FloatingTabBar(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .selectableGroup()
                     .onSizeChanged { rowSize = it }
                     .pointerInput(n) {
                         var totalDrag = 0f
@@ -244,7 +248,7 @@ fun FloatingTabBar(
                             onHorizontalDrag = { _, delta ->
                                 val step = currentStep
                                 if (step <= 0f) return@detectHorizontalDragGestures
-                                totalDrag += delta
+                                totalDrag += delta * sign
                                 val f = (currentRest + totalDrag / step).coerceIn(0f, (n - 1).toFloat())
                                 scope.launch { pill.snapTo(f * step) }
                                 val approx = f.roundToInt()
@@ -274,14 +278,14 @@ fun FloatingTabBar(
             // Search stands apart, as a circle the bar's height.
             val searchTint by animateColorAsState(
                 if (searchSelected) tint ?: MaterialTheme.colorScheme.primary else (tint?.copy(alpha = 0.8f) ?: MaterialTheme.colorScheme.onSurface),
-                tween(200), label = "searchTint",
+                fade(200), label = "searchTint",
             )
             Box(
                 Modifier
                     .fillMaxHeight()
                     .aspectRatio(1f)
                     .glassSurface(CircleShape)
-                    .clickable(remember { MutableInteractionSource() }, indication = null) {
+                    .selectable(searchSelected, remember { MutableInteractionSource() }, indication = null, role = Role.Tab) {
                         haptics.play(Haptic.Select)
                         onSearch()
                     },
@@ -307,35 +311,41 @@ private fun TabItem(
     val haptics = rememberHaptics()
     val tint by animateColorAsState(
         if (selected) selectedTint ?: MaterialTheme.colorScheme.primary else unselectedTint ?: MaterialTheme.colorScheme.onSurfaceVariant,
-        tween(200), label = "tabTint",
+        fade(200), label = "tabTint",
     )
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         // No clip: there's no ripple to bound, and a stadium clip shaves the ends off a long label.
         modifier = modifier
-            .clickable(remember { MutableInteractionSource() }, indication = null) {
+            .selectable(selected, remember { MutableInteractionSource() }, indication = null, role = Role.Tab) {
                 if (!selected) haptics.play(Haptic.Select)
                 onClick()
             }
             .padding(vertical = TAB_VERTICAL_PADDING, horizontal = 2.dp),
     ) {
+        // The label below names the tab; the icon would only say it twice.
         Icon(
-            if (selected) tab.selectedIcon else tab.icon, tab.label, tint = tint,
+            if (selected) tab.selectedIcon else tab.icon, null, tint = tint,
             modifier = Modifier.size(25.dp).graphicsLayer { scaleX = scale; scaleY = scale },
         )
         Spacer(Modifier.height(TAB_ICON_LABEL_GAP))
-        // Long labels ("Subscriptions") step down in size rather than truncate, as iOS tab bars do.
-        androidx.compose.foundation.text.BasicText(
-            tab.label,
-            style = MaterialTheme.typography.labelSmall,
-            color = { tint },
-            maxLines = 1,
-            autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = MaterialTheme.typography.labelSmall.fontSize, stepSize = 0.5.sp),
-        )
+        // The bar is a fixed TAB_BAR_HEIGHT that the mini player and page padding stand on, so its
+        // label doesn't grow past the default size, as iOS's tab bar labels don't; it can shrink.
+        val density = LocalDensity.current
+        CompositionLocalProvider(LocalDensity provides Density(density.density, density.fontScale.coerceAtMost(1f))) {
+            // Long labels ("Subscriptions") step down in size rather than truncate, as iOS tab bars do.
+            androidx.compose.foundation.text.BasicText(
+                tab.label,
+                style = MaterialTheme.typography.labelSmall,
+                color = { tint },
+                maxLines = 1,
+                autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = MaterialTheme.typography.labelSmall.fontSize, stepSize = 0.5.sp),
+            )
+        }
     }
 }
 
-// ---- scrims & tap guard --------------------------------------------------------------------
+// ---- scrims --------------------------------------------------------------------------------
 
 private const val STOPS = 16
 
@@ -348,7 +358,7 @@ private const val STOPS = 16
 fun BottomFadeScrim(modifier: Modifier = Modifier, withMiniPlayer: Boolean = false, withTabBar: Boolean = true, pageColor: Color = MaterialTheme.colorScheme.background) {
     val inset = floatingBarInsets.asPaddingValues().calculateBottomPadding()
     val base = if (withTabBar) 180.dp else 110.dp
-    val height by animateDpAsState(inset + if (withMiniPlayer) base + 74.dp else base, tween(220), label = "bottomScrim")
+    val height by animateDpAsState(inset + if (withMiniPlayer) base + 74.dp else base, fade(220), label = "bottomScrim")
     val brush = remember(pageColor) {
         Brush.verticalGradient(colorStops = Array(STOPS) { i -> val t = i / (STOPS - 1f); t to pageColor.copy(alpha = EaseInCubic.transform(t)) })
     }
@@ -363,20 +373,6 @@ fun TopFadeScrim(modifier: Modifier = Modifier, pageColor: Color = MaterialTheme
         Brush.verticalGradient(colorStops = Array(12) { i -> val t = i / 11f; t to pageColor.copy(alpha = strength * (1f - EaseOutCubic.transform(t))) })
     }
     Box(modifier.fillMaxWidth().height(height).background(brush))
-}
-
-/** Eats every touch across the floating bars' strip, so taps in the gaps never reach the list underneath. */
-@Composable
-fun FloatingBarsTapGuard(height: Dp, modifier: Modifier = Modifier) {
-    Box(
-        modifier
-            .layout { measurable, constraints ->
-                val px = (height + 8.dp).roundToPx().coerceAtMost(constraints.maxHeight)
-                val placeable = measurable.measure(Constraints.fixed(constraints.maxWidth, px))
-                layout(placeable.width, placeable.height) { placeable.place(0, 0) }
-            }
-            .pointerInput(Unit) { awaitPointerEventScope { while (true) awaitPointerEvent().changes.forEach { it.consume() } } },
-    )
 }
 
 // ---- floating top bar ----------------------------------------------------------------------
@@ -435,22 +431,57 @@ fun FloatingTopBar(
     leading: (@Composable () -> Unit)? = null,
     actions: (@Composable RowScope.() -> Unit)? = null,
 ) {
-    Box(
+    CenteredTitleRow(
         modifier
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.statusBars)
             .height(TopBarContentHeight)
             .padding(horizontal = BAR_GUTTER),
-    ) {
-        Row(Modifier.align(Alignment.CenterStart), verticalAlignment = Alignment.CenterVertically) {
-            if (onBack != null) GlassCircleButton(Icons.AutoMirrored.Rounded.ArrowBackIos, "Back", onBack, iconSize = 19.dp, modifier = Modifier.graphicsLayer { translationX = 0f })
-            leading?.invoke()
-        }
-        if (title != null) {
-            AnimatedVisibility(showTitle, Modifier.align(Alignment.Center).padding(horizontal = 96.dp), enter = fadeIn(tween(220)), exit = fadeOut(tween(220))) {
-                Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        start = if (onBack == null && leading == null) null else {
+            {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (onBack != null) GlassCircleButton(OrielIcons.Back, "Back", onBack, iconSize = 19.dp)
+                    leading?.invoke()
+                }
             }
+        },
+        title = {
+            if (title != null) {
+                AnimatedVisibility(showTitle, enter = fadeIn(fade(220)), exit = fadeOut(fade(220))) {
+                    Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        },
+        end = actions?.let { { GlassActionsPill(content = it) } },
+    )
+}
+
+/**
+ * A bar's three slots: [start] and [end] are measured first at their own widths, then [title]
+ * is centred between equal margins in what's left, so a wide side never runs under it.
+ */
+@Composable
+internal fun CenteredTitleRow(
+    modifier: Modifier,
+    start: (@Composable () -> Unit)?,
+    title: @Composable () -> Unit,
+    end: (@Composable () -> Unit)?,
+    gap: Dp = 8.dp,
+) {
+    Layout(contents = listOf(start ?: {}, title, end ?: {}), modifier = modifier) { (starts, titles, ends), constraints ->
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val s = starts.map { it.measure(loose) }
+        val startWidth = s.maxOfOrNull { it.width } ?: 0
+        val e = ends.map { it.measure(loose.copy(maxWidth = (loose.maxWidth - startWidth).coerceAtLeast(0))) }
+        val side = maxOf(startWidth, e.maxOfOrNull { it.width } ?: 0)
+        val margin = if (side > 0) side + gap.roundToPx() else 0
+        val t = titles.map { it.measure(loose.copy(maxWidth = (constraints.maxWidth - margin * 2).coerceAtLeast(0))) }
+        val width = constraints.maxWidth
+        val height = (listOf(s, e, t).flatten().maxOfOrNull { it.height } ?: 0).coerceIn(constraints.minHeight, constraints.maxHeight)
+        layout(width, height) {
+            s.forEach { it.placeRelative(0, (height - it.height) / 2) }
+            e.forEach { it.placeRelative(width - it.width, (height - it.height) / 2) }
+            t.forEach { it.placeRelative((width - it.width) / 2, (height - it.height) / 2) }
         }
-        if (actions != null) GlassActionsPill(Modifier.align(Alignment.CenterEnd), content = actions)
     }
 }

@@ -1,0 +1,27 @@
+{
+  "liked": [
+    {"id": "fakeVideo01", "title": "Invented video one", "channel": {"name": "Made-up Channel", "id": "UCfakeChannel000000000001", "verified": true}, "durationSec": 754, "viewsText": "1.2K views", "publishedText": "3 days ago", "badges": ["4K"]},
+    {"id": "fakeVideo02", "title": "Invented video two", "isShort": true}
+  ],
+  "dislikedIds": ["fakeVideo09"],
+  "watchLater": [
+    {"id": "fakeVideo03", "title": "Invented video three", "progress": 0.5}
+  ],
+  "subscriptions": [
+    {"id": "UCfakeChannel000000000001", "title": "Made-up Channel", "handle": "@madeup", "subscribersText": "12K subscribers"}
+  ],
+  "savedPlaylists": [
+    {"id": "PLfakePlaylist01", "title": "An invented playlist", "owner": {"name": "Made-up Channel"}, "countText": "12 videos"},
+    {"id": "RDfakeMix0001", "title": "Invented mix", "isMix": true, "firstVideoId": "fakeVideo01"}
+  ],
+  "localPlaylists": [
+    {"id": "11111111-2222-3333-4444-555555555555", "name": "Road trip", "videos": [{"id": "fakeVideo01", "title": "Invented video one"}], "createdAt": 1760000000000}
+  ],
+  "history": [
+    {"video": {"id": "fakeVideo04", "title": "Invented video four", "durationSec": 600}, "watchedAt": 1760000100000},
+    {"video": {"id": "fakeVideo01", "title": "Invented video one"}, "watchedAt": 1760000000000}
+  ],
+  "positions": {"fakeVideo04": 120000},
+  "searchHistory": ["invented query", "another made-up search"],
+  "someFieldFromTheFuture": {"ignored": true}
+}
