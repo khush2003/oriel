@@ -97,7 +97,22 @@ class AccountManager(
     private fun savedCookie(): String? = synchronized(prefs) {
         val stored = prefs.getString(KEY_COOKIE, null) ?: return null
         if (!SecretBox.isSealed(stored)) return stored
-        box.open(stored)?.let { return it }
+        // A keystore that's only busy gets a few more tries; still busy, this launch goes without
+        // the session but keeps it for the next, rather than signing out.
+        repeat(KEYSTORE_TRIES) { attempt ->
+            val opened = try {
+                box.open(stored)
+            } catch (_: SecretBox.Unavailable) {
+                if (attempt < KEYSTORE_TRIES - 1) Thread.sleep(KEYSTORE_RETRY_MS)
+                return@repeat
+            }
+            return opened ?: forget()
+        }
+        return null
+    }
+
+    /** The saved session is gone for good: signed out, and nothing of it kept. */
+    private fun forget(): String? {
         session.incrementAndGet()
         prefs.edit { clear().putInt(KEY_SCHEMA, SCHEMA) }
         _account.value = null
@@ -274,6 +289,8 @@ class AccountManager(
     }
 
     companion object {
+        private const val KEYSTORE_TRIES = 3
+        private const val KEYSTORE_RETRY_MS = 150L
         private const val KEY_COOKIE = "cookie"
         /** The Android Keystore key the cookie is sealed with. */
         private const val KEY_ALIAS = "oriel.account.cookie"

@@ -111,4 +111,25 @@ class AccountStorageTest {
         assertEquals(cookie, prefs.getString("cookie", null))
         assertTrue(built.manager.signedIn.value)
     }
+
+    @Test fun aKeystoreThatIsOnlyBusyKeepsTheSession() {
+        val k = key()
+        prefs.edit().putInt("schema", 2).putString("cookie", SecretBox { k }.seal(cookie)).putString("account", "{}").commit()
+        // Busy at launch (as some phones' keystores are just after boot): not a lost key.
+        val busy = SecretBox { throw java.security.KeyStoreException("keystore busy") }
+        val built = manager(busy)
+        built.manager.restore()
+        val client = YouTube()
+        built.manager.applySession(client)
+        assertNull(client.cookie)
+        assertTrue("still signed in", built.manager.signedIn.value)
+        assertTrue(SecretBox.isSealed(prefs.getString("cookie", null)!!))
+        assertEquals("{}", prefs.getString("account", null))
+        // The next launch, with the keystore back, carries on with the same session.
+        val next = manager(SecretBox { k })
+        next.manager.restore()
+        val again = YouTube()
+        next.manager.applySession(again)
+        assertEquals(cookie, again.cookie)
+    }
 }
