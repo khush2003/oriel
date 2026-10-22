@@ -121,12 +121,14 @@ android {
     }
 }
 
-// Without a release key the release APKs would come out unsigned; stop at packaging, with the fix.
+// Without a release key the release APKs come out unsigned, never debug-signed: Android won't
+// install them, so they can't pass for a release. Code scanning builds `assemble` this way. The
+// release workflow refuses to publish anything not signed with the release certificate.
 val hasReleaseSigning = android.signingConfigs.findByName("release") != null
 tasks.matching { it.name == "packageRelease" || it.name == "signReleaseBundle" }.configureEach {
     doFirst {
         if (!hasReleaseSigning) {
-            throw GradleException("No release signing key: copy keystore.properties.example to keystore.properties and fill it in (docs/RELEASING.md).")
+            logger.warn("No release signing key: these release APKs are unsigned and won't install. Copy keystore.properties.example to keystore.properties to sign them (docs/RELEASING.md).")
         }
     }
 }
