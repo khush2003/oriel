@@ -95,7 +95,7 @@ val ROW_CORNER = 12.dp
 fun MoreButton(onClick: () -> Unit, modifier: Modifier = Modifier, tint: Color = MaterialTheme.colorScheme.onSurfaceVariant) {
     val haptics = rememberHaptics()
     Box(
-        modifier.offset(x = 6.dp).size(44.dp).clickable(null, GlyphPress, role = Role.Button) {
+        modifier.offset(x = 6.dp).size(44.dp).sheetOrigin(22.dp, MaterialTheme.colorScheme.surfaceVariant).clickable(null, GlyphPress, role = Role.Button) {
             haptics.play(Haptic.Tap)
             onClick()
         },

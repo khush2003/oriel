@@ -1,6 +1,35 @@
 package app.oriel.ui.components
 
 import app.oriel.ui.AlertAction
+import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.material3.SheetValue
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.util.lerp
+import app.oriel.ui.theme.LocalReduceAnimation
+import app.oriel.ui.theme.Sp
+import app.oriel.ui.theme.blobRectPath
+import app.oriel.ui.theme.smoothstep
+import kotlinx.coroutines.flow.first
 import app.oriel.util.Thumbnails
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -92,13 +121,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import kotlinx.coroutines.delay
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.runtime.snapshotFlow
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
 
 /**
  * Closes the sheet it's read inside: slides it down, then runs [after]. Rows that end the
@@ -107,30 +130,230 @@ import androidx.compose.ui.input.pointer.pointerInput
 val LocalSheetClose = staticCompositionLocalOf<(after: () -> Unit) -> Unit> { { it() } }
 
 /**
+ * Where a sheet grows out of: the tapped button's bounds in the window, its corner radius in px,
+ * and its fill (the sheet starts in it). Recorded as the button is pressed ([sheetOrigin]) and
+ * taken by the next [OrielSheet] to open, so callers needn't thread it through.
+ */
+@Immutable
+class SheetOrigin(val bounds: Rect, val corner: Float, val tint: Color?)
+
+object SheetOrigins {
+    private var origin: SheetOrigin? = null
+    private var recordedAt = 0L
+
+    fun record(o: SheetOrigin?) {
+        origin = o
+        recordedAt = System.nanoTime()
+    }
+
+    /** The origin of the press that's opening a sheet now, once. */
+    fun take(): SheetOrigin? {
+        val o = origin?.takeIf { System.nanoTime() - recordedAt < 600_000_000L }
+        origin = null
+        return o
+    }
+}
+
+/** Marks a button as the place the sheet it opens grows out of: its bounds, [corner] and [tint] are recorded as it's pressed. */
+@Composable
+fun Modifier.sheetOrigin(corner: Dp, tint: Color? = null): Modifier {
+    val coordinates = remember { arrayOfNulls<LayoutCoordinates>(1) }
+    val radius = with(LocalDensity.current) { corner.toPx() }
+    val fill by rememberUpdatedState(tint)
+    return this
+        .onPlaced { coordinates[0] = it }
+        .pointerInput(Unit) {
+            awaitEachGesture {
+                awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                val c = coordinates[0]?.takeIf { it.isAttached } ?: return@awaitEachGesture
+                val r = c.boundsInWindow()
+                if (r.width > 1f && r.height > 1f) SheetOrigins.record(SheetOrigin(r, minOf(radius, r.height / 2f, r.width / 2f), fill))
+            }
+        }
+}
+
+/**
+ * The mock's sheet morph over M3's sheet: it starts as the button that opened it (its rect,
+ * radius and fill), the height leading the width (Sp.SheetH against Sp.SheetW), the sides and
+ * top swelling mid-flight (blobRect: 8 to 18 dp at the sides, 18 at the top); dragged down it
+ * shrinks back toward the button (by up to 42%) and fades its content; closed, it shrinks back
+ * into it on Sp.SheetClose. M3's own slide is held still meanwhile (counter-translated), so
+ * only the morph moves it. Without an origin it rises out of the bottom edge, swelling the same.
+ */
+@Stable
+private class SheetMorph(val origin: SheetOrigin?) {
+    val pw = Animatable(0f)
+    val ph = Animatable(0f)
+    /** Opening (until M3's slide has settled) or closing: M3's motion is cancelled out meanwhile. */
+    var opening by mutableStateOf(true)
+    var closing by mutableStateOf(false)
+    /** How far it had been dragged down when it began to close: it shrinks from there. */
+    var heldDrag = 0f
+    var placedY = 0f
+    var containerH = 0f
+    var sheetH = 0f
+    var containerWindow = Offset.Zero
+    val path = Path()
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+private fun Modifier.sheetMorph(m: SheetMorph, state: androidx.compose.material3.SheetState, page: Color, scrimAlpha: Float): Modifier = this
+    .onPlaced { c ->
+        m.placedY = c.positionInParent().y
+        m.sheetH = c.size.height.toFloat()
+        c.parentLayoutCoordinates?.let { p ->
+            m.containerH = p.size.height.toFloat()
+            m.containerWindow = p.positionInWindow()
+        }
+    }
+    .drawBehind {
+        // The scrim, under the sheet's own layer so the morph's clip leaves it whole.
+        val p = minOf(m.pw.value, m.ph.value).coerceIn(0f, 1f)
+        if (p > 0f) drawRect(Color.Black.copy(alpha = scrimAlpha * p), topLeft = Offset(-size.width, -m.containerH * 2f), size = Size(size.width * 3f, m.containerH * 5f))
+    }
+    .graphicsLayer {
+        val offset = runCatching { state.requireOffset() }.getOrDefault(0f)
+        val rest = (m.containerH - size.height).coerceAtLeast(0f)
+        translationY = when {
+            m.closing -> rest + m.heldDrag - offset
+            m.opening -> rest - offset
+            else -> 0f
+        }
+    }
+    .drawWithContent {
+        val offset = runCatching { state.requireOffset() }.getOrDefault(0f)
+        val rest = (m.containerH - size.height).coerceAtLeast(0f)
+        val tY = when {
+            m.closing -> rest + m.heldDrag - offset
+            m.opening -> rest - offset
+            else -> 0f
+        }
+        // The sheet's top in these coordinates, and how far it's dragged below its rest.
+        val top = offset - m.placedY
+        val drag = when {
+            m.closing -> m.heldDrag
+            m.opening -> 0f
+            else -> (offset - rest).coerceAtLeast(0f)
+        }
+        val k = 1f - 0.42f * smoothstep(0f, size.height * 1.1f, drag)
+        val pw = m.pw.value * k
+        val ph = m.ph.value * k
+        val p = minOf(pw, ph)
+        val pc = p.coerceIn(0f, 1f)
+        val w = size.width
+        val h = size.height
+        // Where the button is, in these (untranslated) coordinates.
+        val o = m.origin
+        val src = if (o != null) {
+            o.bounds.translate(-m.containerWindow.x, -m.containerWindow.y - m.placedY - tY)
+        } else {
+            Rect(0f, top + h, w, top + h)
+        }
+        val srcR = o?.corner ?: 28.dp.toPx()
+        var l = lerp(src.left, 0f, pw)
+        var r = lerp(src.right, w, pw)
+        var t = lerp(src.top, top, ph)
+        var b = lerp(src.bottom, top + h, ph)
+        if (p < 0f) {
+            // Plops back into the button with a squash.
+            val q = minOf(0.35f, -p)
+            val cx = (l + r) / 2f
+            val cy = (t + b) / 2f
+            val hw = (r - l) / 2f * (1f + q)
+            val hh = (b - t) / 2f * (1f - q * 0.8f)
+            l = cx - hw; r = cx + hw; t = cy - hh; b = cy + hh
+        }
+        val ease = smoothstep(0f, 1f, pc)
+        val radTop = minOf(lerp(srcR, 28.dp.toPx(), ease), (r - l) / 2f, (b - t) / 2f).coerceAtLeast(0f)
+        val radBottom = minOf(lerp(srcR, 0f, ease), (r - l) / 2f, (b - t) / 2f).coerceAtLeast(0f)
+        val sw = kotlin.math.sin(pc * kotlin.math.PI.toFloat())
+        val vel = kotlin.math.abs(m.ph.velocity + m.pw.velocity) * 0.5f
+        val bs = sw * (8f + (vel * 2f).coerceIn(0f, 10f)) * density
+        val bt = sw * 18f * density
+        blobRectPath(m.path, l, t, r, b, radTop, bs, bt, radBottom)
+        clipPath(m.path) {
+            // The sheet's colour past its top too, for the swell and the overshoot to fill.
+            drawRect(page, topLeft = Offset(-bs * 2f, top - h), size = Size(w + bs * 4f, h + 2f))
+            this@drawWithContent.drawContent()
+            // It starts in the button's fill and turns into the sheet's.
+            val tint = o?.tint
+            val a = 1f - smoothstep(0.02f, 0.45f, pc)
+            if (tint != null && a > 0f) drawRect(tint, topLeft = Offset(l - bs * 2f, t - bt * 2f), size = Size(r - l + bs * 4f, b - t + bt * 3f), alpha = a)
+        }
+    }
+
+/**
  * BitChord's sheet: the page colour, a 28dp top radius and iOS's grabber, a 36 x 5 capsule.
- * Every sheet in the app is one of these. [scrollable] wraps the content in a scroll; sheets
- * that bring their own list (chapters, comments) pass false.
+ * Every sheet in the app is one of these, and each grows out of the button that opened it, as
+ * the mock's do ([SheetMorph]; the button marks itself with [sheetOrigin], or a caller passes
+ * [origin]). [scrollable] wraps the content in a scroll; sheets that bring their own list
+ * (chapters, comments) pass false. Reduce motion keeps M3's plain slide.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun OrielSheet(onDismiss: () -> Unit, scrollable: Boolean = true, maxHeight: Dp = 680.dp, content: @Composable ColumnScope.() -> Unit) {
-    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+fun OrielSheet(
+    onDismiss: () -> Unit,
+    scrollable: Boolean = true,
+    maxHeight: Dp = 680.dp,
+    origin: SheetOrigin? = remember { SheetOrigins.take() },
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val reduce = LocalReduceAnimation.current
     val scope = rememberCoroutineScope()
     val dismiss by rememberUpdatedState(onDismiss)
+    val morph = remember { SheetMorph(origin) }
+    // Every way out (a drag down, the scrim, back) asks M3 to hide; the morph says no and closes itself instead.
+    val closeRef = remember { arrayOfNulls<(() -> Unit) -> Unit>(1) }
+    val reduceNow by rememberUpdatedState(reduce)
+    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { v ->
+        if (v == SheetValue.Hidden && !reduceNow) {
+            closeRef[0]?.invoke {}
+            false
+        } else true
+    })
     val close: (() -> Unit) -> Unit = remember(state) {
-        { after -> scope.launch { state.hide() }.invokeOnCompletion { dismiss(); after() } }
+        { after ->
+            if (reduceNow) {
+                scope.launch { state.hide() }.invokeOnCompletion { dismiss(); after() }
+            } else if (!morph.closing) {
+                val offset = runCatching { state.requireOffset() }.getOrDefault(0f)
+                morph.heldDrag = if (morph.opening) 0f else (offset - (morph.containerH - morph.sheetH).coerceAtLeast(0f)).coerceAtLeast(0f)
+                morph.closing = true
+                scope.launch {
+                    val a = launch { morph.ph.animateTo(0f, Sp.SheetClose.unit) }
+                    morph.pw.animateTo(0f, Sp.SheetClose.unit)
+                    a.join()
+                    dismiss()
+                    after()
+                }
+            }
+        }
+    }
+    closeRef[0] = close
+    LaunchedEffect(morph) {
+        if (reduce) {
+            morph.pw.snapTo(1f)
+            morph.ph.snapTo(1f)
+            morph.opening = false
+            return@LaunchedEffect
+        }
+        launch { morph.ph.animateTo(1f, Sp.SheetH.unit) }
+        launch { morph.pw.animateTo(1f, Sp.SheetW.unit) }
+        snapshotFlow { state.currentValue == SheetValue.Expanded && !state.isAnimationRunning }.first { it }
+        morph.opening = false
     }
     val scroll = rememberScrollState()
     val page = MaterialTheme.colorScheme.background
     val overdrag = rememberSheetOverdrag(state) { !scroll.canScrollForward }
+    val scrim = 0.36f
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        modifier = if (scrollable) Modifier.sheetOverdrag(overdrag, page) else Modifier,
+        modifier = (if (reduce) Modifier else Modifier.sheetMorph(morph, state, page, scrim)).then(if (scrollable) Modifier.sheetOverdrag(overdrag, page) else Modifier),
         sheetState = state,
         containerColor = page,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         tonalElevation = 0.dp,
-        scrimColor = Color.Black.copy(alpha = 0.36f),
+        scrimColor = if (reduce) Color.Black.copy(alpha = scrim) else Color.Transparent,
         dragHandle = { Grabber { close {} } },
     ) {
         // A scrolling sheet stretches as a whole past its top, rather than its content inside it.
@@ -139,6 +362,17 @@ fun OrielSheet(onDismiss: () -> Unit, scrollable: Boolean = true, maxHeight: Dp 
             androidx.compose.foundation.LocalOverscrollFactory provides if (scrollable) null else androidx.compose.foundation.LocalOverscrollFactory.current,
         ) {
             val body = Modifier.fillMaxWidth().heightIn(max = maxHeight)
+                .then(
+                    if (reduce) Modifier else Modifier.graphicsLayer {
+                        // The mock's body: it fades in late and settles from 94%, from its top.
+                        val pc = minOf(morph.pw.value, morph.ph.value).coerceIn(0f, 1f)
+                        alpha = smoothstep(0.55f, 0.95f, pc)
+                        val s = lerp(0.94f, 1f, smoothstep(0.4f, 1f, pc))
+                        scaleX = s
+                        scaleY = s
+                        transformOrigin = TransformOrigin(0.5f, 0f)
+                    },
+                )
             Column(
                 (if (scrollable) body.verticalScroll(scroll) else body).navigationBarsPadding().padding(bottom = 12.dp),
                 content = content,

@@ -1,5 +1,6 @@
 package app.oriel.ui.player
 
+import app.oriel.ui.components.sheetOrigin
 import androidx.annotation.OptIn
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.layout.layout
@@ -572,6 +573,7 @@ private fun RowScope.TimeAndChapter(position: MutableLongState, scrubMs: () -> L
             Modifier
                 .weight(1f, fill = false)
                 .heightIn(min = 44.dp)
+                .sheetOrigin(16.dp)
                 .clickable(interaction, indication = null, onClick = onChapters)
                 .wrapContentHeight()
                 .clip(RoundedCornerShape(50))
@@ -697,6 +699,8 @@ fun OverlayButton(icon: ImageVector, contentDescription: String, onClick: () -> 
         Modifier
             .graphicsLayer { alpha = if (enabled) 1f else 0.35f }
             .size(maxOf(size, 44.dp))
+            // A sheet it opens (settings) grows out of it.
+            .sheetOrigin(size / 2)
             .clickable(interaction, indication = null, enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
