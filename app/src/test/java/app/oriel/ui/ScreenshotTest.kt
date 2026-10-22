@@ -31,6 +31,7 @@ import app.oriel.core.model.Feed
 import app.oriel.data.ThemeMode
 import app.oriel.playback.PlayerConnection
 import app.oriel.core.model.ChannelRef
+import app.oriel.core.model.Chapter
 import app.oriel.core.model.ShortInfo
 import app.oriel.ui.navigation.SearchRoute
 import app.oriel.ui.navigation.ShortsRoute
@@ -648,6 +649,50 @@ class ScreenshotTest {
         settle(8)
         rule.onAllNodes(hasText("replies", substring = true)).onFirst().performClick()
     })
+
+    /** A longer, invented chapter list, so the sheet opens at its medium detent with the one playing (4:22) mid-list. */
+    private val manyChapters = listOf(
+        "Intro", "The plan", "Picking the spot", "Clearing the ground", "Hauling timber", "Rain, again", "Footings", "Foundations",
+        "Sill and joists", "Walls and roof", "The stove", "Windows", "Finishing inside", "First night",
+    ).zip(listOf(0, 30, 62, 95, 130, 170, 215, 262, 320, 410, 500, 610, 800, 980)) { title, s -> Chapter(title, s * 1000L) }
+
+    /** The chapters sheet, opened from the chapter button on the player: the one playing marked, scrolled into view. */
+    private fun chapters(name: String, theme: ThemeMode, playing: String = "Foundations", positionMs: Long = 300_000, after: () -> Unit = {}) = shoot(name, theme = theme, screen = true, setup = {
+        it.watch.preview(Fixtures.watch.let { w -> w.copy(page = w.page!!.copy(chapters = manyChapters)) }, Fixtures.comments, Fixtures.storyboard)
+        if (positionMs != 300_000L) it.connection.preview(listOf(Fixtures.watch.video!!), 0, playing = true, positionMs = positionMs)
+        it.sheet.progress.snapTo(1f)
+    }, after = {
+        rule.onAllNodes(hasText("·  $playing")).onFirst().performClick()
+        settle(10)
+        after()
+    })
+
+    @Test fun chaptersSheet() {
+        chapters("41_chapters_sheet", ThemeMode.DARK)
+        assertEquals("the playing chapter is announced as selected", 1, count(hasText("Foundations").and(androidx.compose.ui.test.isSelected())))
+    }
+
+    @Test fun chaptersSheetLight() = chapters("42_chapters_sheet_light", ThemeMode.LIGHT)
+
+    /** Dragged up from its medium detent to large. */
+    @Test fun chaptersSheetLarge() = chapters("43_chapters_sheet_large", ThemeMode.DARK) {
+        rule.onAllNodes(hasText("Done")).onFirst().performTouchInput { swipeUp(startY = centerY, endY = centerY - 900f, durationMillis = 400) }
+        settle(12)
+    }
+
+    /** The last chapter playing: too near the end to scroll up into the medium detent, so the sheet opens tall. */
+    @Test fun chaptersSheetNearTheEnd() = chapters("44_chapters_sheet_end_light", ThemeMode.LIGHT, playing = "First night", positionMs = 1_100_000)
+
+    /** A tap on a chapter closes the sheet. */
+    @Test fun chapterTapCloses() {
+        chapters("45_chapters_sheet_tapped", ThemeMode.DARK) {
+            // The sheet's row, not the shelf of chapters on the page under it.
+            val inSheet = androidx.compose.ui.test.SemanticsMatcher("plays from here") { it.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsActions.OnClick) { null }?.label == "Play from here" }
+            rule.onAllNodes(hasText("Sill and joists").and(inSheet)).onFirst().performClick()
+            settle(12)
+        }
+        assertEquals("sheet closed", 0, count(hasText("Done")))
+    }
 
     private val report = ReportRequest(ReportKind.PLAYBACK, "https://youtu.be/${Fixtures.videos[0].id}", "It stops after a few seconds and says it couldn't play the video.")
 
