@@ -1,5 +1,18 @@
 package app.oriel.ui.screens
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import app.oriel.ui.theme.Sp
+import app.oriel.ui.theme.goo
+import app.oriel.ui.theme.gooEffect
+import app.oriel.ui.theme.smoothstep
+import kotlinx.coroutines.launch
 import app.oriel.ui.theme.animatedBackground
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -266,33 +279,151 @@ private fun pullOffset(fraction: Float, threshold: Float): Float {
     return threshold * (1f + over - over * over / 4f)
 }
 
-/** iOS's refresh: where it holds the content while it loads, and how far it has to be pulled (twice this, under the finger). */
-private val REFRESH_HOLD = 60.dp
+/** iOS's refresh: where it holds the content while it loads, and how far it has to be pulled (the mock's 64 and 80). */
+private val REFRESH_HOLD = 64.dp
+private val REFRESH_THRESHOLD = 80.dp
 
 /**
  * iOS's pull to refresh rather than Material's: the content itself comes down with the finger
- * (passed to [content] as a layer offset), the activity indicator filling in spoke by spoke in
- * the gap above it, a tick as it catches, and the content held open while [refreshing].
+ * (passed to [content] as a layer offset), a tick as it catches, and the content held open while
+ * [refreshing]. In the gap, the mock's drop: it hangs from the top on a neck that thins as it's
+ * pulled; past the threshold the neck snaps, and the drop springs into place as a goo spinner
+ * whose satellites fuse and split with it. Reduce motion shows iOS's spokes instead.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun IosPullToRefresh(refreshing: Boolean, onRefresh: () -> Unit, spinnerTop: Dp, content: @Composable (offset: () -> Float) -> Unit) {
     val state = rememberPullToRefreshState()
-    val holdPx = with(LocalDensity.current) { REFRESH_HOLD.toPx() }
+    val density = LocalDensity.current
+    val thresholdPx = with(density) { REFRESH_THRESHOLD.toPx() }
     val haptics = rememberHaptics()
     val loading by rememberUpdatedState(refreshing)
+    val reduce = LocalReduceAnimation.current
+    val drop = remember { RefreshDrop() }
+    // Held open a little short of the threshold while it loads, as the mock's is.
+    val hold = remember { Animatable(1f) }
+    LaunchedEffect(refreshing) { hold.animateTo(if (refreshing) REFRESH_HOLD / REFRESH_THRESHOLD else 1f, Sp.Soft.unit) }
+    val offset = remember(state, thresholdPx) { { pullOffset(state.distanceFraction, thresholdPx) * hold.value } }
     LaunchedEffect(state) {
         snapshotFlow { state.distanceFraction >= 1f }.distinctUntilChanged().filter { it }.collect {
             // The pull caught; a refresh started from elsewhere opens without one.
-            if (!loading) haptics.play(Haptic.Tap)
+            if (!loading) {
+                haptics.play(Haptic.Tap)
+                if (!reduce) drop.snap(this, offset() / density.density)
+            }
         }
     }
-    val offset = remember(state, holdPx) { { pullOffset(state.distanceFraction, holdPx) } }
+    LaunchedEffect(refreshing) {
+        if (refreshing && !reduce && !drop.snapped) drop.snap(this, offset() / density.density)
+        if (!refreshing && drop.snapped) drop.finish(this)
+    }
+    // Pulled back without letting it refresh: the drop goes back to hanging.
+    LaunchedEffect(state) {
+        snapshotFlow { state.distanceFraction <= 0f }.distinctUntilChanged().filter { it }.collect { if (!loading && drop.snapped && !drop.finishing) drop.reset() }
+    }
     // A page that starts under the status bar still shows the indicator below it.
     val top = maxOf(spinnerTop, WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 4.dp)
-    Box(Modifier.fillMaxSize().pullToRefresh(refreshing, state, threshold = REFRESH_HOLD, onRefresh = onRefresh)) {
+    Box(Modifier.fillMaxSize().pullToRefresh(refreshing, state, threshold = REFRESH_THRESHOLD, onRefresh = onRefresh)) {
         content(offset)
-        RefreshSpinner(refreshing, { state.distanceFraction }, offset, Modifier.align(Alignment.TopCenter).padding(top = top))
+        if (reduce) RefreshSpinner(refreshing, { state.distanceFraction }, offset, Modifier.align(Alignment.TopCenter).padding(top = top))
+        else RefreshDropCanvas(drop, refreshing, offset, Modifier.align(Alignment.TopCenter).padding(top = top))
+    }
+}
+
+/** The mock's refresh drop: its springs and its state (hanging, snapped into a spinner, finishing). */
+@Stable
+private class RefreshDrop {
+    var snapped by mutableStateOf(false)
+    var finishing = false
+    val neck = Animatable(0f)
+    val anchor = Animatable(1f)
+    val ballY = Animatable(0f)
+    val ballR = Animatable(0f)
+    val sat = Animatable(0f)
+    /** The spinner's clock, seconds. */
+    var spin by mutableFloatStateOf(0f)
+
+    /** Past the threshold, at [pull] dp: the neck snaps, the drop springs to the spinner's place and grows satellites. */
+    fun snap(scope: kotlinx.coroutines.CoroutineScope, pull: Float) {
+        if (snapped) return
+        snapped = true
+        finishing = false
+        scope.launch {
+            neck.snapTo(maxOf(4f, 16f - pull * 0.1f)); anchor.snapTo(1f); ballY.snapTo(10f + pull * 0.55f); ballR.snapTo(12f); sat.snapTo(0f)
+            launch { neck.animateTo(0f, Sp.FastEdge.unit, -80f) }
+            launch { anchor.animateTo(0f, Sp.Snappy.unit) }
+            launch { ballY.animateTo(34f, Sp.Bouncy.unit) }
+            launch { ballR.animateTo(10f, Sp.Bouncy.unit) }
+            launch { sat.animateTo(1f, Sp.Bouncy.unit) }
+            var last = withFrameNanos { it }
+            while (snapped) {
+                withFrameNanos { now ->
+                    spin += (now - last) / 1e9f
+                    last = now
+                }
+            }
+        }
+    }
+
+    /** Done: the satellites fuse back in and the drop shrinks away. */
+    fun finish(scope: kotlinx.coroutines.CoroutineScope) {
+        finishing = true
+        scope.launch {
+            launch { sat.animateTo(0f, Sp.Snappy.unit) }
+            ballR.animateTo(0f, Sp.Bouncy.unit, 30f)
+            reset()
+        }
+    }
+
+    fun reset() {
+        snapped = false
+        finishing = false
+    }
+}
+
+/**
+ * The drop, drawn in the gap the pull opens, through the mock's small goo filter (a 4 dp blur
+ * and a 20/8 threshold) on Android 12 and up; below it the shapes are drawn as they are, the
+ * neck being a bar that already joins them. All in the draw phase.
+ */
+@Composable
+private fun RefreshDropCanvas(drop: RefreshDrop, refreshing: Boolean, pull: () -> Float, modifier: Modifier) {
+    val color = MaterialTheme.colorScheme.onBackground
+    val fx = with(LocalDensity.current) { remember { gooEffect(4.dp.toPx(), gain = 20f, cut = 8f) } }
+    Canvas(
+        modifier.size(120.dp, 220.dp)
+            .graphicsLayer {
+                val p = pull() / density
+                alpha = if (drop.snapped) 1f else smoothstep(2f, 24f, p)
+            }
+            .goo(fx)
+            .semantics { if (refreshing) progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate },
+    ) {
+        val d = density
+        val p = pull() / d
+        if (!drop.snapped && p <= 0f) return@Canvas
+        val nw: Float
+        val ax: Float
+        val by: Float
+        val br: Float
+        val sat: Float
+        if (!drop.snapped) {
+            nw = maxOf(4f, 16f - p * 0.1f); ax = 1f; by = 10f + p * 0.55f; br = 5f + minOf(p, 80f) / 80f * 7f; sat = 0f
+        } else {
+            nw = drop.neck.value; ax = drop.anchor.value; by = drop.ballY.value; br = drop.ballR.value; sat = drop.sat.value
+        }
+        val cx = size.width / 2f
+        if (ax > 0f) drawOval(color, topLeft = Offset(cx - 30f * ax * d, -10f * ax * d), size = Size(60f * ax * d, 20f * ax * d))
+        if (nw > 0f) drawRect(color, topLeft = Offset(cx - nw / 2f * d, 0f), size = Size(nw * d, maxOf(0f, by) * d))
+        if (br > 0f) drawCircle(color, br * d, Offset(cx, by * d))
+        if (sat > 0f) {
+            val t = drop.spin
+            for (i in 0 until 3) {
+                val a = t * 5f + i * 2.094f
+                val orbit = (14f + 5f * kotlin.math.sin(t * 6f + i * 1.7f)) * sat
+                drawCircle(color, 4.5f * sat * d, Offset(cx + kotlin.math.cos(a) * orbit * d, (by + kotlin.math.sin(a) * orbit) * d))
+            }
+        }
     }
 }
 
