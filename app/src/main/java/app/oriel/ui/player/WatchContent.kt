@@ -395,8 +395,8 @@ private fun androidx.compose.foundation.lazy.LazyListScope.relatedItems(groups: 
 }
 
 @Composable
-private fun TitleBlock(video: Video, page: WatchPage?, palette: ArtworkPalette, origin: Modifier, onMore: () -> Unit) {
-    Column(origin.fillMaxWidth().clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClick = onMore).padding(horizontal = PAGE_GUTTER).padding(top = 16.dp, bottom = 4.dp)) {
+private fun TitleBlock(video: Video, page: WatchPage?, palette: ArtworkPalette, modifier: Modifier = Modifier, onMore: () -> Unit) {
+    Column(modifier.fillMaxWidth().clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClick = onMore).padding(horizontal = PAGE_GUTTER).padding(top = 16.dp, bottom = 4.dp)) {
         if (video.title.isNotEmpty()) {
             Text(video.title, style = MaterialTheme.typography.titleLarge, color = palette.onBackground, maxLines = 3, overflow = TextOverflow.Ellipsis)
         } else {
@@ -432,8 +432,8 @@ private fun Modifier.watchCard(palette: ArtworkPalette, origin: Modifier = Modif
 
 /** Views and date in bold, then the description's first lines: tap for the whole of it. */
 @Composable
-private fun DetailsCard(video: Video, page: WatchPage?, palette: ArtworkPalette, origin: Modifier, onClick: () -> Unit) {
-    Column(Modifier.watchCard(palette, origin, onClick)) {
+private fun DetailsCard(video: Video, page: WatchPage?, palette: ArtworkPalette, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Column(Modifier.watchCard(palette, modifier, onClick)) {
         val meta = listOfNotNull(page?.viewCountShort ?: video.viewsText, page?.relativeDate ?: video.publishedText).joinToString("  ·  ")
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(meta.ifEmpty { "Details" }, style = MaterialTheme.typography.titleSmall, color = palette.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
@@ -557,8 +557,8 @@ private fun ActionTile(
 }
 
 @Composable
-private fun CommentsTeaser(count: String?, teaser: String?, avatar: String?, palette: ArtworkPalette, origin: Modifier, onClick: () -> Unit) {
-    Column(Modifier.watchCard(palette, origin, onClick)) {
+private fun CommentsTeaser(count: String?, teaser: String?, avatar: String?, palette: ArtworkPalette, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Column(Modifier.watchCard(palette, modifier, onClick)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Comments", style = MaterialTheme.typography.titleSmall, color = palette.onBackground)
             count?.let { Text("  $it", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.W500), color = palette.onBackgroundVariant) }

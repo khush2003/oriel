@@ -1,6 +1,5 @@
 package app.oriel.ui
 
-import android.app.Activity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -8,7 +7,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onRoot
@@ -75,7 +73,7 @@ class PlayerGestureTest {
             CompositionLocalProvider(LocalLiquidMotion provides liquid) {
                 val nav = rememberNavController()
                 val scope = rememberCoroutineScope()
-                val activity = LocalContext.current as Activity
+                val activity = androidx.activity.compose.LocalActivity.current!!
                 val connection = remember { PlayerConnection(activity, graph) }
                 val app = remember { AppState(graph, nav, connection, scope, activity) }
                 appState = app
