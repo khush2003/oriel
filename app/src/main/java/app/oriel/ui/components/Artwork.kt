@@ -39,6 +39,7 @@ import app.oriel.util.Thumbnails
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
+import app.oriel.ui.theme.OriginCapture
 
 /** The Apple "sticker edge" every artwork gets: 1dp of white (dark) or black (light) at 15%. */
 @Composable
@@ -67,11 +68,25 @@ fun RemoteImage(url: String?, modifier: Modifier = Modifier, shape: Shape = Roun
 
 /** A video frame at 16:9 with its duration (or LIVE) badge and the resume bar. */
 @Composable
-fun VideoThumbnail(video: Video, modifier: Modifier = Modifier, corner: Dp = 14.dp, widthHint: Dp = 360.dp, progress: Float? = video.progress, badge: Boolean = true, overlay: @Composable BoxScope.() -> Unit = {}) {
+fun VideoThumbnail(
+    video: Video,
+    modifier: Modifier = Modifier,
+    corner: Dp = 14.dp,
+    widthHint: Dp = 360.dp,
+    progress: Float? = video.progress,
+    badge: Boolean = true,
+    /** Keeps where the frame is and what it shows, for the player to grow out of when it's tapped. */
+    origin: OriginCapture? = null,
+    overlay: @Composable BoxScope.() -> Unit = {},
+) {
     val px = with(LocalDensity.current) { widthHint.roundToPx() }
     val url = remember(video.id, video.thumbnail, px) { Thumbnails.of(video, px) }
     val shape = RoundedCornerShape(corner)
-    Box(modifier.aspectRatio(16f / 9f)) {
+    if (origin != null) {
+        origin.art = url
+        origin.corner = with(LocalDensity.current) { corner.toPx() }
+    }
+    Box(modifier.aspectRatio(16f / 9f).then(origin?.modifier ?: Modifier)) {
         // A square frame runs to the screen's edges: no hairline to draw against them.
         RemoteImage(url, Modifier.fillMaxSize(), shape, border = corner > 0.dp)
         val watched = progress != null && progress > 0f

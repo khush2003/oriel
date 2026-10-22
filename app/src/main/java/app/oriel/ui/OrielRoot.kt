@@ -34,6 +34,25 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
+import androidx.compose.animation.core.Animatable
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalDensity
+import androidx.navigationevent.NavigationEventTransitionState
+import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
+import app.oriel.ui.theme.EdgeGiveSpring
+import app.oriel.ui.theme.LiquidEdgeShape
+import app.oriel.ui.theme.SquashSpring
+import app.oriel.ui.theme.liquidEdgeCurve
+import app.oriel.ui.theme.midFlight
+import app.oriel.ui.theme.smoothstep
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.compose.NavHost
@@ -135,6 +154,7 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
     val reduce = LocalReduceAnimation.current
     // The page underneath a push dims toward black, as UIKit's does, in light as in dark.
     val dim = if (LocalIsDark.current) PUSH_DIM_DARK else PUSH_DIM_LIGHT
+    val backSwipe = rememberBackSwipe()
 
     LaunchedEffect(app) { app.graph.actions.notices.collectLatest { app.notice(it) } }
     // Usage counts are opt-in: asked once, a little after the first launch settles, and only in
@@ -209,23 +229,23 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
                     predictivePopEnterTransition = { if (reduce) EnterTransition.None else swipeBackIn(app.tabSwitchEntry, dim) },
                     predictivePopExitTransition = { if (reduce) ExitTransition.None else swipeBackOut(app.tabSwitchEntry) },
                 ) {
-                    composable<HomeRoute> { HomeScreen() }
-                    composable<ShortsRoute> { ShortsScreen(it.toRoute<ShortsRoute>().startId) }
-                    composable<SubscriptionsRoute> { SubscriptionsScreen() }
-                    composable<YouRoute> { YouScreen() }
-                    composable<SearchRoute> { SearchScreen(it.toRoute<SearchRoute>().query) }
-                    composable<ChannelRoute> { val r = it.toRoute<ChannelRoute>(); ChannelScreen(r.id, r.params) }
-                    composable<PlaylistRoute> { PlaylistScreen(it.toRoute<PlaylistRoute>().id) }
-                    composable<LocalPlaylistRoute> { LocalPlaylistScreen(it.toRoute<LocalPlaylistRoute>().id) }
-                    composable<TopicRoute> { TopicScreen(it.toRoute<TopicRoute>().topic) }
-                    composable<HistoryRoute> { HistoryScreen() }
-                    composable<WatchLaterRoute> { WatchLaterScreen() }
-                    composable<LikedRoute> { LikedScreen() }
-                    composable<ChannelsRoute> { ChannelsScreen() }
-                    composable<PlaylistsRoute> { PlaylistsScreen() }
-                    composable<SettingsRoute> { SettingsScreen() }
-                    composable<LoginRoute> { LoginScreen() }
-                    composable<NotificationsRoute> { NotificationsScreen() }
+                    composable<HomeRoute> { LiquidPage(backSwipe) { HomeScreen() } }
+                    composable<ShortsRoute> { LiquidPage(backSwipe) { ShortsScreen(it.toRoute<ShortsRoute>().startId) } }
+                    composable<SubscriptionsRoute> { LiquidPage(backSwipe) { SubscriptionsScreen() } }
+                    composable<YouRoute> { LiquidPage(backSwipe) { YouScreen() } }
+                    composable<SearchRoute> { LiquidPage(backSwipe) { SearchScreen(it.toRoute<SearchRoute>().query) } }
+                    composable<ChannelRoute> { LiquidPage(backSwipe) { val r = it.toRoute<ChannelRoute>(); ChannelScreen(r.id, r.params) } }
+                    composable<PlaylistRoute> { LiquidPage(backSwipe) { PlaylistScreen(it.toRoute<PlaylistRoute>().id) } }
+                    composable<LocalPlaylistRoute> { LiquidPage(backSwipe) { LocalPlaylistScreen(it.toRoute<LocalPlaylistRoute>().id) } }
+                    composable<TopicRoute> { LiquidPage(backSwipe) { TopicScreen(it.toRoute<TopicRoute>().topic) } }
+                    composable<HistoryRoute> { LiquidPage(backSwipe) { HistoryScreen() } }
+                    composable<WatchLaterRoute> { LiquidPage(backSwipe) { WatchLaterScreen() } }
+                    composable<LikedRoute> { LiquidPage(backSwipe) { LikedScreen() } }
+                    composable<ChannelsRoute> { LiquidPage(backSwipe) { ChannelsScreen() } }
+                    composable<PlaylistsRoute> { LiquidPage(backSwipe) { PlaylistsScreen() } }
+                    composable<SettingsRoute> { LiquidPage(backSwipe) { SettingsScreen() } }
+                    composable<LoginRoute> { LiquidPage(backSwipe) { LoginScreen() } }
+                    composable<NotificationsRoute> { LiquidPage(backSwipe) { NotificationsScreen() } }
                 }
             }
 
@@ -331,4 +351,119 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.swipeBackIn(tabSwi
 private fun AnimatedContentTransitionScope<NavBackStackEntry>.swipeBackOut(tabSwitchEntry: String?): ExitTransition {
     if (isTabSwitch(tabSwitchEntry)) return fadeOut(tween(SWIPE_BACK_MS, easing = LinearEasing))
     return slideOutHorizontally(tween(SWIPE_BACK_MS, easing = SwipeBackEasing)) { it }
+}
+
+
+/**
+ * The system back swipe as it happens: where the finger is, and how far the page's edge has
+ * given under it (0 to 1, sprung, so it dents in as the swipe starts and springs flat, with a
+ * wobble, when it's let go). Read only while drawing.
+ */
+@Stable
+private class BackSwipe {
+    var active = false
+    var touchY by mutableFloatStateOf(0f)
+    val give = Animatable(0f)
+}
+
+@Composable
+private fun rememberBackSwipe(): BackSwipe {
+    val swipe = remember { BackSwipe() }
+    val owner = LocalNavigationEventDispatcherOwner.current
+    LaunchedEffect(owner) {
+        val dispatcher = owner?.navigationEventDispatcher ?: return@LaunchedEffect
+        coroutineScope {
+            dispatcher.transitionState.collect { state ->
+                if (state is NavigationEventTransitionState.InProgress) {
+                    swipe.touchY = state.latestEvent.touchY
+                    if (!swipe.active) {
+                        swipe.active = true
+                        launch { swipe.give.animateTo(1f, EdgeGiveSpring) }
+                    }
+                } else if (swipe.active) {
+                    swipe.active = false
+                    launch { swipe.give.animateTo(0f, SquashSpring) }
+                }
+            }
+        }
+    }
+    return swipe
+}
+
+/** Where a page is in its slide, from its place on the screen, and which way it's going. */
+private class PageEdge {
+    var x by mutableFloatStateOf(0f)
+    var top = 0f
+    var forward = false
+    /** This slide is (or was) under a back swipe's finger: its edge dents there, not mid-page. */
+    var byFinger = false
+
+    fun moved(newX: Float, newTop: Float, width: Float, swiping: Boolean) {
+        if (newX < x - 0.5f) forward = true else if (newX > x + 0.5f) forward = false
+        top = newTop
+        if (swiping && newX > 0f) byFinger = true
+        // At rest (on screen, or off it to the right) the next slide starts afresh.
+        if (newX <= 0.5f || newX >= width - 0.5f) byFinger = swiping && newX > 0f
+        x = newX
+    }
+}
+
+/**
+ * A page that slides like iOS's, with a softer leading edge: pushed in, its edge bulges forward
+ * a little and relaxes as it lands; under a back swipe it dents in where the finger holds it and
+ * springs flat when let go; popped by the button it dips gently mid-page. A soft shadow runs
+ * along it. The page beneath shrinks a touch as it's covered (in dark mode). Only the outline deforms (the clip
+ * is the layer's, the content isn't redrawn for it), all in the draw phase. Reduce motion: none.
+ */
+@Composable
+private fun LiquidPage(swipe: BackSwipe, content: @Composable () -> Unit) {
+    if (LocalReduceAnimation.current) return content()
+    val edge = remember { PageEdge() }
+    val density = LocalDensity.current
+    // Shrinking shows the black behind the pages at its edges: unseen on dark pages, a hard line on light ones.
+    val shrink = if (LocalIsDark.current) 0.03f else 0f
+    val bulge = with(density) { 14.dp.toPx() }
+    val dent = with(density) { 18.dp.toPx() }
+    val shadowWidth = with(density) { 10.dp.toPx() }
+    val shade = remember { Path() }
+    // The edge's shape at this point of the slide: positive bulges, negative dents (LiquidEdgeShape).
+    fun depth(width: Float): Float {
+        val f = (edge.x / width).coerceIn(0f, 1f)
+        val give = swipe.give.value
+        return when {
+            edge.byFinger -> -dent * give
+            edge.forward -> bulge * midFlight(f)
+            else -> -dent * 0.5f * midFlight(f)
+        }
+    }
+    fun focus(height: Float) = if (edge.byFinger) (swipe.touchY - edge.top).coerceIn(0f, height) else height * 0.45f
+    fun spread(height: Float, d: Float) = height * if (d >= 0f) 0.34f else 0.15f
+    Box(
+        Modifier
+            .fillMaxSize()
+            .onGloballyPositioned { val at = it.positionInRoot(); edge.moved(at.x, at.y, it.size.width.toFloat(), swipe.active) }
+            .drawBehind {
+                if (edge.x <= 0.5f) return@drawBehind
+                val d = depth(size.width)
+                shade.reset()
+                shade.liquidEdgeCurve(size.height, d, focus(size.height), spread(size.height, d))
+                // Three soft strokes centred on the edge; the page covers their inner half.
+                for (i in 1..3) drawPath(shade, Color.Black.copy(alpha = 0.045f), style = Stroke(width = shadowWidth * i * 0.8f))
+            }
+            .graphicsLayer {
+                val w = size.width
+                if (w <= 0f) return@graphicsLayer
+                val f = edge.x / w
+                if (f < -0.001f) {
+                    // Beneath a push: a touch smaller as it's covered, as the dim deepens.
+                    val k = 1f - shrink * smoothstep(0f, 1f, -f * 3f)
+                    scaleX = k
+                    scaleY = k
+                } else if (f > 0.001f) {
+                    val d = depth(w)
+                    shape = LiquidEdgeShape(d, focus(size.height), spread(size.height, d))
+                    clip = true
+                }
+            },
+    ) { content() }
 }

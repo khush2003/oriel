@@ -69,6 +69,7 @@ import androidx.compose.ui.semantics.Role
 import app.oriel.ui.theme.CardPress
 import app.oriel.ui.theme.GlyphPress
 import app.oriel.ui.theme.TilePress
+import app.oriel.ui.theme.OriginCapture
 
 /**
  * The cards' quieter line: who and when, "Channel · 2 days ago". The view count waits for
@@ -113,17 +114,18 @@ fun MoreButton(onClick: () -> Unit, modifier: Modifier = Modifier, tint: Color =
 fun VideoCard(video: Video, modifier: Modifier = Modifier, showAvatar: Boolean = false, titleColor: Color = MaterialTheme.colorScheme.onSurface, metaColor: Color = MaterialTheme.colorScheme.onSurfaceVariant) {
     val app = LocalAppState.current
     val haptics = rememberHaptics()
+    val origin = remember { OriginCapture() }
     // A card gives under the finger rather than washing over, as Apple's TV app's do.
     CompositionLocalProvider(LocalIndication provides CardPress) {
     Column(
         modifier
             .fillMaxWidth()
-            .longPressMenuClickable(onClick = { app.openVideo(video) }, onLongClick = { app.showMenu(video) }, onPress = { app.connection.warmAhead(video, pressed = true) })
+            .longPressMenuClickable(onClick = { origin.record(); app.openVideo(video) }, onLongClick = { app.showMenu(video) }, onPress = { app.connection.warmAhead(video, pressed = true) })
             .padding(horizontal = PAGE_GUTTER, vertical = 10.dp),
     ) {
         // A card that stays on screen gets its stream resolved, so the tap plays at once.
         LaunchedEffect(video.id) { delay(1_200); app.connection.warmAhead(video, pressed = false) }
-        VideoThumbnail(video, Modifier.fillMaxWidth(), corner = CARD_CORNER, widthHint = 480.dp)
+        VideoThumbnail(video, Modifier.fillMaxWidth(), corner = CARD_CORNER, widthHint = 480.dp, origin = origin)
         Spacer(Modifier.height(10.dp))
         Row(Modifier.padding(start = 2.dp), verticalAlignment = Alignment.Top) {
             if (showAvatar && video.channel != null) {
@@ -163,11 +165,12 @@ fun VideoRow(
     trailing: (@Composable () -> Unit)? = null,
 ) {
     val app = LocalAppState.current
+    val origin = remember { OriginCapture() }
     Row(
         modifier
             .fillMaxWidth()
             .background(if (active) activeTint.copy(alpha = 0.14f) else Color.Transparent)
-            .longPressMenuClickable(onClick = { onClick?.invoke() ?: app.openVideo(video) }, onLongClick = { app.showMenu(video) }, onPress = { app.connection.warmAhead(video, pressed = true) })
+            .longPressMenuClickable(onClick = { origin.record(); onClick?.invoke() ?: app.openVideo(video) }, onLongClick = { app.showMenu(video) }, onPress = { app.connection.warmAhead(video, pressed = true) })
             .padding(horizontal = PAGE_GUTTER, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -175,7 +178,7 @@ fun VideoRow(
             Text("$index", style = MaterialTheme.typography.labelMedium, color = metaColor, textAlign = TextAlign.Center, modifier = Modifier.width(24.dp))
             Spacer(Modifier.width(8.dp))
         }
-        VideoThumbnail(video, Modifier.width(thumbWidth), corner = ROW_CORNER, widthHint = thumbWidth)
+        VideoThumbnail(video, Modifier.width(thumbWidth), corner = ROW_CORNER, widthHint = thumbWidth, origin = origin)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(video.title, style = MaterialTheme.typography.titleMedium, color = if (active) activeTint else titleColor, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -191,9 +194,10 @@ fun VideoRow(
 @Composable
 fun VideoShelfCard(video: Video, width: Dp = 260.dp) {
     val app = LocalAppState.current
+    val origin = remember { OriginCapture() }
     CompositionLocalProvider(LocalIndication provides TilePress) {
-        Column(Modifier.width(width).longPressMenuClickable(onClick = { app.openVideo(video) }, onLongClick = { app.showMenu(video) })) {
-            VideoThumbnail(video, Modifier.fillMaxWidth(), corner = CARD_CORNER - 2.dp, widthHint = width)
+        Column(Modifier.width(width).longPressMenuClickable(onClick = { origin.record(); app.openVideo(video) }, onLongClick = { app.showMenu(video) })) {
+            VideoThumbnail(video, Modifier.fillMaxWidth(), corner = CARD_CORNER - 2.dp, widthHint = width, origin = origin)
             Spacer(Modifier.height(10.dp))
             Text(video.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(2.dp))
@@ -332,7 +336,8 @@ fun PostCard(post: Post, modifier: Modifier = Modifier, inset: Boolean = true) {
         }
         post.video?.let { v ->
             Spacer(Modifier.height(10.dp))
-            VideoThumbnail(v, Modifier.fillMaxWidth().clickable(null, CardPress) { app.openVideo(v) }, corner = 12.dp)
+            val origin = remember { OriginCapture() }
+            VideoThumbnail(v, Modifier.fillMaxWidth().clickable(null, CardPress) { origin.record(); app.openVideo(v) }, corner = 12.dp, origin = origin)
         }
         if (post.pollChoices.isNotEmpty()) {
             Spacer(Modifier.height(8.dp))

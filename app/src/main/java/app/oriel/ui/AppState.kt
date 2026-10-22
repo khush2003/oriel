@@ -42,6 +42,10 @@ import app.oriel.ui.navigation.isRoute
 import app.oriel.ui.navigation.tabRoot
 import app.oriel.ui.player.WatchModel
 import app.oriel.ui.theme.PlayerSpring
+import app.oriel.ui.theme.SquashSpring
+import app.oriel.ui.theme.TapOrigin
+import app.oriel.ui.theme.VideoOrigin
+import kotlin.math.abs
 import app.oriel.util.ReportKind
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -65,18 +69,43 @@ class PlayerSheetState(private val scope: CoroutineScope) {
     var pipCorner by mutableIntStateOf(3)
     /** The window's size, pinched bigger or smaller, relative to its default. */
     var pipScale by mutableFloatStateOf(1f)
+    /**
+     * The picture's squash as a flight lands (negative), and its rebound, as a fraction of its
+     * height. Only drawn, never laid out; Reduce motion doesn't draw it.
+     */
+    val squash = Animatable(0f)
+    /** The last video opened while the player was showing or about to: where from, for the hand-off. */
+    var handoff by mutableStateOf<VideoHandoff?>(null)
 
     fun expand() {
-        scope.launch { progress.animateTo(1f, PlayerSpring) }
+        scope.launch { fly(1f, 0f) }
     }
 
     fun collapse() {
         fullscreen = false
-        scope.launch { progress.animateTo(0f, PlayerSpring) }
+        scope.launch { fly(0f, 0f) }
     }
 
-    suspend fun settle(target: Float, velocity: Float) = progress.animateTo(target, PlayerSpring, initialVelocity = velocity)
+    suspend fun settle(target: Float, velocity: Float) = fly(target, velocity)
+
+    // The flight's top speed sets how hard it lands: a flick lands with more give than a tap.
+    private suspend fun fly(target: Float, velocity: Float) {
+        var peak = abs(velocity)
+        progress.animateTo(target, PlayerSpring, initialVelocity = velocity) { peak = maxOf(peak, abs(this.velocity)) }
+        if (peak > 0.8f) scope.launch {
+            squash.snapTo(0f)
+            squash.animateTo(0f, SquashSpring, initialVelocity = -peak.coerceAtMost(8f) * 0.3f)
+        }
+    }
 }
+
+/**
+ * A video opened while the player was up (or rising): [origin] is the thumbnail it was tapped
+ * on, if any; [fromDock] says the player was collapsed or closed, so the whole player grows out
+ * of the thumbnail rather than the thumbnail flying into a page already open; [windowShowing]
+ * that a collapsed window was playing, to be absorbed as it does.
+ */
+data class VideoHandoff(val videoId: String, val origin: VideoOrigin?, val fromDock: Boolean, val windowShowing: Boolean, val at: Long = System.nanoTime())
 
 /** An iOS-style alert: title, message, and stacked actions. */
 data class AlertSpec(val title: String, val message: String? = null, val actions: List<AlertAction>)
@@ -135,9 +164,10 @@ class AppState(
     // ---- opening things ----------------------------------------------------------------
 
     /** Plays [video] and opens the watch page. */
-    fun openVideo(video: Video, context: QueueContext = QueueContext(), positionMs: Long? = null, expand: Boolean = true) {
+    fun openVideo(video: Video, context: QueueContext = QueueContext(), positionMs: Long? = null, expand: Boolean = true, origin: VideoOrigin? = TapOrigin.take()) {
         if (video.isShort) return openShort(video)
         watch.load(video, context.playlistId)
+        if (expand) handOff(video.id, origin)
         if (expand) sheet.expand()
         if (video.title.isNotBlank()) return connection.playVideo(video, context, positionMs)
         // A bare id from a link: the stream warms up while the page fills in the title and
@@ -155,8 +185,16 @@ class AppState(
         if (videos.isEmpty()) return
         val first = if (shuffle) null else videos.getOrNull(start)
         first?.let { watch.load(it, context.playlistId) }
+        val origin = TapOrigin.take()
+        first?.let { handOff(it.id, origin) }
         connection.play(videos, start, context, shuffle)
         sheet.expand()
+    }
+
+    /** The picture grows out of the tapped thumbnail: visual only, playback starts as it would. */
+    private fun handOff(videoId: String, origin: VideoOrigin?) {
+        val playing = connection.current.value != null
+        sheet.handoff = VideoHandoff(videoId, origin, fromDock = sheet.progress.targetValue < 0.5f || !playing, windowShowing = playing && sheet.progress.targetValue < 0.5f)
     }
 
     fun openShort(video: Video, fromLink: Boolean = false) {
