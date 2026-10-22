@@ -394,6 +394,9 @@ class AppState(
     var tabSwitchEntry: String? = null
         private set
 
+    /** The Search page's field, for the tab bar's droplet to become while Search is open (liquid motion with glass). */
+    var searchField by mutableStateOf<(@androidx.compose.runtime.Composable (androidx.compose.ui.Modifier) -> Unit)?>(null)
+
     private val _searchAgain = MutableStateFlow(0L)
     /** When search was asked for while already open, for its field to take focus again. */
     val searchAgain = _searchAgain.asStateFlow()

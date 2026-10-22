@@ -64,6 +64,13 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.ui.layout.Layout
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.ime
+import androidx.compose.ui.util.lerp
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -189,8 +196,9 @@ fun FloatingTabBar(
     searchSelected: Boolean,
     onSearch: () -> Unit,
     modifier: Modifier = Modifier,
+    searchField: (@Composable (Modifier) -> Unit)? = null,
 ) {
-    if (LocalLiquidMotion.current) LiquidFloatingTabBar(tabs, selectedIndex, onTabSelected, searchSelected, onSearch, modifier)
+    if (LocalLiquidMotion.current) LiquidFloatingTabBar(tabs, selectedIndex, onTabSelected, searchSelected, onSearch, modifier, searchField)
     else ClassicFloatingTabBar(tabs, selectedIndex, onTabSelected, searchSelected, onSearch, modifier)
 }
 
@@ -364,6 +372,7 @@ private fun LiquidFloatingTabBar(
     searchSelected: Boolean,
     onSearch: () -> Unit,
     modifier: Modifier,
+    searchField: (@Composable (Modifier) -> Unit)?,
 ) {
     val pillShape = RoundedCornerShape(percent = 50)
     val reduce = LocalReduceAnimation.current
@@ -421,21 +430,38 @@ private fun LiquidFloatingTabBar(
     val bridge = glassFallbackColor()
     val pressGrow = with(density) { PILL_PRESS_GROW.toPx() }
 
-    Row(
+    // Liquid with glass, Search opens at the bottom, as the mock's does: the bar draws in to a
+    // circle round the current tab (its edge on the slow spring) while the droplet's near edge
+    // rushes after it (on the fast one), the two fuse mid-way, and the droplet is the field.
+    // [searchField] is the Search page's, handed over while it's open.
+    val expanded = glass && searchSelected && searchField != null
+    val barM = remember { Animatable(if (expanded) 1f else 0f) }
+    val fieldM = remember { Animatable(if (expanded) 1f else 0f) }
+    LaunchedEffect(expanded) {
+        val to = if (expanded) 1f else 0f
+        if (reduce) { barM.snapTo(to); fieldM.snapTo(to); return@LaunchedEffect }
+        launch { reachIn.animateTo(0f, Sp.Jelly.px) }
+        launch { barM.animateTo(to, (if (expanded) Sp.SlowEdge else Sp.FastEdge).unit) }
+        fieldM.animateTo(to, (if (expanded) Sp.FastEdge else Sp.SlowEdge).unit)
+    }
+    // Where the layout put the bar's near edge and the droplet's, and the bar's width at rest, in px.
+    val geo = remember { FloatArray(4) }
+    val insets = if (expanded) floatingBarInsets.union(WindowInsets.ime) else floatingBarInsets
+
+    Layout(
         modifier = modifier
-            .windowInsetsPadding(floatingBarInsets)
+            .windowInsetsPadding(insets)
             .padding(horizontal = BAR_GUTTER)
             .padding(bottom = 2.dp)
             .widthIn(max = FLOATING_BAR_MAX_WIDTH)
             .fillMaxWidth()
-            .height(IntrinsicSize.Max)
             .then(
                 if (!glass || reduce) Modifier else Modifier.drawBehind {
                     // The metaball neck between the bar's end and the search circle, under both glasses.
                     val h = size.height
                     val r = h / 2f
-                    val barEnd = size.width - h - BAR_SEARCH_GAP.toPx() + barReach.value
-                    val searchStart = size.width - h - reachIn.value
+                    val barEnd = geo[0] + barReach.value
+                    val searchStart = geo[1] - reachIn.value
                     var x1 = barEnd - r
                     var x2 = searchStart + r
                     if (rtl) { x1 = size.width - x1; x2 = size.width - x2 }
@@ -445,11 +471,9 @@ private fun LiquidFloatingTabBar(
                     if (closeness > 0f && metaballNeck(neck, x1, r, r, x2, r, r, maxD, spread = 0.15f + 0.45f * closeness)) drawPath(neck, bridge)
                 },
             ),
-        horizontalArrangement = Arrangement.spacedBy(BAR_SEARCH_GAP),
-    ) {
+        content = {
         Box(
             Modifier
-                .weight(1f)
                 .then(
                     if (!glass) Modifier else Modifier.graphicsLayer {
                         // The bar's near end reaching for the search circle.
@@ -465,7 +489,15 @@ private fun LiquidFloatingTabBar(
         ) {
             Row(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    // Laid out at the bar's resting width always, so drawing in only crops it.
+                    .layout { m, c ->
+                        val restW = (geo[2] - 2 * PILL_INSET.toPx()).roundToInt().coerceAtLeast(c.minWidth)
+                        val p = m.measure(if (geo[2] > 0f) c.copy(minWidth = restW, maxWidth = restW) else c)
+                        layout(c.maxWidth, p.height) { p.placeRelative(0, 0) }
+                    }
+                    // Opaque again the moment it's back (not 0.99 for the spring's tail): a part-transparent
+                    // layer here is drawn offscreen, and over the glass that dropped the tabs for a frame.
+                    .graphicsLayer { alpha = if (barM.value < 0.02f) 1f else (1f - barM.value * 2.2f).coerceIn(0f, 1f) }
                     .selectableGroup()
                     .onSizeChanged { rowSize = it }
                     .drawBehind {
@@ -493,6 +525,22 @@ private fun LiquidFloatingTabBar(
                     )
                 }
             }
+            if (expanded) {
+                // Drawn in, the bar is the way back: the current tab, in its blob.
+                val back = tabs.getOrNull(selectedIndex)
+                Box(
+                    Modifier
+                        .matchParentSize()
+                        .graphicsLayer { alpha = smoothstep(0.15f, 0.6f, barM.value) }
+                        .clip(CircleShape)
+                        .background(pillColor)
+                        .clickable(onClickLabel = back?.label?.let { "Back to $it" }) {
+                            haptics.play(Haptic.Select)
+                            onTabSelected(selectedIndex)
+                        },
+                    contentAlignment = Alignment.Center,
+                ) { back?.let { Icon(it.selectedIcon, it.label, tint = tint ?: MaterialTheme.colorScheme.primary, modifier = Modifier.size(25.dp)) } }
+            }
         }
         if (glass) {
             // Search stands apart, as a circle the bar's height: a droplet that reaches into the bar.
@@ -502,37 +550,8 @@ private fun LiquidFloatingTabBar(
             )
             val currentOnSearch by rememberUpdatedState(onSearch)
             val give = with(density) { SEARCH_PRESS_GIVE.toPx() }
-            val gap = with(density) { BAR_SEARCH_GAP.toPx() }
-            val reachFor = { v: Float ->
-                // The mock's setSearch: the circle's near edge rushes in on the fast edge spring, the
-                // bar's on the slow one, they fuse; then the bar lets go fast and the circle slow.
-                scope.launch {
-                    launch { barReach.animateTo(gap * 0.75f, Sp.SlowEdge.px) }
-                    launch { reachOut.animateTo(0f, Sp.Snappy.px) }
-                    reachIn.animateTo(gap * 1.6f, Sp.FastEdge.px, v)
-                    launch { barReach.animateTo(0f, Sp.FastEdge.px) }
-                    reachIn.animateTo(0f, Sp.SlowEdge.px)
-                }
-            }
-            val searchAt = remember { arrayOfNulls<androidx.compose.ui.layout.LayoutCoordinates>(1) }
-            val recordOrigin = { SearchOrigin.record(searchAt[0]?.takeIf { it.isAttached }?.boundsInWindow()) }
-            // Left for a tab: the bar reaches back for the circle and lets it go, a drop splitting off.
-            val wasSearching = remember { booleanArrayOf(searchSelected) }
-            LaunchedEffect(searchSelected) {
-                val was = wasSearching[0]
-                wasSearching[0] = searchSelected
-                if (was && !searchSelected && !reduce) {
-                    launch { reachIn.animateTo(gap * 0.6f, Sp.FastEdge.px) }
-                    barReach.animateTo(gap * 0.75f, Sp.FastEdge.px)
-                    launch { reachIn.animateTo(0f, Sp.Jelly.px) }
-                    barReach.animateTo(0f, Sp.SlowEdge.px)
-                }
-            }
             Box(
                 Modifier
-                    .fillMaxHeight()
-                    .aspectRatio(1f)
-                    .onPlaced { searchAt[0] = it }
                     .graphicsLayer {
                         val w = size.width
                         if (w <= 0f) return@graphicsLayer
@@ -544,51 +563,66 @@ private fun LiquidFloatingTabBar(
                         scaleX = (w + inner + outer) / w
                         translationX = away * (outer - inner) / 2f
                     }
-                    .glassSurface(CircleShape)
+                    .glassSurface(pillShape)
                     .selectable(searchSelected, remember { MutableInteractionSource() }, indication = null, role = Role.Tab) {
-                        haptics.play(Haptic.Select)
-                        if (!reduce) reachFor(0f)
-                        recordOrigin()
+                        if (!expanded) haptics.play(Haptic.Select)
                         onSearch()
                     }
-                    .pointerInput(Unit) {
-                        searchDrag(reachIn, reachOut, scope, give, sign, { currentReduce }) { v ->
-                            haptics.play(Haptic.Select)
-                            reachFor(v)
-                            recordOrigin()
-                            currentOnSearch()
-                        }
-                    },
-                contentAlignment = Alignment.Center,
+                    .then(
+                        if (expanded) Modifier else Modifier.pointerInput(Unit) {
+                            searchDrag(reachIn, reachOut, scope, give, sign, { currentReduce }) {
+                                haptics.play(Haptic.Select)
+                                currentOnSearch()
+                            }
+                        },
+                    ),
+                contentAlignment = Alignment.CenterStart,
             ) {
-                if (searchSelected) Box(Modifier.padding(PILL_INSET).fillMaxWidth().aspectRatio(1f).clip(CircleShape).background(pillColor))
-                Icon(OrielIcons.Search, "Search", tint = searchTint, modifier = Modifier.size(26.dp))
+                if (searchSelected && !expanded) Box(Modifier.align(Alignment.Center).padding(PILL_INSET).fillMaxHeight().aspectRatio(1f).clip(CircleShape).background(pillColor))
+                // The magnifier slides from the droplet's middle to the field's start.
+                Icon(
+                    OrielIcons.Search, "Search", tint = searchTint,
+                    modifier = Modifier.size(26.dp).offset {
+                        val icon = 26.dp.toPx()
+                        val w = geo[3]
+                        IntOffset(lerp((w - icon) / 2f, 14.dp.toPx(), fieldM.value.coerceIn(0f, 1f)).roundToInt(), 0)
+                    },
+                )
+                if (expanded) Box(
+                    Modifier
+                        .fillMaxSize()
+                        .padding(start = 48.dp, end = 4.dp)
+                        .graphicsLayer { alpha = smoothstep(0.7f, 1f, fieldM.value) },
+                    contentAlignment = Alignment.CenterStart,
+                ) { searchField?.invoke(Modifier.fillMaxSize()) }
             }
+        }
+        },
+    ) { ms, c ->
+        val w = c.maxWidth
+        if (ms.size == 1) {
+            val p = ms[0].measure(c.copy(minWidth = w, maxWidth = w))
+            return@Layout layout(w, p.height) { p.placeRelative(0, 0) }
+        }
+        val gap = BAR_SEARCH_GAP.toPx()
+        val h = ms[0].maxIntrinsicHeight(w)
+        val restBar = w - h - gap
+        geo[2] = restBar
+        val barRight = lerp(restBar, h.toFloat(), barM.value).coerceIn(h * 0.6f, restBar)
+        val searchLeft = lerp((w - h).toFloat(), h + gap, fieldM.value).coerceIn(0f, w - h * 0.6f)
+        geo[0] = barRight
+        geo[1] = searchLeft
+        geo[3] = w - searchLeft
+        val bar = ms[0].measure(Constraints.fixed(barRight.roundToInt(), h))
+        val search = ms[1].measure(Constraints.fixed((w - searchLeft).roundToInt(), h))
+        layout(w, h) {
+            bar.placeRelative(0, 0)
+            search.placeRelative(searchLeft.roundToInt(), 0)
         }
     }
 }
 
 private val BAR_SEARCH_GAP = 8.dp
-
-/**
- * Where the Search droplet was, in the window, when it was tapped or flicked into the bar: the
- * Search page's field grows out of it (liquid motion). Taken once, and only just after.
- */
-object SearchOrigin {
-    private var at: androidx.compose.ui.geometry.Rect? = null
-    private var recordedAt = 0L
-
-    fun record(r: androidx.compose.ui.geometry.Rect?) {
-        at = r
-        recordedAt = System.nanoTime()
-    }
-
-    fun take(): androidx.compose.ui.geometry.Rect? {
-        val r = at?.takeIf { System.nanoTime() - recordedAt < 800_000_000L }
-        at = null
-        return r
-    }
-}
 
 /**
  * The mock's `slotDrag` (tab bar, segmented controls): a press grows the blob a little; past the

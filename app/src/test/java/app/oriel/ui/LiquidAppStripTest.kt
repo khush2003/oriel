@@ -30,6 +30,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.onLast
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
@@ -305,10 +306,19 @@ class LiquidAppStripTest {
 
     private val tabBand = Rect(0f, 780f, 412f, 915f)
 
-    /** The tab bar's droplet, then the field growing out of it at the top. */
+    /** The tab bar draws in to a circle and the Search droplet stretches into the field, at the bottom. */
     @Test fun searchMorph() {
         start()
-        strip("search_morph", full, 0.5f, tap(bounds(hasContentDescription("Search"))), caps = listOf(0L, 50, 100, 160, 240, 340, 480, 700))
+        strip("search_morph", tabBand, 1.5f, tap(bounds(hasContentDescription("Search"))), caps = listOf(0L, 50, 100, 160, 240, 340, 480, 700))
+    }
+
+    /** And back: the circle (the current tab) tapped, the field flows back into the droplet. */
+    @Test fun searchClose() {
+        start()
+        val search = bounds(hasContentDescription("Search"))
+        rule.onAllNodes(hasContentDescription("Search")).onFirst().performClick()
+        settle(12)
+        strip("search_close", tabBand, 1.5f, tap(40f, search.center.y), caps = listOf(0L, 50, 100, 160, 240, 340, 480, 700))
     }
 
     @Test fun alertBloom() {

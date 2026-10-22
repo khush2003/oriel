@@ -1,6 +1,18 @@
 package app.oriel.ui.screens
 
-import app.oriel.ui.components.SearchOrigin
+import app.oriel.ui.glass.glassContentColor
+import app.oriel.ui.theme.LocalLiquidGlassEnabled
+import app.oriel.ui.theme.LocalLiquidMotion
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.util.lerp
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.Offset
@@ -335,13 +347,23 @@ fun SearchScreen(initial: String?) {
     }
     LaunchedEffect(listState.isScrollInProgress) { if (listState.isScrollInProgress && focused) { focusManager.clearFocus(); keyboard?.hide() } }
     // Arriving with nothing searched yet means you're here to type, as on YouTube: the field takes focus.
-    LaunchedEffect(Unit) { if (state.submitted == null) { runCatching { focus.requestFocus() }; keyboard?.show() } }
+    // Liquid with glass, the field is the tab bar's Search droplet at the bottom, as the mock has it.
+    val bottomField = LocalLiquidMotion.current && LocalLiquidGlassEnabled.current && LocalTabBarVisible.current
+    // At the bottom the field is the tab bar's, composed a frame or two after this page.
+    suspend fun focusField() {
+        repeat(30) {
+            if (focused) return
+            runCatching { focus.requestFocus() }
+            withFrameNanos { }
+        }
+    }
+    LaunchedEffect(Unit) { if (state.submitted == null) { focusField(); keyboard?.show() } }
     // Search asked for again while open: back to the top of the results, or into the field.
     val shownAt = remember { System.nanoTime() }
     LaunchedEffect(Unit) {
         app.searchAgain.filter { it > shownAt }.collect {
             if (state.submitted != null && listState.firstVisibleItemIndex > 0) listState.animateScrollToItem(0)
-            else { runCatching { focus.requestFocus() }; keyboard?.show() }
+            else { focusField(); keyboard?.show() }
         }
     }
 
@@ -365,28 +387,32 @@ fun SearchScreen(initial: String?) {
         if (!heard.isNullOrEmpty()) { model.type(heard); submit(heard, voice = true) }
     }
     val haptics = rememberHaptics()
-    // The tab bar's Search droplet, when that's what opened this: the field grows out of it.
-    val droplet = remember { SearchOrigin.take() }
+    val voiceButton: @Composable () -> Unit = {
+        Box(
+            Modifier.size(44.dp).clip(CircleShape).clickable(onClickLabel = "Search by voice") {
+                haptics.play(Haptic.Tap)
+                focusManager.clearFocus(); keyboard?.hide()
+                runCatching { listen.launch(voiceIntent) }
+            },
+            contentAlignment = Alignment.Center,
+        ) { Icon(OrielIcons.Mic, "Search by voice", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) }
+    }
+    val field: @Composable (Modifier) -> Unit = remember {
+        { m -> BottomSearchField(state.query, model::type, ::submit, m, focus, { focused = it }, if (canListen) voiceButton else null) }
+    }
+    DisposableEffect(bottomField) {
+        if (bottomField) app.searchField = field
+        onDispose { if (app.searchField === field) app.searchField = null }
+    }
 
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Row(
+        if (bottomField) Spacer(Modifier.fillMaxWidth().statusBarsPadding().height(8.dp)) else Row(
             Modifier.fillMaxWidth().statusBarsPadding().padding(start = PAGE_GUTTER, end = PAGE_GUTTER - 4.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             SearchField(
-                state.query, model::type, ::submit, Modifier.weight(1f).growOutOfDroplet(droplet), focusRequester = focus, onFocus = { focused = it },
-                idleTrailing = if (!canListen) null else {
-                    {
-                        Box(
-                            Modifier.size(44.dp).clip(CircleShape).clickable(onClickLabel = "Search by voice") {
-                                haptics.play(Haptic.Tap)
-                                focusManager.clearFocus(); keyboard?.hide()
-                                runCatching { listen.launch(voiceIntent) }
-                            },
-                            contentAlignment = Alignment.Center,
-                        ) { Icon(OrielIcons.Mic, "Search by voice", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp)) }
-                    }
-                },
+                state.query, model::type, ::submit, Modifier.weight(1f), focusRequester = focus, onFocus = { focused = it },
+                idleTrailing = if (canListen) voiceButton else null,
             )
             AnimatedVisibility(focused || state.submitted != null, enter = fadeIn() + expandHorizontally(), exit = fadeOut() + shrinkHorizontally()) {
                 Row {
@@ -397,7 +423,7 @@ fun SearchScreen(initial: String?) {
         }
         // A hairline under the bar once content scrolls beneath it, as iOS bars do.
         Box(Modifier.fillMaxWidth().height(0.5.dp).background(if (scrolled) MaterialTheme.colorScheme.outlineVariant else Color.Transparent))
-        LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = pagePadding(LocalMiniPlayerVisible.current, top = 0.dp, withTabBar = LocalTabBarVisible.current)) {
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().then(if (bottomField) Modifier.imePadding() else Modifier), contentPadding = pagePadding(LocalMiniPlayerVisible.current, top = 0.dp, withTabBar = LocalTabBarVisible.current)) {
             when {
                 focused && state.query.isNotBlank() && state.query != state.submitted -> {
                     val typed = state.query.trim()
@@ -521,51 +547,39 @@ private fun SuggestionRow(text: AnnotatedString, icon: androidx.compose.ui.graph
 }
 
 /**
- * Liquid motion: the field grows out of the tab bar's Search droplet ([origin], in the window)
- * as the mock's search flows out of its circle: the same round drop at the start, its width on
- * the sheet's width spring and its height on the quicker one, the sides bowing out mid-flight,
- * the corners easing from round to the field's; the field's own text comes in once it has mostly
- * arrived. Nothing without an origin or with liquid motion off. Draw phase only.
+ * The field the tab bar's Search droplet becomes (liquid motion with glass): bare text on the
+ * droplet's glass, then Clear once there's text, or [idleTrailing] (the microphone) while empty.
  */
 @Composable
-private fun Modifier.growOutOfDroplet(origin: androidx.compose.ui.geometry.Rect?): Modifier {
-    if (origin == null || !app.oriel.ui.theme.LocalLiquidMotion.current) return this
-    val pw = remember { androidx.compose.animation.core.Animatable(0f) }
-    val ph = remember { androidx.compose.animation.core.Animatable(0f) }
-    LaunchedEffect(Unit) {
-        launch { pw.animateTo(1f, app.oriel.ui.theme.Sp.SheetW.unit) }
-        ph.animateTo(1f, app.oriel.ui.theme.Sp.SheetH.unit)
-    }
-    val fill = MaterialTheme.colorScheme.surfaceVariant
-    val at = remember { floatArrayOf(Float.NaN, Float.NaN) }
-    val path = remember { androidx.compose.ui.graphics.Path() }
-    val fade = remember { androidx.compose.ui.graphics.Paint() }
-    return this
-        .onPlaced { c -> c.positionInWindow().let { at[0] = it.x; at[1] = it.y } }
-        .drawWithContent {
-            val w = pw.value
-            val h = ph.value
-            if (at[0].isNaN() || (w == 1f && h == 1f && !pw.isRunning && !ph.isRunning)) return@drawWithContent drawContent()
-            val p = minOf(w, h).coerceIn(0f, 1f)
-            val src = origin.translate(-at[0], -at[1])
-            val l = lerp(src.left, 0f, w)
-            val r = lerp(src.right, size.width, w)
-            val t = lerp(src.top, 0f, h)
-            val b = lerp(src.bottom, size.height, h)
-            val radius = lerp(src.height / 2f, 11.dp.toPx(), app.oriel.ui.theme.smoothstep(0f, 1f, p))
-            val swell = kotlin.math.sin(p * kotlin.math.PI.toFloat())
-            val bs = swell * 10.dp.toPx()
-            val bt = swell * 8.dp.toPx()
-            app.oriel.ui.theme.blobRectPath(path, minOf(l, r), minOf(t, b), maxOf(l, r), maxOf(t, b), radius, bs, bt)
-            clipPath(path) {
-                drawRect(fill, topLeft = Offset(minOf(l, r) - bs * 2f, minOf(t, b) - bt * 2f), size = Size(kotlin.math.abs(r - l) + bs * 4f, kotlin.math.abs(b - t) + bt * 4f))
-                val a = app.oriel.ui.theme.smoothstep(0.55f, 0.95f, p)
-                if (a > 0f) {
-                    fade.alpha = a
-                    drawContext.canvas.saveLayer(androidx.compose.ui.geometry.Rect(0f, 0f, size.width, size.height), fade)
-                    this@drawWithContent.drawContent()
-                    drawContext.canvas.restore()
-                }
-            }
+private fun BottomSearchField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    onSearch: (String) -> Unit,
+    modifier: Modifier,
+    focusRequester: FocusRequester,
+    onFocus: (Boolean) -> Unit,
+    idleTrailing: (@Composable () -> Unit)?,
+) {
+    val haptics = rememberHaptics()
+    val ink = glassContentColor()
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+            if (value.isEmpty()) Text("Search YouTube", style = MaterialTheme.typography.bodyLarge, color = ink.copy(alpha = 0.55f), maxLines = 1)
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(color = ink),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { onSearch(value) }),
+                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester).onFocusChanged { onFocus(it.isFocused) },
+            )
         }
+        if (value.isNotEmpty()) {
+            Box(Modifier.size(44.dp).clip(CircleShape).clickable(onClickLabel = "Clear") { haptics.play(Haptic.Tap); onValueChange("") }, contentAlignment = Alignment.Center) {
+                Icon(OrielIcons.Close, "Clear", tint = ink.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
+            }
+        } else idleTrailing?.invoke()
+    }
 }

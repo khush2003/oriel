@@ -290,6 +290,7 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
                             onTabSelected = { app.selectTab(Tab.entries[it]) },
                             searchSelected = onSearch,
                             onSearch = { app.openSearch() },
+                            searchField = app.searchField,
                             modifier = Modifier.align(Alignment.BottomCenter).graphicsLayer {
                                 // The bar sinks away as the player rises over it.
                                 val p = sheetProgress.value
