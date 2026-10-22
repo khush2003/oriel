@@ -1,0 +1,1493 @@
+<!doctype html>
+<!-- Oriel liquid-interaction experiment. Self-contained design mock: no network, invented content.
+     Part of Oriel, GPL-3.0-or-later. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Oriel · liquid experiment</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{min-height:100%}
+body{background:#0b0b0d;color:#e8e8ec;font:14px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,"Segoe UI",Roboto,system-ui,sans-serif;display:flex;align-items:center;justify-content:center;padding:20px}
+body.page-light{background:#e4e4ea;color:#1c1c1e}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;-webkit-tap-highlight-color:transparent;text-align:inherit}
+:focus-visible{outline:2px solid #0a84ff;outline-offset:2px}
+#stage{display:flex;gap:40px;align-items:flex-start;justify-content:center;flex-wrap:wrap;width:100%}
+#frame{position:relative;width:calc(412px*var(--s,1));height:calc(915px*var(--s,1));flex:none}
+#phone{position:absolute;left:0;top:0;width:412px;height:915px;transform:scale(var(--s,1));transform-origin:0 0;border-radius:48px;overflow:hidden;background:var(--bg);color:var(--text);touch-action:none;user-select:none;-webkit-user-select:none;box-shadow:0 0 0 10px #18181a,0 0 0 11px #3a3a3e,0 30px 80px rgba(0,0,0,.55);isolation:isolate;contain:strict}
+#phone[data-theme=dark]{--bg:#000;--surface:#1c1c1e;--surface2:#2c2c2e;--surface3:#3a3a3c;--text:#fff;--text2:rgba(235,235,245,.6);--sep:rgba(84,84,88,.55);--glass:rgb(40,40,44);--glassA:.8;--pill:rgba(255,255,255,.17);--chipSel:#fff;--chipSelText:#000;--primary:#fff;--onPrimary:#000;--scrim:rgba(0,0,0,.5);--seg:#636366;--knob:#fff}
+#phone[data-theme=light]{--bg:#fff;--surface:#f2f2f7;--surface2:#e5e5ea;--surface3:#d1d1d6;--text:#000;--text2:rgba(60,60,67,.6);--sep:rgba(60,60,67,.2);--glass:rgb(250,250,252);--glassA:.84;--pill:rgba(0,0,0,.08);--chipSel:#000;--chipSelText:#fff;--primary:#000;--onPrimary:#fff;--scrim:rgba(0,0,0,.25);--seg:#fff;--knob:#fff}
+.ic{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.ic .f{fill:currentColor;stroke:none}
+.goo{filter:url(#goo)}
+.rm .goo,.rm .burst g,.rm #ptr g{filter:none!important}
+
+/* layers */
+.screen{position:absolute;inset:0;overflow:hidden;z-index:1;background:var(--bg)}
+.vp{position:absolute;inset:0;overflow:hidden}
+.content{position:absolute;left:0;top:0;width:100%;padding:54px 0 150px;will-change:transform}
+#status{position:absolute;left:0;right:0;top:0;height:46px;z-index:30;display:flex;align-items:center;justify-content:space-between;padding:4px 34px 0 40px;font-weight:600;font-size:16px;pointer-events:none;color:var(--text)}
+#status.on-video{color:#fff}
+#status svg{fill:currentColor}
+
+/* header */
+.lt{display:flex;align-items:center;justify-content:space-between;padding:6px 16px 10px}
+.lt h1{font-size:34px;font-weight:800;letter-spacing:-.8px}
+.ibtn{width:44px;height:44px;border-radius:22px;background:var(--surface2);display:grid;place-items:center;flex:none}
+.sec-h{display:flex;justify-content:space-between;align-items:baseline;padding:18px 16px 10px}
+.sec-h h2,h2.sec{font-size:22px;font-weight:750;letter-spacing:-.4px}
+h2.sec{padding:22px 16px 12px}
+
+/* press feedback: glow follows the finger */
+.press{position:relative}
+.press::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:radial-gradient(circle at var(--px,50%) var(--py,50%),rgba(255,255,255,.28),transparent 65%);opacity:var(--hl,0)}
+[data-theme=light] .press::after{background:radial-gradient(circle at var(--px,50%) var(--py,50%),rgba(0,0,0,.10),transparent 65%)}
+.card.press::after{display:none}
+
+/* chips */
+.chips-vp{position:relative;height:52px;overflow:hidden}
+.chips{position:absolute;left:0;top:0;display:flex;gap:8px;padding:6px 16px;width:max-content;will-change:transform}
+.chip{flex:none;height:36px;padding:0 16px;border-radius:18px;background:var(--surface2);display:flex;align-items:center;font-weight:600;font-size:15px}
+.chips svg.chip-pill{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
+.chips svg.chip-pill path{fill:var(--chipSel)}
+.chips-sel{position:absolute;left:0;top:0;display:flex;gap:8px;padding:6px 16px;pointer-events:none;width:max-content}
+.chips-sel .chip{background:transparent;color:var(--chipSelText)}
+
+/* cards */
+.card{display:block;margin:0 16px 22px;padding-bottom:6px;border-radius:20px}
+.thumb{position:relative;aspect-ratio:16/9;border-radius:18px;overflow:hidden}
+.dur{position:absolute;right:8px;bottom:8px;background:rgba(0,0,0,.6);color:#fff;font-size:12px;font-weight:600;padding:2px 7px;border-radius:8px}
+.meta{display:flex;gap:12px;padding:10px 4px 0 4px;align-items:flex-start}
+.av{width:36px;height:36px;border-radius:50%;flex:none}
+.txt{flex:1;min-width:0}
+.txt .t{font-size:16px;font-weight:600;line-height:1.3;letter-spacing:-.2px}
+.txt .s{font-size:13px;color:var(--text2);margin-top:3px}
+.more{width:44px;height:36px;margin:-4px -8px 0 0;border-radius:18px;display:grid;place-items:center;color:var(--text2);flex:none}
+.card.lifted{position:absolute;background:var(--surface2);box-shadow:0 18px 50px rgba(0,0,0,.45);margin:0;z-index:2;will-change:transform}
+
+/* pull to refresh */
+#ptr{position:absolute;left:146px;top:44px;width:120px;height:120px;z-index:2;pointer-events:none;visibility:hidden;display:none;fill:var(--text)}
+
+/* horizontal rows */
+.hrow-vp{position:relative;overflow:hidden;height:150px}
+.hrow{position:absolute;left:0;top:0;display:flex;gap:12px;padding:0 16px;width:max-content;will-change:transform}
+.hcard{width:170px;flex:none;border-radius:14px}
+.hcard .thumb{border-radius:14px}
+.hcard .t{font-size:14px;font-weight:600;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chan{width:76px;flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;font-size:12px;color:var(--text2);border-radius:16px;padding:4px 0}
+.chan .av{width:60px;height:60px}
+
+/* grouped lists */
+.gh{margin:24px 32px 7px;font-size:13px;text-transform:uppercase;color:var(--text2);letter-spacing:.2px}
+.grp{margin:0 16px;background:var(--surface);border-radius:16px;overflow:hidden}
+.grp .row{border-radius:0}
+.row{display:flex;align-items:center;gap:14px;min-height:52px;padding:0 16px;width:100%;font-size:17px;color:var(--text);border-radius:16px}
+.row+.row{box-shadow:inset 0 .5px 0 var(--sep)}
+.row .grow{flex:1}
+.row .cnt{color:var(--text2)}
+.row.col{flex-direction:column;align-items:stretch;gap:10px;padding:12px 16px}
+.foot{margin:8px 32px 0;font-size:13px;color:var(--text2)}
+
+/* switch + segmented */
+.sw{width:51px;height:31px;flex:none;position:relative;border-radius:16px}
+.sw::before{content:"";position:absolute;inset:-7px}
+.sw svg{display:block;overflow:visible}
+.sw .off{fill:var(--surface3)}.sw .on{fill:#34c759}
+.sw path{fill:var(--knob);filter:drop-shadow(0 2px 3px rgba(0,0,0,.28))}
+.seg{position:relative;height:36px;border-radius:10px;background:var(--surface2);display:flex;padding:0 2px}
+.seg svg{position:absolute;left:0;top:0;pointer-events:none;overflow:visible}
+.seg svg path{fill:var(--seg);filter:drop-shadow(0 2px 4px rgba(0,0,0,.18))}
+.seg-i{flex:1;position:relative;z-index:1;font-weight:600;font-size:14px;text-align:center;min-height:36px}
+
+/* pushed page */
+#page-dim{position:absolute;inset:0;z-index:2;background:#000;opacity:0;pointer-events:none}
+#page{position:absolute;inset:0;z-index:3;background:var(--bg);visibility:hidden;will-change:transform}
+.pg-head{position:absolute;left:0;right:0;top:44px;height:48px;display:flex;align-items:center;justify-content:center;z-index:2}
+.pg-head .back{position:absolute;left:8px;top:2px;height:44px;padding:0 12px 0 4px;display:flex;align-items:center;gap:2px;font-size:17px;border-radius:22px}
+.pg-title{font-size:17px;font-weight:650}
+#page .content{padding-top:100px}
+
+/* watch page + player */
+#watch{position:absolute;inset:0;z-index:5;visibility:hidden;pointer-events:none}
+#watch-bg{position:absolute;inset:0;background:var(--bg)}
+#watch-vp{top:232px}
+#watch-ct{padding-top:16px}
+.w-title{font-size:21px;font-weight:750;letter-spacing:-.4px;padding:0 16px;line-height:1.25}
+.w-chan{display:flex;align-items:center;gap:12px;padding:14px 16px}
+.w-chan .av{width:40px;height:40px}
+.w-chan .cn{font-weight:650;font-size:16px}.w-chan .cs{font-size:13px;color:var(--text2)}
+.w-chan .grow{flex:1}
+.subbtn{height:40px;padding:0 18px;border-radius:20px;background:var(--primary);color:var(--onPrimary);font-weight:650}
+.subbtn.on{background:var(--surface2);color:var(--text)}
+.w-actions{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:4px 16px}
+.tile{height:62px;border-radius:16px;background:var(--surface);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:13px;font-weight:600}
+.tile.on{background:var(--primary);color:var(--onPrimary)}
+.w-row{display:flex;gap:8px;padding:12px 16px 0}
+.pillbtn{height:44px;padding:0 16px;border-radius:22px;background:var(--surface2);display:flex;align-items:center;gap:8px;font-weight:600}
+.desc{margin:12px 16px 0;padding:12px 14px;border-radius:16px;background:var(--surface);font-size:14px;color:var(--text2)}
+.desc b{color:var(--text)}
+#player{position:absolute;left:0;top:0;width:412px;height:232px;z-index:8;transform-origin:0 0;overflow:hidden;will-change:transform}
+#pl-ctl{position:absolute;inset:0;color:#fff;opacity:0;pointer-events:none}
+#pl-ctl .down{position:absolute;left:12px;top:44px;width:40px;height:40px;border-radius:20px;background:rgba(0,0,0,.35);display:grid;place-items:center}
+#pl-ctl .pp{position:absolute;left:50%;top:50%;width:64px;height:64px;margin:-24px 0 0 -32px;border-radius:32px;background:rgba(0,0,0,.35);display:grid;place-items:center}
+#pl-ctl .bar{position:absolute;left:12px;right:12px;bottom:12px;height:4px;border-radius:2px;background:rgba(255,255,255,.35)}
+#pl-ctl .bar i{display:block;width:24%;height:100%;border-radius:2px;background:#fff}
+#mini-ctl{position:absolute;z-index:9;display:flex;gap:8px;color:#fff}
+#mini-ctl button{width:36px;height:36px;border-radius:18px;background:rgba(0,0,0,.4);display:grid;place-items:center}
+#dock-goo{position:absolute;left:150px;top:400px;width:262px;height:440px;z-index:7;pointer-events:none;visibility:hidden;display:none}
+#dock-blob{position:absolute;left:0;top:0;width:206px;height:116px;border-radius:18px;transform-origin:50% 85%}
+#dock-tail{position:absolute;left:0;top:0;width:60px;height:60px;border-radius:50%}
+
+/* tab bar */
+#tabbar{position:absolute;left:0;top:807px;width:412px;height:104px;z-index:6;pointer-events:none;will-change:transform}
+.tb-blur{position:absolute;left:0;top:20px;height:64px;width:64px;border-radius:32px;-webkit-backdrop-filter:blur(18px) saturate(1.7);backdrop-filter:blur(18px) saturate(1.7)}
+#tb-goo{position:absolute;inset:0;opacity:var(--glassA)}
+.tb-shape{position:absolute;left:0;top:20px;height:64px;width:64px;border-radius:32px;background:var(--glass)}
+#tb-pill{position:absolute;left:0;top:0;pointer-events:none}
+#tb-pill path{fill:var(--pill)}
+#tb-items{position:absolute;left:16px;top:20px;height:64px;width:304px;pointer-events:auto;border-radius:32px}
+.tab{position:absolute;left:0;top:0;width:74px;height:64px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:10.5px;font-weight:600;color:var(--text2)}
+.tab.on{color:var(--text)}
+#tb-search{position:absolute;left:0;top:20px;height:64px;width:64px;pointer-events:auto;border-radius:32px;overflow:hidden}
+#tb-search .mag{position:absolute;left:0;top:20px}
+#tb-search .ph{position:absolute;left:50px;top:21px;font-size:17px;color:var(--text2);white-space:nowrap;opacity:0}
+#tb-search .x{position:absolute;right:10px;top:10px;width:44px;height:44px;border-radius:22px;display:grid;place-items:center;opacity:0;pointer-events:none}
+
+/* sheet */
+#sheet-layer{position:absolute;inset:0;z-index:10;visibility:hidden;pointer-events:none}
+#scrim{position:absolute;inset:0;background:var(--scrim);opacity:0}
+#sheet{position:absolute;inset:0;background:var(--surface)}
+[data-theme=light] #sheet{background:#fff}
+#sheet-tint{position:absolute;inset:0;opacity:0}
+#sheet-layer.on #scrim,#sheet-layer.on #sheet{pointer-events:auto}
+#sheet-body{position:absolute;left:8px;width:396px;padding:0 0 24px;transform-origin:50% 0}
+.sh-grab{width:40px;height:5px;border-radius:3px;background:var(--surface3);margin:8px auto 0}
+.sh-head{display:flex;align-items:center;justify-content:space-between;padding:6px 12px 6px 20px}
+.sh-title{font-size:20px;font-weight:750}
+.sh-done{height:44px;padding:0 16px;border-radius:22px;background:var(--surface2);font-weight:650}
+.sh-row{display:flex;align-items:center;gap:14px;width:calc(100% - 16px);margin:0 8px;padding:8px 12px;border-radius:14px;font-size:16px}
+.sh-row .s{font-size:13px;color:var(--text2)}
+.sh-th{width:84px;height:48px;border-radius:10px;flex:none}
+.sh-row.cur{background:var(--surface2)}
+
+/* context menu */
+#menu-layer{position:absolute;inset:0;z-index:12;visibility:hidden;pointer-events:none}
+#menu-layer.on{pointer-events:auto}
+#menu-blur{position:absolute;inset:0;background:rgba(0,0,0,.28);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);opacity:0}
+#menu-goo{position:absolute;pointer-events:none;display:none}
+#menu-bridge{position:absolute;left:0;top:0;width:32px;height:32px;border-radius:50%;background:var(--surface2)}
+#menu-bg{position:absolute;border-radius:20px;background:var(--surface2)}
+#menu-items{position:absolute;padding:4px 0}
+.mi{display:flex;align-items:center;justify-content:space-between;width:100%;height:48px;padding:0 18px;font-size:16px;border-radius:14px}
+.mi.danger{color:#ff453a}
+
+/* shorts */
+#scr-shorts{background:#000}
+.short{position:relative;height:915px;color:#fff}
+.short .play{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);opacity:.55}
+.sh-info{position:absolute;left:16px;right:90px;bottom:130px;text-shadow:0 1px 6px rgba(0,0,0,.5)}
+.sh-info .cn{font-weight:650;display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.sh-info .cn .av{width:30px;height:30px}
+.sh-info .t{font-size:16px}
+.sh-acts{position:absolute;right:10px;bottom:130px;display:flex;flex-direction:column;gap:14px;align-items:center}
+.act{width:52px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:12px;font-weight:600;text-shadow:0 1px 4px rgba(0,0,0,.5)}
+.act .ab{width:48px;height:48px;border-radius:24px;background:rgba(255,255,255,.16);display:grid;place-items:center;position:relative}
+.act.on .ab .ic{fill:#fff}
+.burst{position:absolute;left:50%;top:50%;width:120px;height:120px;margin:-60px 0 0 -60px;pointer-events:none;fill:#fff;visibility:hidden;display:none}
+
+/* panel */
+#panel{width:340px;max-width:100%;font-size:14px;max-height:calc(915px*var(--s,1));overflow:auto;padding-right:4px}
+#panel h1{font-size:22px;letter-spacing:-.3px}
+#panel .sub{color:#9a9aa2;margin:4px 0 14px}
+.page-light #panel .sub{color:#5c5c66}
+.ctl{display:flex;flex-direction:column;gap:8px;padding:12px 14px;border-radius:14px;background:rgba(127,127,140,.14);margin-bottom:12px}
+.ctl label{display:flex;gap:10px;align-items:center;cursor:pointer}
+#fps{font:12px ui-monospace,Menlo,monospace;color:#8e8e96;margin-top:2px}
+.legend{list-style:none;display:flex;flex-direction:column;gap:8px}
+.legend li{padding:9px 12px;border-radius:12px;background:rgba(127,127,140,.10);line-height:1.35}
+.legend b{display:block}
+.legend button{float:right;font-size:12px;padding:3px 10px;border-radius:10px;background:rgba(127,127,140,.25);margin-left:8px}
+@media (max-width:820px){#stage{flex-direction:column;align-items:center}#panel{width:412px;max-height:none}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <!-- Metaball ("goo"): blur the shapes, then threshold alpha so nearby blobs fuse with a smooth neck. -->
+    <filter id="goo" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="6"/>
+      <feColorMatrix values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 24 -11"/>
+    </filter>
+    <filter id="goo-s" x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="4"/>
+      <feColorMatrix values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 20 -8"/>
+    </filter>
+  </defs>
+</svg>
+<div id="stage">
+  <div id="frame">
+    <div id="phone" data-theme="dark">
+      <div class="screen" id="scr-home"></div>
+      <div class="screen" id="scr-shorts"></div>
+      <div class="screen" id="scr-subs"></div>
+      <div class="screen" id="scr-you"></div>
+      <div id="page-dim"></div>
+      <div id="page" role="region" aria-label="Pushed page"></div>
+      <div id="watch" aria-label="Watch page"><div id="watch-bg"></div><div class="vp" id="watch-vp"><div class="content" id="watch-ct"></div></div></div>
+      <div id="tabbar">
+        <div class="tb-blur" id="tb-bar-blur"></div><div class="tb-blur" id="tb-search-blur"></div>
+        <div id="tb-goo" class="goo"><div class="tb-shape" id="tb-bar-shape"></div><div class="tb-shape" id="tb-search-shape"></div></div>
+        <svg id="tb-pill" width="412" height="104"><path/></svg>
+        <div id="tb-items" role="tablist" aria-label="Tabs"></div>
+        <div id="tb-search" role="button" tabindex="0" aria-label="Search" aria-expanded="false"></div>
+      </div>
+      <div id="dock-goo" class="goo"><div id="dock-blob"></div><div id="dock-tail"></div></div>
+      <div id="player" role="button" aria-label="Video player"><div id="pl-ctl"></div></div>
+      <div id="mini-ctl"></div>
+      <div id="sheet-layer"><div id="scrim"></div><div id="sheet" role="dialog" aria-modal="true"><div id="sheet-tint"></div><div id="sheet-body"></div></div></div>
+      <div id="menu-layer"><div id="menu-blur"></div><div id="menu-goo" class="goo"><div id="menu-bridge"></div><div id="menu-bg"></div></div><div id="menu-items" role="menu"></div></div>
+      <div id="status"><span>9:41</span><svg width="64" height="12" viewBox="0 0 64 12" aria-hidden="true"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="6" width="3" height="6" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/><rect x="36" y="0.5" width="23" height="11" rx="3" fill="none" stroke="currentColor" stroke-opacity=".5"/><rect x="38" y="2.5" width="17" height="7" rx="1.5"/><rect x="60.5" y="4" width="1.5" height="4" rx=".7" opacity=".5"/></svg></div>
+    </div>
+  </div>
+  <aside id="panel">
+    <h1>Oriel · liquid experiment</h1>
+    <p class="sub">A design mock: every interaction morphs, stretches, merges and settles on springs that carry the finger's speed. Invented content only.</p>
+    <div class="ctl">
+      <label><input type="checkbox" id="opt-light"> Light theme</label>
+      <label><input type="checkbox" id="opt-rm"> Reduce motion (liquid effects become fades)</label>
+      <label><input type="checkbox" id="opt-slow"> Slow motion ×4 (to study the springs)</label>
+      <div id="fps">idle</div>
+    </div>
+    <ol class="legend" id="legend"></ol>
+  </aside>
+</div>
+<script>
+'use strict';
+/* ============================== core: math, loop, springs ============================== */
+const W = 412, H = 915;
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+// iOS-style rubber band: resistance grows with distance, never passes `dim`.
+const rubber = (x, dim, c = .55) => x <= 0 ? 0 : (1 - 1 / (x * c / dim + 1)) * dim;
+const unrubber = (y, dim, c = .55) => y <= 0 ? 0 : (1 / (1 - Math.min(y, dim * .999) / dim) - 1) * dim / c;
+// Where a fling would come to rest (UIScrollView's projection with a deceleration rate).
+const project = (v, d = .998) => (v / 1000) * d / (1 - d);
+const f1 = n => (Math.round(n * 10) / 10);
+
+let RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let TIME_SCALE = 1;
+let fpsFrames = 0, fpsT0 = 0;
+
+const Loop = {
+  anims: new Set(), renders: new Set(), raf: 0, last: 0,
+  add(a) { this.anims.add(a); this.kick(); },
+  render(fn) { this.renders.add(fn); this.kick(); },
+  kick() { if (!this.raf) { this.last = performance.now(); this.raf = requestAnimationFrame(t => this.tick(t)); } },
+  tick(now) {
+    const dt = Math.min(.05, Math.max(0, (now - this.last) / 1000)) * TIME_SCALE; this.last = now;
+    for (const a of [...this.anims]) {
+      if (!this.anims.has(a)) continue;
+      if (a.step(dt) === false && !a.active) this.anims.delete(a);
+    }
+    const r = [...this.renders]; this.renders.clear();
+    for (const fn of r) fn();
+    fpsTick(now);
+    this.raf = 0;
+    if (this.anims.size || this.renders.size) this.raf = requestAnimationFrame(t => this.tick(t));
+  }
+};
+function fpsTick(now) {
+  if (!fpsT0) fpsT0 = now;
+  fpsFrames++;
+  if (now - fpsT0 > 500) {
+    const el = $('#fps'); if (el) el.textContent = `${Math.round(fpsFrames * 1000 / (now - fpsT0))} fps while animating`;
+    fpsFrames = 0; fpsT0 = now;
+  }
+  clearTimeout(fpsTick.t);
+  fpsTick.t = setTimeout(() => { fpsT0 = 0; fpsFrames = 0; const el = $('#fps'); if (el) el.textContent = 'idle'; }, 300);
+}
+
+// Spring described like SwiftUI: response (s) and damping ratio.
+function cfg(response, damping) { return { k: Math.pow(2 * Math.PI / response, 2), c: 4 * Math.PI * damping / response }; }
+const SP = {
+  snappy: cfg(.3, .82), press: cfg(.2, .8), bouncy: cfg(.42, .6), jelly: cfg(.48, .3),
+  lead: cfg(.26, .6), trail: cfg(.46, .75), soft: cfg(.5, .92), page: cfg(.42, .86),
+  fade: cfg(.26, 1), fadeOut: cfg(.35, 1), tabFade: cfg(.32, 1),
+  sheetH: cfg(.44, .68), sheetW: cfg(.58, .74), sheet: cfg(.4, .86), sheetClose: cfg(.38, .92),
+  player: cfg(.5, .72), push: cfg(.5, .88), fastEdge: cfg(.3, .68), slowEdge: cfg(.6, .82),
+  lift: cfg(.4, .55), liftClose: cfg(.4, .9), menuX: cfg(.52, .66), menuY: cfg(.4, .62), menuClose: cfg(.3, .95)
+};
+
+// Damped harmonic oscillator, integrated semi-implicitly at 240 Hz. Interruptible: `to` keeps
+// the current velocity unless one is given, so a gesture's release speed carries into the settle.
+// fade:true springs still run under Reduce motion, but critically damped (they drive opacity).
+class Spring {
+  constructor(x = 0, conf = SP.snappy, onUpdate = null, o = {}) {
+    this.x = x; this.v = 0; this.target = x; this.base = conf; this.conf = conf;
+    this.onUpdate = onUpdate; this.onRest = null; this.fade = !!o.fade; this.eps = o.eps ?? .001; this.active = false;
+  }
+  to(target, v, conf, onRest) {
+    this.target = target; this.onRest = onRest || null;
+    if (v != null) this.v = v;
+    if (RM && !this.fade) {
+      const cb = this.onRest; this.onRest = null; this.set(target);
+      if (cb) Promise.resolve().then(cb);
+      return this;
+    }
+    this.conf = RM ? SP.fade : (conf || this.base);
+    if (RM) this.v = 0;
+    if (!this.active) { this.active = true; Loop.add(this); }
+    return this;
+  }
+  set(x) { this.x = x; this.target = x; this.v = 0; this.stop(); if (this.onUpdate) Loop.render(this.onUpdate); return this; }
+  stop() { if (this.active) { this.active = false; Loop.anims.delete(this); } }
+  step(dt) {
+    const { k, c } = this.conf, n = Math.max(1, Math.ceil(dt * 240)), h = dt / n;
+    for (let i = 0; i < n; i++) { const a = -k * (this.x - this.target) - c * this.v; this.v += a * h; this.x += this.v * h; }
+    if (this.onUpdate) Loop.renders.add(this.onUpdate);
+    if (Math.abs(this.x - this.target) < this.eps && Math.abs(this.v) < this.eps * 20) {
+      this.x = this.target; this.v = 0; this.active = false;
+      const cb = this.onRest; this.onRest = null; if (cb) cb();
+      return false;
+    }
+    return true;
+  }
+}
+
+// Finger velocity over the last ~100 ms, in phone px/s.
+class VT {
+  constructor() { this.s = []; }
+  reset(x, y) { this.s = [{ x, y, t: performance.now() }]; }
+  add(x, y) { const t = performance.now(); this.s.push({ x, y, t }); while (this.s.length > 2 && t - this.s[0].t > 100) this.s.shift(); }
+  get() {
+    const s = this.s; if (s.length < 2) return { x: 0, y: 0 };
+    const a = s[0], b = s[s.length - 1], dt = (b.t - a.t) / 1000;
+    if (dt < .004 || performance.now() - b.t > 90) return { x: 0, y: 0 };
+    return { x: (b.x - a.x) / dt, y: (b.y - a.y) / dt };
+  }
+}
+
+/* ============================== gestures ============================== */
+// One record per pointer. Every element that cares joins it on pointerdown (innermost first);
+// the first to recognise its gesture claims it and the others are cancelled.
+const PH = $('#phone');
+let PS = 1;
+const G = { recs: new Map(), r: null };
+const SLOP = 8;
+function pt(e) { const r = G.r || (G.r = PH.getBoundingClientRect()); return { x: (e.clientX - r.left) / PS, y: (e.clientY - r.top) / PS }; }
+function rectOf(el) { const r = el.getBoundingClientRect(), p = PH.getBoundingClientRect(); return { x: (r.left - p.left) / PS, y: (r.top - p.top) / PS, w: r.width / PS, h: r.height / PS }; }
+function axisPassed(rec, axis) {
+  const ax = Math.abs(rec.dx), ay = Math.abs(rec.dy);
+  return axis === 'x' ? ax > SLOP && ax > ay * 1.2 : ay > SLOP && ay > ax * 1.2;
+}
+G.join = (e, h) => {
+  const rec = G.recs.get(e.pointerId);
+  if (!rec || rec.owner) return null;
+  rec.hs.push(h); h.rec = rec; if (h.down) h.down(rec, e);
+  return rec;
+};
+G.claim = (rec, h) => {
+  if (rec.owner) return rec.owner === h;
+  rec.owner = h;
+  for (const o of rec.hs) if (o !== h && o.cancel) o.cancel(rec);
+  rec.hs = [h];
+  return true;
+};
+PH.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  G.r = PH.getBoundingClientRect();
+  const p = pt(e);
+  const rec = { id: e.pointerId, x0: p.x, y0: p.y, x: p.x, y: p.y, dx: 0, dy: 0, hs: [], owner: null, vt: new VT(), pressTaken: false, noTap: false };
+  rec.vt.reset(p.x, p.y);
+  G.recs.set(e.pointerId, rec);
+  try { PH.setPointerCapture(e.pointerId); } catch (_) { /* synthetic events */ }
+  e.preventDefault();
+}, true);
+window.addEventListener('pointermove', e => {
+  const rec = G.recs.get(e.pointerId); if (!rec) return;
+  const p = pt(e); rec.x = p.x; rec.y = p.y; rec.dx = p.x - rec.x0; rec.dy = p.y - rec.y0; rec.vt.add(p.x, p.y);
+  for (const h of [...rec.hs]) if (rec.hs.includes(h) && h.move) h.move(rec, e);
+}, { passive: false });
+function endPointer(e, cancelled) {
+  const rec = G.recs.get(e.pointerId); if (!rec) return;
+  G.recs.delete(e.pointerId);
+  if (!cancelled) { const p = pt(e); rec.x = p.x; rec.y = p.y; rec.dx = p.x - rec.x0; rec.dy = p.y - rec.y0; }
+  for (const h of rec.hs) { if (cancelled) { if (h.cancel) h.cancel(rec); } else if (h.up) h.up(rec, e); }
+}
+window.addEventListener('pointerup', e => endPointer(e, false));
+window.addEventListener('pointercancel', e => endPointer(e, true));
+PH.addEventListener('contextmenu', e => e.preventDefault());
+
+// Squishy surface: on press it dents toward the finger (scaled about the touch point, nudged
+// toward it, lit under it), stretches after the finger while held, and wobbles like jelly on release.
+function pressable(el, o = {}) {
+  const st = o.strength ?? 1;
+  const sx = new Spring(1, SP.jelly, null, { eps: .0004 }), sy = new Spring(1, SP.jelly, null, { eps: .0004 });
+  const tx = new Spring(0, SP.jelly, null, { eps: .02 }), ty = new Spring(0, SP.jelly, null, { eps: .02 });
+  const hl = new Spring(0, SP.snappy, null, { eps: .005 });
+  const render = () => {
+    el.style.transform = `translate3d(${tx.x.toFixed(2)}px,${ty.x.toFixed(2)}px,0) scale(${sx.x.toFixed(4)},${sy.x.toFixed(4)})`;
+    el.style.setProperty('--hl', hl.x.toFixed(3));
+  };
+  for (const s of [sx, sy, tx, ty, hl]) s.onUpdate = render;
+  el.classList.add('press');
+  let r = null, timer = 0, base = [1, 1, 0, 0];
+  function settle(pop, instant) {
+    el.style.opacity = '';
+    if (RM || instant) { sx.set(1); sy.set(1); tx.set(0); ty.set(0); hl.set(0); el.style.willChange = ''; return; }
+    const kick = pop ? .9 * st : 0;
+    sx.to(1, sx.v + kick, SP.jelly, () => { el.style.willChange = ''; });
+    sy.to(1, sy.v - kick * .7, SP.jelly); tx.to(0, null, SP.jelly); ty.to(0, null, SP.jelly); hl.to(0, null, SP.fadeOut);
+  }
+  const h = {
+    lp: false,
+    down(rec) {
+      h.lp = false;
+      const b = rectOf(el), w = el.offsetWidth || b.w, hh = el.offsetHeight || b.h; r = b;
+      const ox = clamp((rec.x0 - b.x) * w / (b.w || 1), 0, w), oy = clamp((rec.y0 - b.y) * hh / (b.h || 1), 0, hh);
+      el.style.transformOrigin = `${ox}px ${oy}px`;
+      el.style.setProperty('--px', ox + 'px'); el.style.setProperty('--py', oy + 'px');
+      el.style.willChange = 'transform';
+      if (RM) el.style.opacity = '.55';
+      else {
+        const nx = w ? ox / w * 2 - 1 : 0, ny = hh ? oy / hh * 2 - 1 : 0, k = .07 * st;
+        base = [1 - k * (1 - .45 * Math.abs(nx)), 1 - k * (1 - .45 * Math.abs(ny)), nx * 2.5 * st, ny * 2.5 * st];
+        sx.to(base[0], null, SP.press); sy.to(base[1], null, SP.press);
+        tx.to(base[2], null, SP.press); ty.to(base[3], null, SP.press); hl.to(1, null, SP.press);
+      }
+      if (o.onLongPress) {
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          const rr = h.rec;
+          if (rr && G.recs.get(rr.id) === rr && rr.hs.includes(h) && G.claim(rr, h)) { h.lp = true; settle(false, true); o.onLongPress(); }
+        }, 430);
+      }
+    },
+    move(rec) {
+      if (RM || h.lp || !r) return;
+      const ex = Math.sign(rec.dx) * rubber(Math.abs(rec.dx), r.w, .6) * .22 * st;
+      const ey = Math.sign(rec.dy) * rubber(Math.abs(rec.dy), r.h, .6) * .22 * st;
+      const ax = Math.min(1, Math.abs(rec.dx) / r.w), ay = Math.min(1, Math.abs(rec.dy) / r.h);
+      sx.to(base[0] + (ax * .1 - ay * .04) * st); sy.to(base[1] + (ay * .1 - ax * .04) * st);
+      tx.to(base[2] + ex); ty.to(base[3] + ey);
+    },
+    up(rec) {
+      clearTimeout(timer);
+      if (h.lp) { h.lp = false; return; }
+      const inside = r && rec.x > r.x - 20 && rec.x < r.x + r.w + 20 && rec.y > r.y - 20 && rec.y < r.y + r.h + 20;
+      settle(inside, false);
+      if (inside && !rec.noTap && o.onTap) o.onTap(rec);
+    },
+    cancel() { clearTimeout(timer); if (h.lp) return; settle(false, false); }
+  };
+  el.addEventListener('pointerdown', e => {
+    const rec = G.recs.get(e.pointerId);
+    if (!rec || rec.pressTaken) return;
+    rec.pressTaken = true; G.join(e, h);
+  });
+  // Keyboard / assistive activation (detail 0) gets the same action without the gesture.
+  el.addEventListener('click', e => { if (e.detail === 0 && o.onTap) o.onTap(null); });
+  return h;
+}
+
+// Custom scroller so overscroll, paging and pull-to-refresh are all one physical system.
+class Scroller {
+  constructor(vp, ct, o = {}) {
+    Object.assign(this, { vp, ct, o, axis: o.axis || 'y', pos: 0, v: 0, mode: null, dragging: false, mx: 0 });
+    this.sp = new Spring(0, SP.soft, () => { if (this.mode === 'spring') { this.pos = this.sp.x; this.render(); } }, { eps: .1 });
+    this.decay = { step: dt => this.stepDecay(dt) };
+    const s = this;
+    this.h = {
+      down(rec) { if (s.mode === 'decay' && Math.abs(s.v) > 250) rec.noTap = true; s.stop(); s.mx = s.max(); this.cl = false; },
+      move(rec) {
+        const d = s.axis === 'y' ? rec.dy : rec.dx;
+        if (!this.cl) {
+          if (!axisPassed(rec, s.axis)) return;
+          if (s.o.canStart && !s.o.canStart(rec)) return;
+          if (!G.claim(rec, this)) return;
+          this.cl = true; s.dragging = true;
+          const raw = s.pos < 0 ? -unrubber(-s.pos, s.size()) : s.pos > s.mx ? s.mx + unrubber(s.pos - s.mx, s.size()) : s.pos;
+          this.start = raw + d;
+        }
+        const raw = this.start - d;
+        s.pos = raw < 0 ? -rubber(-raw, s.size()) : raw > s.mx ? s.mx + rubber(raw - s.mx, s.size()) : raw;
+        s.render();
+      },
+      up(rec) {
+        if (!this.cl) { s.settle(); return; }
+        s.dragging = false;
+        const vt = rec.vt.get(), v = -(s.axis === 'y' ? vt.y : vt.x);
+        if (s.o.onRelease && s.o.onRelease(s.pos, v)) return;
+        s.fling(v);
+      },
+      cancel() { if (this.cl) s.dragging = false; s.settle(); }
+    };
+    vp.addEventListener('pointerdown', e => G.join(e, this.h));
+    vp.addEventListener('wheel', e => this.wheel(e), { passive: false });
+  }
+  size() { return this.axis === 'y' ? this.vp.clientHeight : this.vp.clientWidth; }
+  max() { return Math.max(0, (this.axis === 'y' ? this.ct.offsetHeight : this.ct.scrollWidth) - this.size()); }
+  stop() { this.mode = null; this.sp.stop(); }
+  render() {
+    this.ct.style.transform = this.axis === 'y' ? `translate3d(0,${f1(-this.pos)}px,0)` : `translate3d(${f1(-this.pos)}px,0,0)`;
+    if (this.o.onScroll) this.o.onScroll(this.pos);
+  }
+  springTo(t, v = 0, conf) { this.mode = 'spring'; this.sp.x = this.pos; this.sp.v = v; this.sp.to(t, v, conf || SP.soft); }
+  settle(v = 0) {
+    const mx = this.max();
+    if (this.pos < 0 || this.pos > mx) this.springTo(clamp(this.pos, 0, mx), v);
+    else if (this.o.paging) this.snapPage(v);
+  }
+  fling(v) {
+    this.mx = this.max();
+    if (this.pos < 0 || this.pos > this.mx) return this.springTo(clamp(this.pos, 0, this.mx), v);
+    if (this.o.paging) return this.snapPage(v);
+    this.v = v; this.mode = 'decay'; Loop.add(this.decay);
+  }
+  snapPage(v) {
+    const P = this.o.paging;
+    let i = Math.abs(v) > 350 ? (v > 0 ? Math.floor(this.pos / P) + 1 : Math.ceil(this.pos / P) - 1) : Math.round(this.pos / P);
+    i = clamp(i, 0, Math.round(this.max() / P));
+    this.springTo(i * P, v, SP.page);
+  }
+  stepDecay(dt) {
+    if (this.mode !== 'decay') return false;
+    this.v *= Math.pow(.998, dt * 1000); this.pos += this.v * dt;
+    if (this.pos < 0 || this.pos > this.mx) { this.springTo(clamp(this.pos, 0, this.mx), this.v); return false; }
+    this.render();
+    if (Math.abs(this.v) < 10) { this.mode = null; return false; }
+    return true;
+  }
+  wheel(e) {
+    let dx = e.deltaX, dy = e.deltaY; if (e.deltaMode === 1) { dx *= 16; dy *= 16; }
+    if (this.axis === 'x' ? Math.abs(dx) <= Math.abs(dy) : Math.abs(dy) < Math.abs(dx)) return;
+    e.preventDefault(); e.stopPropagation();
+    const d = this.axis === 'x' ? dx : dy;
+    if (this.o.paging) {
+      const now = performance.now(); if (now - (this.wt || 0) < 450 || Math.abs(d) < 12) return; this.wt = now;
+      const P = this.o.paging, i = clamp(Math.round(this.pos / P) + Math.sign(d), 0, Math.round(this.max() / P));
+      this.springTo(i * P, 0, SP.page); return;
+    }
+    this.stop(); this.pos = clamp(this.pos + d, 0, this.max()); this.render();
+  }
+}
+
+/* ============================== shapes ============================== */
+// Capsule whose long edges pinch in (a neck) as it stretches: reads as liquid rather than a box.
+function capsule(L, R, cy, h, neck = 0) {
+  if (R < L) [L, R] = [R, L];
+  const w = R - L, rx = Math.min(h / 2, w / 2), ry = h / 2, t = cy - ry, b = cy + ry, m = (L + R) / 2, n = Math.min(neck, ry * .6);
+  return `M${f1(L + rx)},${f1(t)}Q${f1(m)},${f1(t + n * 2)} ${f1(R - rx)},${f1(t)}A${f1(rx)},${f1(ry)} 0 0 1 ${f1(R - rx)},${f1(b)}Q${f1(m)},${f1(b - n * 2)} ${f1(L + rx)},${f1(b)}A${f1(rx)},${f1(ry)} 0 0 1 ${f1(L + rx)},${f1(t)}Z`;
+}
+// Rounded rect whose sides can swell outward (bs: left/right, bt: top) — a droplet mid-growth.
+function blobRect(l, t, r, b, rad, bs = 0, bt = 0) {
+  const k = .5523, kr = rad * k, mx = (l + r) / 2, my = (t + b) / 2;
+  return `M${f1(l + rad)},${f1(t)}Q${f1(mx)},${f1(t - 2 * bt)} ${f1(r - rad)},${f1(t)}` +
+    `C${f1(r - rad + kr)},${f1(t)} ${f1(r)},${f1(t + rad - kr)} ${f1(r)},${f1(t + rad)}` +
+    `Q${f1(r + 2 * bs)},${f1(my)} ${f1(r)},${f1(b - rad)}` +
+    `C${f1(r)},${f1(b - rad + kr)} ${f1(r - rad + kr)},${f1(b)} ${f1(r - rad)},${f1(b)}` +
+    `Q${f1(mx)},${f1(b + bt * .6)} ${f1(l + rad)},${f1(b)}` +
+    `C${f1(l + rad - kr)},${f1(b)} ${f1(l)},${f1(b - rad + kr)} ${f1(l)},${f1(b - rad)}` +
+    `Q${f1(l - 2 * bs)},${f1(my)} ${f1(l)},${f1(t + rad)}` +
+    `C${f1(l)},${f1(t + rad - kr)} ${f1(l + rad - kr)},${f1(t)} ${f1(l + rad)},${f1(t)}Z`;
+}
+// Leading edge of a pushed page: D>0 bulges out in front at fy, D<0 dents in where the finger holds it.
+function edgePath(D, fy) {
+  const n = 36, s = 150; let d = '';
+  for (let i = 0; i <= n; i++) {
+    const y = i / n * H, g = Math.exp(-(((y - fy) / s) ** 2));
+    const x = D > 0 ? D * (1 - g) : -D * g;
+    d += (i ? 'L' : 'M') + f1(x) + ',' + f1(y);
+  }
+  return d + `L${W + 60},${H}L${W + 60},0Z`;
+}
+// Two edges on separate springs: the leading edge is stiff, the trailing one lags, so the blob
+// stretches toward where it's going, necks in the middle, then catches up with overshoot.
+class Pill {
+  constructor(render, L, R, h, o = {}) {
+    this.L = new Spring(L, SP.lead, render, { eps: .05 });
+    this.R = new Spring(R, SP.trail, render, { eps: .05 });
+    this.h = new Spring(h, SP.bouncy, render, { eps: .05 });
+    this.rest = R - L; this.neckK = o.neckK ?? .16; this.squash = o.squash ?? .1;
+  }
+  moveTo(L, R, v) {
+    const right = (L + R) > (this.L.x + this.R.x);
+    this.rest = R - L;
+    this.L.to(L, v, right ? SP.trail : SP.lead);
+    this.R.to(R, v, right ? SP.lead : SP.trail);
+  }
+  setNow(L, R) { this.rest = R - L; this.L.set(L); this.R.set(R); }
+  path(cy) {
+    const L = this.L.x, R = this.R.x, w = Math.abs(R - L), st = Math.max(0, w - this.rest);
+    const h = Math.max(this.h.x - st * this.squash, this.h.x * .62);
+    const neck = RM ? 0 : Math.min(st * this.neckK, h * .3);
+    return capsule(L, R, cy, h, neck);
+  }
+}
+// Shared "drag the blob along slots" behaviour (tab bar, segmented controls).
+function slotDrag(o) {
+  const h = {
+    cl: false,
+    down() { h.cl = false; if (o.disabled && o.disabled()) return; o.pill.h.to(o.hRest + 5); },
+    move(rec) {
+      if (o.disabled && o.disabled()) return;
+      if (!h.cl) { if (!axisPassed(rec, 'x')) return; if (!G.claim(rec, h)) return; h.cl = true; }
+      const s = o.slots(), w = s[0].r - s[0].l, minC = s[0].l + w / 2, maxC = s[s.length - 1].l + w / 2;
+      let c = o.localX(rec.x);
+      if (c < minC) c = minC - rubber(minC - c, 50); else if (c > maxC) c = maxC + rubber(c - maxC, 50);
+      o.pill.moveTo(c - w / 2, c + w / 2);
+    },
+    up(rec) {
+      if (o.disabled && o.disabled()) { if (Math.hypot(rec.dx, rec.dy) < SLOP && o.onDisabledTap) o.onDisabledTap(); return; }
+      o.pill.h.to(o.hRest);
+      const s = o.slots();
+      const pick = c => { let best = 0, bd = 1e9; s.forEach((q, i) => { const d = Math.abs((q.l + q.r) / 2 - c); if (d < bd) { bd = d; best = i; } }); return best; };
+      if (h.cl) { const v = rec.vt.get().x; o.select(pick(o.localX(rec.x) + project(v, .99) * .35), v); }
+      else o.select(pick(o.localX(rec.x)), 0);
+    },
+    cancel() { o.pill.h.to(o.hRest); if (!(o.disabled && o.disabled())) o.select(o.cur(), 0); }
+  };
+  return h;
+}
+
+/* ============================== content (all invented) ============================== */
+const I = {
+  home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/>',
+  bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
+  subs: '<path d="M6 3.5h12M4 7h16"/><rect x="3" y="10" width="18" height="11" rx="2"/><path d="M10.5 13v5l4-2.5z"/>',
+  you: '<circle cx="12" cy="12" r="9.5"/><circle cx="12" cy="10" r="3.2"/><path d="M6 18.5c1.6-2.3 3.7-3.4 6-3.4s4.4 1.1 6 3.4"/>',
+  search: '<circle cx="10.5" cy="10.5" r="7"/><path d="m16 16 5 5"/>',
+  more: '<circle class="f" cx="5" cy="12" r="1.7"/><circle class="f" cx="12" cy="12" r="1.7"/><circle class="f" cx="19" cy="12" r="1.7"/>',
+  down: '<path d="m6 9 6 6 6-6"/>', left: '<path d="m15 5-7 7 7 7"/>', right: '<path d="m9 5 7 7-7 7"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/><circle cx="12" cy="12" r="6.5"/>',
+  play: '<path class="f" d="M7 4.5v15l13-7.5z"/>', pause: '<rect class="f" x="6" y="4.5" width="4" height="15" rx="1.2"/><rect class="f" x="14" y="4.5" width="4" height="15" rx="1.2"/>',
+  x: '<path d="M6 6l12 12M18 6 6 18"/>',
+  up: '<path d="M7 10v11H4V10zM7 10l4-7c1.5 0 2.5 1 2.5 2.5L13 9h6a2 2 0 0 1 2 2.3l-1.3 7.5A2.5 2.5 0 0 1 17.2 21H7"/>',
+  dn: '<g transform="rotate(180 12 12)"><path d="M7 10v11H4V10zM7 10l4-7c1.5 0 2.5 1 2.5 2.5L13 9h6a2 2 0 0 1 2 2.3l-1.3 7.5A2.5 2.5 0 0 1 17.2 21H7"/></g>',
+  share: '<path d="M12 3v12M7.5 7.5 12 3l4.5 4.5M5 12v8h14v-8"/>', save: '<path d="M6 3h12v18l-6-4.5L6 21z"/>',
+  list: '<path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>', clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  heart: '<path d="M12 20s-7.5-4.6-9.2-9.3C1.7 7.5 3.8 4.5 7 4.5c2 0 3.6 1.1 5 3 1.4-1.9 3-3 5-3 3.2 0 5.3 3 4.2 6.2C19.5 15.4 12 20 12 20z"/>',
+  chat: '<path d="M4 5h16v11H9l-5 4z"/>', flag: '<path d="M5 21V4h11l-2 4 2 4H5"/>', queue: '<path d="M4 6h11M4 12h11M4 17h7M17 14v6l4-3z"/>',
+  hist: '<path d="M3.5 12a8.5 8.5 0 1 0 2.5-6L3.5 8.5M3.5 4v4.5H8M12 7.5V12l3 2"/>'
+};
+const icon = (n, s = 24) => `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" aria-hidden="true">${I[n]}</svg>`;
+
+const V = [
+  { t: 'Building a tiny cabin by the lake in 30 days', c: 'Harbor Workshop', v: '1.2M views', a: '2 weeks ago', d: '21:00', g: ['#d4a24c', '#6f7d3a'] },
+  { t: 'I tried cooking every recipe from a 1950s cookbook', c: 'Kitchen Archive', v: '860K views', a: '5 days ago', d: '18:42', g: ['#a6dc5e', '#3f8f3a'] },
+  { t: 'A day in the life of a lighthouse keeper', c: 'Field Notes', v: '2.4M views', a: '1 month ago', d: '14:19', g: ['#4fd08a', '#1f7a6a'] },
+  { t: 'Mapping the night sky with a backyard telescope', c: 'Slow Orbit', v: '410K views', a: '3 days ago', d: '26:05', g: ['#6b78ff', '#2a1f6f'] },
+  { t: 'How tides actually work, explained with a bathtub', c: 'Tidal Lab', v: '3.1M views', a: '1 year ago', d: '11:37', g: ['#36bfe0', '#1b4f8a'] },
+  { t: 'Folding a paper engine that really turns', c: 'Paper Engines', v: '95K views', a: '8 hours ago', d: '9:58', g: ['#ff9466', '#a1344f'] },
+  { t: 'Learning the piano in one year: progress diary', c: 'Kitchen Archive', v: '540K views', a: '2 hours ago', d: '12:42', g: ['#e3b8ff', '#7a3fb0'] },
+  { t: 'Restoring a 40-year-old bicycle from rust', c: 'Harbor Workshop', v: '1.7M views', a: '4 days ago', d: '32:10', g: ['#f2c14e', '#b0562a'] }
+];
+const CHAPTERS = [['Intro', '0:00'], ['Picking the spot', '1:02'], ['Foundations', '4:05'], ['Framing the walls', '7:48'], ['The roof in the rain', '12:30'], ['First night', '18:10']];
+const CHIPS = ['All', 'Music', 'Gaming', 'News', 'Cooking', 'Sports', 'Live', 'Travel', 'Science'];
+const thumbBg = g => `radial-gradient(circle at 80% 95%, transparent 0 22%, rgba(255,255,255,.3) 22.5% 23.3%, transparent 23.8% 34%, rgba(255,255,255,.22) 34.5% 35.3%, transparent 35.8% 46%, rgba(255,255,255,.16) 46.5% 47.3%, transparent 47.8%), radial-gradient(circle at 68% 32%, rgba(255,255,255,.42), transparent 55%), linear-gradient(135deg, ${g[0]}, ${g[1]})`;
+const avBg = g => `radial-gradient(circle at 35% 30%, rgba(255,255,255,.55), transparent 50%), linear-gradient(135deg, ${g[1]}, ${g[0]})`;
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+
+function cardHTML(i) {
+  const v = V[i];
+  return `<div class="card" data-v="${i}" role="button" tabindex="0" aria-label="${esc(v.t)}">
+    <div class="thumb" style="background:${thumbBg(v.g)}"><span class="dur">${v.d}</span></div>
+    <div class="meta"><div class="av" style="background:${avBg(v.g)}"></div>
+      <div class="txt"><div class="t">${esc(v.t)}</div><div class="s">${v.c} · ${v.v} · ${v.a}</div></div>
+      <button class="more" aria-label="More actions">${icon('more', 20)}</button></div></div>`;
+}
+function wireCards(root) {
+  $$('.card', root).forEach(el => {
+    const i = +el.dataset.v;
+    pressable(el, { strength: .45, onTap: () => openVideo(i, $('.thumb', el)), onLongPress: () => Menu.show(el) });
+    const m = $('.more', el);
+    pressable(m, { onTap: () => Sheet.open(m, moreSheet(i)) });
+  });
+}
+
+/* ============================== screens ============================== */
+let homeOrder = [0, 1, 2, 3, 4, 5, 6, 7];
+$('#scr-home').innerHTML = `
+  <div class="vp" id="home-vp"><div class="content" id="home-ct">
+    <div class="lt"><h1>Home</h1><button class="ibtn" id="home-av" aria-label="Settings">${icon('you', 26)}</button></div>
+    <div class="chips-vp" id="chips-vp"><div class="chips" id="chips">
+      ${CHIPS.map((c, i) => `<button class="chip" data-i="${i}" role="tab">${c}</button>`).join('')}
+      <svg class="chip-pill" aria-hidden="true"><path/></svg>
+      <div class="chips-sel" aria-hidden="true">${CHIPS.map(c => `<span class="chip">${c}</span>`).join('')}</div>
+    </div></div>
+    <div id="feed" style="padding-top:8px"></div>
+  </div></div>
+  <svg id="ptr" viewBox="0 0 120 120" aria-hidden="true"><g filter="url(#goo-s)">
+    <ellipse id="ptr-anchor" cx="60" cy="0" rx="30" ry="10"/><rect id="ptr-neck" x="52" y="0" width="16" height="0"/>
+    <circle id="ptr-ball" cx="60" cy="10" r="0"/><circle class="ptr-sat" r="0"/><circle class="ptr-sat" r="0"/><circle class="ptr-sat" r="0"/>
+  </g></svg>`;
+function renderFeed() { $('#feed').innerHTML = homeOrder.map(cardHTML).join(''); wireCards($('#feed')); }
+renderFeed();
+
+$('#scr-subs').innerHTML = `<div class="vp" id="subs-vp"><div class="content" id="subs-ct">
+  <div class="lt"><h1>Subscriptions</h1></div>
+  <div class="hrow-vp" id="chan-vp" style="height:100px"><div class="hrow" id="chan-row">
+    ${V.map(v => `<button class="chan"><span class="av" style="background:${avBg(v.g)}"></span>${v.c.split(' ')[0]}</button>`).join('')}
+  </div></div>
+  <div id="subs-feed">${[3, 1, 5, 0, 7, 2].map(cardHTML).join('')}</div></div></div>`;
+
+$('#scr-you').innerHTML = `<div class="vp" id="you-vp"><div class="content" id="you-ct">
+  <div class="lt"><h1>You</h1><button class="ibtn" id="you-gear" aria-label="Settings">${icon('gear')}</button></div>
+  <div class="sec-h"><h2>History</h2></div>
+  <div class="hrow-vp" id="hist-vp"><div class="hrow" id="hist-row">
+    ${[2, 6, 4, 1, 3].map(i => `<div class="hcard" data-v="${i}" role="button" tabindex="0"><div class="thumb" style="background:${thumbBg(V[i].g)}"><span class="dur">${V[i].d}</span></div><div class="t">${esc(V[i].t)}</div></div>`).join('')}
+  </div></div>
+  <div class="grp" style="margin-top:8px">
+    <button class="row" data-pg="Watch later">${icon('clock')}<span class="grow">Watch later</span><span class="cnt">3</span>${icon('right', 18)}</button>
+    <button class="row" data-pg="Liked videos">${icon('up')}<span class="grow">Liked videos</span><span class="cnt">5</span>${icon('right', 18)}</button>
+    <button class="row" data-pg="History">${icon('hist')}<span class="grow">History</span>${icon('right', 18)}</button>
+  </div>
+  <div class="gh">Playback</div>
+  <div class="grp">
+    <div class="row"><span class="grow">Autoplay next</span><button class="sw" id="sw-autoplay" aria-label="Autoplay next"></button></div>
+    <div class="row"><span class="grow">Captions</span><button class="sw" id="sw-cc" aria-label="Captions"></button></div>
+    <div class="row col"><span>Quality</span><div class="seg" id="seg-q"></div></div>
+  </div>
+  <div class="gh">Motion</div>
+  <div class="grp"><div class="row"><span class="grow">Liquid motion</span><button class="sw" id="sw-liquid" aria-label="Liquid motion"></button></div></div>
+  <p class="foot">Turning liquid motion off is the same as Reduce motion: shapes stop morphing and simply fade.</p>
+</div></div>`;
+
+let shortsHTML = '';
+[[4, 'Waves at 1000 fps'], [5, 'This paper gear surprised me'], [2, 'Fog rolling over the light'], [3, 'Saturn through a $90 scope'], [1, 'Butter, but from 1952']].forEach(([i, t], k) => {
+  const g = V[i].g;
+  shortsHTML += `<div class="short" style="background:radial-gradient(circle at 30% 25%, rgba(255,255,255,.35), transparent 50%), linear-gradient(170deg, ${g[0]}, ${g[1]} 70%, #000)">
+    <div class="play">${icon('play', 64)}</div>
+    <div class="sh-info"><div class="cn"><span class="av" style="background:${avBg(g)}"></span>@${V[i].c.replace(/ /g, '').toLowerCase()}</div><div class="t">${t}</div></div>
+    <div class="sh-acts">
+      <div class="act like"><button class="ab" aria-label="Like" aria-pressed="false"><svg class="burst" viewBox="0 0 120 120" aria-hidden="true"><g filter="url(#goo-s)">${'<circle cx="60" cy="60" r="0"/>'.repeat(8)}</g></svg>${icon('heart', 26)}</button><span>${12 + k * 7}K</span></div>
+      <div class="act"><button class="ab" aria-label="Comments">${icon('chat', 24)}</button><span>${200 + k * 31}</span></div>
+      <div class="act"><button class="ab" aria-label="Share">${icon('share', 24)}</button><span>Share</span></div>
+      <div class="act"><button class="ab sh-more" aria-label="More" data-v="${i}">${icon('more', 24)}</button><span></span></div>
+    </div></div>`;
+});
+$('#scr-shorts').innerHTML = `<div class="vp" id="shorts-vp"><div class="content" id="shorts-ct" style="padding:0">${shortsHTML}</div></div>`;
+
+/* ============================== switch + segmented ============================== */
+// Switch knob is a liquid blob: it widens under the finger and stretches in the direction of travel.
+class Switch {
+  constructor(el, on, onChange) {
+    this.el = el; this.on = on; this.onChange = onChange;
+    el.innerHTML = '<svg width="51" height="31" viewBox="0 0 51 31" aria-hidden="true"><rect class="off" width="51" height="31" rx="15.5"/><rect class="on" width="51" height="31" rx="15.5"/><path/></svg>';
+    el.setAttribute('role', 'switch'); el.setAttribute('aria-checked', on);
+    this.track = $('.on', el); this.knob = $('path', el);
+    const r = () => this.render();
+    this.p = new Spring(on ? 1 : 0, SP.snappy, r, { fade: true });
+    this.pill = new Pill(r, on ? 22 : 2, on ? 49 : 29, 27, { neckK: .1, squash: .15 });
+    const s = this;
+    this.h = {
+      down() { this.cl = false; this.r = rectOf(el); s.press(true); },
+      move(rec) {
+        if (!this.cl) { if (!axisPassed(rec, 'x')) return; if (!G.claim(rec, this)) return; this.cl = true; }
+        const x = clamp(rec.x - this.r.x, 19, 32); s.pill.moveTo(x - 17, x + 17); s.p.to(x > 25.5 ? 1 : 0);
+      },
+      up(rec) { if (this.cl) s.set(rec.x - this.r.x > 25.5, true); else s.set(!s.on, true); },
+      cancel() { s.set(s.on); }
+    };
+    el.addEventListener('pointerdown', e => { const rec = G.recs.get(e.pointerId); if (rec) rec.pressTaken = true; G.join(e, this.h); });
+    el.addEventListener('click', e => { if (e.detail === 0) this.set(!this.on, true); });
+    this.render();
+  }
+  press(b) { if (b) { if (this.on) this.pill.moveTo(15, 49); else this.pill.moveTo(2, 36); } }
+  set(on, user) {
+    const changed = on !== this.on; this.on = on; this.el.setAttribute('aria-checked', on);
+    this.p.to(on ? 1 : 0); this.pill.moveTo(on ? 22 : 2, on ? 49 : 29);
+    if (user && changed && this.onChange) this.onChange(on);
+  }
+  render() { this.track.style.opacity = this.p.x.toFixed(3); this.knob.setAttribute('d', this.pill.path(15.5)); }
+}
+class Segmented {
+  constructor(el, labels, idx, onChange) {
+    this.el = el; this.n = labels.length; this.i = idx; this.onChange = onChange;
+    el.setAttribute('role', 'tablist');
+    el.innerHTML = '<svg aria-hidden="true"><path/></svg>' + labels.map((l, i) => `<button class="seg-i" role="tab" aria-selected="${i === idx}">${l}</button>`).join('');
+    this.path = $('path', el); this.svg = $('svg', el);
+    const w = el.clientWidth || 340; this.svg.setAttribute('width', w); this.svg.setAttribute('height', 36);
+    this.pill = new Pill(() => this.render(), 0, 0, 32, { neckK: .12 });
+    const s = this.slot(idx); this.pill.setNow(s.l, s.r);
+    const h = slotDrag({ pill: this.pill, hRest: 32, slots: () => [...Array(this.n)].map((_, i) => this.slot(i)), localX: x => x - rectOf(el).x, cur: () => this.i, select: (i, v) => this.select(i, v, true) });
+    el.addEventListener('pointerdown', e => { const rec = G.recs.get(e.pointerId); if (rec) rec.pressTaken = true; G.join(e, h); });
+    $$('.seg-i', el).forEach((b, i) => b.addEventListener('click', e => { if (e.detail === 0) this.select(i, 0, true); }));
+  }
+  slot(i) { const w = (this.el.clientWidth || 340) - 4, sw = w / this.n; return { l: 2 + sw * i, r: 2 + sw * (i + 1) }; }
+  select(i, v, user) {
+    const ch = i !== this.i; this.i = i; const s = this.slot(i); this.pill.moveTo(s.l, s.r, v);
+    $$('.seg-i', this.el).forEach((b, j) => b.setAttribute('aria-selected', j === i));
+    if (user && ch && this.onChange) this.onChange(i);
+  }
+  render() { this.path.setAttribute('d', this.pill.path(18)); }
+}
+
+/* ============================== tabs + tab bar ============================== */
+const TABS = [['home', 'Home', 'home'], ['shorts', 'Shorts', 'bolt'], ['subs', 'Subscriptions', 'subs'], ['you', 'You', 'you']];
+const screens = TABS.map(t => $('#scr-' + t[0]));
+let curTab = 0, screenShift = 0;
+const tabFade = screens.map((el, i) => new Spring(i === 0 ? 1 : 0, SP.tabFade, renderScreens, { fade: true }));
+function renderScreens() {
+  screens.forEach((el, i) => {
+    const f = tabFade[i].x;
+    el.style.opacity = f.toFixed(3);
+    el.style.visibility = f < .005 ? 'hidden' : 'visible';
+    el.style.pointerEvents = i === curTab ? 'auto' : 'none';
+    el.style.zIndex = i === curTab ? 1 : 0;
+    el.style.transform = RM ? '' : `translate3d(${i === curTab ? f1(screenShift) : 0}px,0,0) scale(${(.97 + .03 * f).toFixed(4)})`;
+  });
+}
+
+const BAR_L = 16, BAR_R = 320, S_L = 332, S_R = 396, SLOT_W = 74;
+const slotL = i => 20 + SLOT_W * i, slotR = i => slotL(i) + SLOT_W;
+const Tab = { el: $('#tabbar'), searching: false };
+$('#tb-items').innerHTML = TABS.map((t, i) => `<button class="tab${i === 0 ? ' on' : ''}" role="tab" aria-selected="${i === 0}" data-i="${i}">${icon(t[2], 26)}<span class="lb">${t[1]}</span></button>`).join('');
+$('#tb-search').innerHTML = `<span class="mag">${icon('search', 24)}</span><span class="ph">Search videos</span><button class="x" aria-label="Close search">${icon('x', 20)}</button>`;
+const tabBtns = $$('.tab'), tabLabels = $$('.tab .lb');
+Tab.barR = new Spring(BAR_R, SP.trail, renderTab, { eps: .05 });
+Tab.sL = new Spring(S_L, SP.lead, renderTab, { eps: .05 });
+Tab.sR = new Spring(S_R, SP.snappy, renderTab, { eps: .05 });
+Tab.sm = new Spring(0, SP.snappy, renderTab, { fade: true });
+const tabPill = new Pill(renderTab, slotL(0), slotR(0), 56);
+const tbEls = { barShape: $('#tb-bar-shape'), sShape: $('#tb-search-shape'), barBlur: $('#tb-bar-blur'), sBlur: $('#tb-search-blur'), pill: $('#tb-pill path'), items: $('#tb-items'), search: $('#tb-search'), mag: $('#tb-search .mag'), ph: $('#tb-search .ph'), x: $('#tb-search .x') };
+function renderTab() {
+  const br = Tab.barR.x, sl = Tab.sL.x, sr = Tab.sR.x, m = clamp(Tab.sm.x, 0, 1);
+  for (const [el, l, r] of [[tbEls.barShape, BAR_L, br], [tbEls.barBlur, BAR_L, br], [tbEls.sShape, sl, sr], [tbEls.sBlur, sl, sr]]) {
+    el.style.transform = `translate3d(${f1(l)}px,0,0)`; el.style.width = f1(Math.max(0, r - l)) + 'px';
+  }
+  tbEls.pill.setAttribute('d', tabPill.path(52));
+  tbEls.items.style.width = f1(br - BAR_L) + 'px';
+  tabBtns.forEach((b, i) => {
+    const cx = lerp(slotL(i) + SLOT_W / 2, 48, m) - BAR_L;
+    b.style.transform = `translate3d(${f1(cx - SLOT_W / 2)}px,${f1(m * 7)}px,0)`;
+    b.style.opacity = i === curTab ? 1 : clamp(1 - m * 2.2, 0, 1).toFixed(3);
+  });
+  tabLabels.forEach(l => { l.style.opacity = clamp(1 - m * 2.5, 0, 1).toFixed(3); });
+  tbEls.search.style.left = f1(sl) + 'px'; tbEls.search.style.width = f1(Math.max(0, sr - sl)) + 'px';
+  tbEls.mag.style.transform = `translate3d(${f1(lerp((sr - sl) / 2 - 12, 18, m))}px,0,0)`;
+  tbEls.ph.style.opacity = smooth(.5, 1, m).toFixed(3);
+  tbEls.x.style.opacity = smooth(.5, 1, m).toFixed(3); tbEls.x.style.pointerEvents = m > .5 ? 'auto' : 'none';
+}
+// Search merges into the bar: its edge moves fast, the bar's edge slow, so the two blobs overlap
+// mid-way and the goo filter fuses them; when both settle the 12px gap reopens and they split.
+function setSearch(on, v = 0) {
+  if (Tab.searching === on) return;
+  Tab.searching = on; Tab.sm.to(on ? 1 : 0);
+  tbEls.search.setAttribute('aria-expanded', on);
+  if (on) { Tab.barR.to(80, 0, SP.slowEdge); Tab.sL.to(92, v, SP.fastEdge); Tab.sR.to(S_R, null, SP.snappy); tabPill.moveTo(20, 76); }
+  else { Tab.barR.to(BAR_R, 0, SP.fastEdge); Tab.sL.to(S_L, v, SP.slowEdge); Tab.sR.to(S_R, null, SP.snappy); tabPill.moveTo(slotL(curTab), slotR(curTab)); }
+}
+function selectTab(i, v = 0) {
+  if (i !== curTab) {
+    if (Page.open) Page.closeNow();
+    tabFade[curTab].to(0); curTab = i; tabFade[i].to(1);
+    tabBtns.forEach((b, j) => { b.classList.toggle('on', j === i); b.setAttribute('aria-selected', j === i); });
+  }
+  if (!Tab.searching) tabPill.moveTo(slotL(i), slotR(i), v);
+  Loop.render(renderScreens); Loop.render(renderTab); updateStatus();
+}
+const tabDrag = slotDrag({
+  pill: tabPill, hRest: 56, slots: () => TABS.map((_, i) => ({ l: slotL(i), r: slotR(i) })), localX: x => x,
+  cur: () => curTab, select: (i, v) => selectTab(i, v), disabled: () => Tab.searching, onDisabledTap: () => setSearch(false)
+});
+tbEls.items.addEventListener('pointerdown', e => G.join(e, tabDrag));
+tabBtns.forEach((b, i) => b.addEventListener('click', e => { if (e.detail === 0) selectTab(i); }));
+// Search droplet: press shrinks it; drag it toward the bar and it stretches and fuses; let go
+// far enough (or tap) and it flows into a search field.
+const searchDrag = {
+  down() { this.cl = false; if (Tab.searching) return; Tab.sL.to(S_L + 4, null, SP.press); Tab.sR.to(S_R - 4, null, SP.press); },
+  move(rec) {
+    if (Tab.searching) return;
+    if (!this.cl) { if (!axisPassed(rec, 'x')) return; if (!G.claim(rec, this)) return; this.cl = true; }
+    const dx = rec.dx;
+    Tab.sL.to(S_L + (dx < 0 ? -rubber(-dx, 200, .8) : rubber(dx, 50) * .4), null, SP.lead);
+    Tab.sR.to(S_R + (dx > 0 ? rubber(dx, 40) * .4 : 0), null, SP.lead);
+  },
+  up(rec) {
+    if (Tab.searching) return;
+    const v = rec.vt.get().x;
+    if (!this.cl || rec.dx < -50 || v < -600) setSearch(true, Math.min(0, v));
+    else { Tab.sL.to(S_L, v, SP.jelly); Tab.sR.to(S_R, 0, SP.jelly); }
+  },
+  cancel() { if (!Tab.searching) { Tab.sL.to(S_L, null, SP.jelly); Tab.sR.to(S_R, null, SP.jelly); } }
+};
+tbEls.search.addEventListener('pointerdown', e => G.join(e, searchDrag));
+tbEls.search.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') setSearch(!Tab.searching); });
+pressable(tbEls.x, { onTap: () => setSearch(false) });
+
+/* ============================== chips ============================== */
+const chipEls = $$('#chips > .chip'), chipPath = $('#chips .chip-pill path'), chipSel = $('#chips .chips-sel');
+let curChip = 0;
+const chipPill = new Pill(renderChips, 0, 0, 36, { neckK: .12 });
+function chipSlot(i) { const c = chipEls[i]; return [c.offsetLeft, c.offsetLeft + c.offsetWidth]; }
+function renderChips() { const d = chipPill.path(24); chipPath.setAttribute('d', d); chipSel.style.clipPath = `path('${d}')`; }
+function initChips() {
+  const svg = $('#chips .chip-pill'); svg.setAttribute('width', $('#chips').scrollWidth); svg.setAttribute('height', 52);
+  chipPill.setNow(...chipSlot(curChip));
+}
+chipEls.forEach((c, i) => {
+  c.setAttribute('aria-selected', i === 0);
+  pressable(c, { strength: .7, onTap: () => {
+    curChip = i; chipPill.moveTo(...chipSlot(i));
+    chipEls.forEach((x, j) => x.setAttribute('aria-selected', j === i));
+  } });
+});
+new Scroller($('#chips-vp'), $('#chips'), { axis: 'x' });
+
+/* ============================== pull to refresh ============================== */
+// While pulling, a drop hangs from the top on a neck that thins as it stretches. Past the
+// threshold the neck snaps, the drop springs into place and grows orbiting satellites that
+// fuse and split with it through the goo filter — the spinner.
+const ptr = { svg: $('#ptr'), anchor: $('#ptr-anchor'), neck: $('#ptr-neck'), ball: $('#ptr-ball'), sats: $$('.ptr-sat') };
+const PTR = { state: 'idle', pull: 0, t: 0 };
+PTR.neck = new Spring(0, SP.snappy, rPTR, { eps: .05 });
+PTR.anchor = new Spring(1, SP.snappy, rPTR);
+PTR.ballY = new Spring(0, SP.bouncy, rPTR, { eps: .05 });
+PTR.ballR = new Spring(0, SP.bouncy, rPTR, { eps: .05 });
+PTR.sat = new Spring(0, SP.bouncy, rPTR);
+const PTR_T = 80, PTR_HOLD = 64;
+PTR.spin = { active: false, step(dt) { PTR.t += dt; Loop.renders.add(rPTR); if (PTR.state === 'idle') { this.active = false; return false; } return true; } };
+function rPTR() {
+  const s = PTR, el = ptr.svg;
+  if (s.state === 'idle' && s.pull <= 0) { el.style.visibility = 'hidden'; el.style.display = 'none'; return; }
+  el.style.visibility = 'inherit'; el.style.display = 'block';
+  let nw, ax, by, br, sat;
+  if (s.state === 'idle' || s.state === 'pulling') {
+    const p = s.pull; nw = Math.max(4, 16 - p * .1); ax = 1; by = 10 + p * .55; br = 5 + Math.min(p, PTR_T) / PTR_T * 7; sat = 0;
+  } else { nw = s.neck.x; ax = s.anchor.x; by = s.ballY.x; br = s.ballR.x; sat = s.sat.x; }
+  if (RM) { nw = 0; ax = 0; }
+  ptr.anchor.setAttribute('rx', f1(Math.max(0, 30 * ax))); ptr.anchor.setAttribute('ry', f1(Math.max(0, 10 * ax)));
+  ptr.neck.setAttribute('x', f1(60 - Math.max(0, nw) / 2)); ptr.neck.setAttribute('width', f1(Math.max(0, nw))); ptr.neck.setAttribute('height', f1(Math.max(0, by)));
+  ptr.ball.setAttribute('cy', f1(by)); ptr.ball.setAttribute('r', f1(Math.max(0, br)));
+  ptr.sats.forEach((c, i) => {
+    const a = s.t * 5 + i * 2.094, orbit = (14 + 5 * Math.sin(s.t * 6 + i * 1.7)) * Math.max(0, sat);
+    c.setAttribute('cx', f1(60 + Math.cos(a) * orbit)); c.setAttribute('cy', f1(by + Math.sin(a) * orbit)); c.setAttribute('r', f1(Math.max(0, 4.5 * sat)));
+  });
+  el.style.opacity = s.state === 'pulling' || s.state === 'idle' ? smooth(2, 24, s.pull).toFixed(3) : 1;
+}
+function ptrSnap() {
+  const p = PTR.pull; PTR.state = 'snapped';
+  PTR.neck.set(Math.max(4, 16 - p * .1)); PTR.anchor.set(1); PTR.ballY.set(10 + p * .55); PTR.ballR.set(12); PTR.sat.set(0);
+  PTR.neck.to(0, -80, SP.fastEdge); PTR.anchor.to(0, 0, SP.snappy); PTR.ballY.to(34, 0, SP.bouncy); PTR.ballR.to(10, 0, SP.bouncy); PTR.sat.to(1, 0, SP.bouncy);
+  if (!PTR.spin.active) { PTR.spin.active = true; Loop.add(PTR.spin); }
+}
+function ptrFinish() {
+  PTR.state = 'finishing';
+  PTR.sat.to(0, 0, SP.snappy);
+  PTR.ballR.to(0, 30, SP.bouncy, () => {
+    PTR.state = 'idle'; PTR.pull = Math.max(0, -homeScroller.pos); rPTR();
+    homeOrder = [homeOrder[homeOrder.length - 1], ...homeOrder.slice(0, -1)];
+    renderFeed(); dripIn($$('#feed .card'));
+  });
+  if (homeScroller.pos < 0 && !homeScroller.dragging) homeScroller.springTo(0, 0);
+}
+// New cards drip in from slightly above, one after another.
+function dripIn(els) {
+  els.slice(0, 4).forEach((el, i) => {
+    if (RM) return;
+    el.style.opacity = 0;
+    const s = new Spring(0, SP.bouncy, () => { el.style.opacity = clamp(s.x, 0, 1).toFixed(3); el.style.translate = `0 ${f1((1 - s.x) * -26)}px`; }, { eps: .002 });
+    setTimeout(() => s.to(1, 0, SP.bouncy, () => { el.style.translate = ''; el.style.opacity = ''; }), i * 70);
+  });
+}
+const homeScroller = new Scroller($('#home-vp'), $('#home-ct'), {
+  onScroll(pos) {
+    PTR.pull = Math.max(0, -pos);
+    if (PTR.state === 'idle' && PTR.pull > 0) PTR.state = 'pulling';
+    if (PTR.state === 'pulling') {
+      if (PTR.pull >= PTR_T && homeScroller.dragging) ptrSnap();
+      else if (PTR.pull <= 0) PTR.state = 'idle';
+    }
+    Loop.render(rPTR);
+  },
+  onRelease(pos, v) {
+    if (PTR.state !== 'snapped') return false;
+    PTR.state = 'refreshing'; homeScroller.springTo(-PTR_HOLD, v);
+    setTimeout(ptrFinish, 1300);
+    return true;
+  }
+});
+pressable($('#home-av'), { onTap: () => Page.push('Settings', settingsPage()) });
+new Scroller($('#subs-vp'), $('#subs-ct'));
+new Scroller($('#chan-vp'), $('#chan-row'), { axis: 'x' });
+$$('#chan-row .chan').forEach(c => pressable(c, { strength: .8 }));
+wireCards($('#subs-feed'));
+new Scroller($('#you-vp'), $('#you-ct'));
+new Scroller($('#hist-vp'), $('#hist-row'), { axis: 'x' });
+$$('#hist-row .hcard').forEach(c => pressable(c, { strength: .6, onTap: () => openVideo(+c.dataset.v, $('.thumb', c)) }));
+$$('#you-ct .row[data-pg]').forEach(r => pressable(r, { strength: .25, onTap: () => Page.push(r.dataset.pg, listPage(r.dataset.pg)) }));
+pressable($('#you-gear'), { onTap: () => Page.push('Settings', settingsPage()) });
+
+/* ============================== pushed pages ============================== */
+// The incoming page's leading edge is soft: it bulges ahead as the page pushes in, and dents
+// where the finger holds it during the back swipe; both settle back to a straight edge.
+const Page = { el: $('#page'), dim: $('#page-dim'), open: false, dragging: false, fy: H / 2 };
+Page.pp = new Spring(0, SP.push, rPage, { fade: true });
+Page.pd = new Spring(0, SP.snappy, rPage, { eps: .05 });
+function rPage() {
+  const p = Page.pp.x, pc = clamp(p, 0, 1), el = Page.el;
+  if (RM) { el.style.transform = ''; el.style.clipPath = ''; el.style.opacity = pc.toFixed(3); Page.dim.style.opacity = 0; screenShift = 0; }
+  else {
+    el.style.opacity = 1;
+    el.style.transform = `translate3d(${f1((1 - p) * W)}px,0,0)`;
+    const D = Page.pd.x + clamp(Page.pp.v * W * .012, -30, 40);
+    el.style.clipPath = Math.abs(D) < .5 ? '' : `path('${edgePath(D, Page.fy)}')`;
+    Page.dim.style.opacity = (pc * .4).toFixed(3); screenShift = -.28 * W * pc;
+  }
+  Loop.render(renderScreens);
+}
+Page.push = (title, spec) => {
+  if (Page.open) return;
+  Page.open = true;
+  Page.el.innerHTML = `<div class="pg-head"><button class="back" aria-label="Back">${icon('left', 26)}<span>Back</span></button><div class="pg-title">${title}</div></div><div class="vp"><div class="content">${spec.html}</div></div>`;
+  Page.el.style.visibility = 'visible';
+  pressable($('.back', Page.el), { onTap: () => Page.pop(0) });
+  new Scroller($('.vp', Page.el), $('.content', Page.el));
+  if (spec.wire) spec.wire(Page.el);
+  Page.fy = H * .45; Page.pp.set(0); Page.pp.to(1, 0, SP.push);
+};
+Page.pop = v => {
+  if (!Page.open) return;
+  Page.open = false;
+  Page.pp.to(0, v, SP.push, () => { if (!Page.open) { Page.el.style.visibility = 'hidden'; Page.el.innerHTML = ''; } });
+};
+Page.closeNow = () => { Page.open = false; Page.pp.set(0); Page.el.style.visibility = 'hidden'; Page.el.innerHTML = ''; screenShift = 0; Page.dim.style.opacity = 0; };
+const edgeSwipe = {
+  down() { this.cl = false; },
+  move(rec) {
+    if (!Page.open) return;
+    if (!this.cl) { if (!(axisPassed(rec, 'x') && rec.dx > 0)) return; if (!G.claim(rec, this)) return; this.cl = true; Page.pp.stop(); Page.dragging = true; this.x0 = rec.dx; }
+    const dx = Math.max(0, rec.dx - this.x0); Page.pp.x = 1 - dx / W; Page.fy = rec.y;
+    const vx = rec.vt.get().x; Page.pd.to(-(12 + clamp(Math.abs(vx) * .02, 0, 26)));
+    Loop.render(rPage);
+  },
+  up(rec) {
+    if (!this.cl) return;
+    Page.dragging = false; Page.pd.to(0, null, SP.jelly);
+    const vx = rec.vt.get().x, dx = (1 - Page.pp.x) * W;
+    if (dx + project(vx, .99) * .5 > W * .45) Page.pop(-vx / W); else Page.pp.to(1, -vx / W, SP.push);
+  },
+  cancel() { if (this.cl) { Page.dragging = false; Page.pd.to(0); Page.pp.to(1); } }
+};
+Page.el.addEventListener('pointerdown', e => G.join(e, edgeSwipe));
+
+/* ============================== mini player <-> watch page ============================== */
+const FULL = { x: 0, y: 0, w: 412, h: 232, rad: 0 };
+const MINI = { x: W - 8 - 206, y: 807 + 20 - 12 - 116, w: 206, h: 116, rad: 16 };
+const RANGE = MINI.y;
+const DG = { x: 150, y: 400 };
+const pl = { el: $('#player'), ctl: $('#pl-ctl'), mini: $('#mini-ctl'), watch: $('#watch'), bg: $('#watch-bg'), vp: $('#watch-vp'), ct: $('#watch-ct'), goo: $('#dock-goo'), blob: $('#dock-blob'), tail: $('#dock-tail') };
+const P = { from: MINI, opening: false, fromEl: null, dragging: false, dv: 0, playing: true, v: 0 };
+P.e = new Spring(0, SP.player, renderPlayer, { fade: true, eps: .0005 });
+P.pv = new Spring(1, SP.bouncy, renderPlayer, { fade: true });
+P.q = new Spring(0, SP.jelly, renderPlayer, { eps: .0005 });
+pl.ctl.innerHTML = `<button class="down" aria-label="Minimise player">${icon('down', 22)}</button><button class="pp" aria-label="Pause">${icon('pause', 28)}</button><div class="bar"><i></i></div>`;
+pl.mini.innerHTML = `<button class="m-pp" aria-label="Pause">${icon('pause', 16)}</button><button class="m-x" aria-label="Close player">${icon('x', 16)}</button>`;
+pl.mini.style.left = (MINI.x + MINI.w - 92) + 'px'; pl.mini.style.top = (MINI.y + 8) + 'px';
+
+function renderPlayer() {
+  const raw = P.e.x, pres = clamp(P.pv.x, 0, 1.3), f = P.from;
+  const e = clamp(raw, 0, 1), over = raw - e;
+  const hidden = P.pv.x <= .002 && P.pv.target === 0;
+  pl.el.style.visibility = hidden ? 'hidden' : 'visible';
+  let x, y, w, h, op = 1, R;
+  if (RM) {
+    const g = e > .5 ? FULL : f; x = g.x; y = g.y; w = g.w; h = g.h; op = Math.abs(e - .5) * 2 * clamp(pres, 0, 1); R = g.rad;
+  } else {
+    x = lerp(f.x, FULL.x, e); y = lerp(f.y, FULL.y, e); w = lerp(f.w, FULL.w, e); h = lerp(f.h, FULL.h, e);
+    // A moving drop elongates along its travel; a landing one squashes on its bottom.
+    const vel = P.dragging ? P.dv : P.e.v;
+    const st = Math.abs(clamp(vel * .045, -.18, .3)) * (1 - e * .75);
+    const land = clamp(-over * 2.2, 0, .35) + P.q.x;
+    const stretchTop = clamp(over * .8, 0, .25);
+    const kx = 1 - st * .45 + land * .7, ky = 1 + st - land + stretchTop;
+    const nw = w * kx * pres, nh = h * ky * pres;
+    x += (w - nw) / 2; y += (h - nh) * (land > .001 ? .9 : .5); w = nw; h = nh;
+    R = lerp(f.rad, 0, smooth(.55, 1, e)) + Math.sin(e * Math.PI) * 22;
+    op = smooth(0, .25, pres);
+  }
+  const sx = Math.max(.001, w / FULL.w), sy = Math.max(.001, h / FULL.h);
+  pl.el.style.transform = `translate3d(${f1(x)}px,${f1(y)}px,0) scale(${sx.toFixed(4)},${sy.toFixed(4)})`;
+  pl.el.style.borderRadius = `${f1(R / sx)}px / ${f1(R / sy)}px`;
+  pl.el.style.opacity = op.toFixed(3);
+  pl.ctl.style.opacity = smooth(.8, 1, e).toFixed(3); pl.ctl.style.pointerEvents = e > .95 ? 'auto' : 'none';
+  pl.watch.style.visibility = e > .002 ? 'visible' : 'hidden';
+  pl.watch.style.display = e > .002 ? '' : 'none'; // drop its layers entirely while docked
+  pl.watch.style.pointerEvents = e > .5 ? 'auto' : 'none';
+  if (RM) { pl.bg.style.opacity = e; pl.vp.style.opacity = e; pl.vp.style.transform = ''; }
+  else { pl.bg.style.opacity = smooth(0, .55, e).toFixed(3); pl.vp.style.opacity = smooth(.35, .95, e).toFixed(3); pl.vp.style.transform = `translate3d(0,${f1((1 - e) * 320)}px,0)`; }
+  const mo = (1 - smooth(0, .12, e)) * clamp(P.pv.x, 0, 1);
+  pl.mini.style.opacity = mo.toFixed(3); pl.mini.style.visibility = mo < .01 ? 'hidden' : 'visible';
+  pl.mini.style.pointerEvents = e < .05 && P.pv.target > 0 ? 'auto' : 'none';
+  Tab.el.style.transform = RM ? '' : `translate3d(0,${f1(e * 150)}px,0)`;
+  Tab.el.style.opacity = RM ? (1 - e).toFixed(3) : '';
+  Tab.el.style.visibility = e > .98 ? 'hidden' : 'visible';
+  // The droplet left at the dock: it shrinks while a goo tail ties it to the rising player, then snaps.
+  const showDock = !RM && f === MINI && P.pv.x > .5 && e > .004 && e < .5 && (P.dragging || P.e.active);
+  pl.goo.style.visibility = showDock ? 'visible' : 'hidden'; pl.goo.style.display = showDock ? 'block' : 'none';
+  if (showDock) {
+    pl.blob.style.transform = `translate3d(${MINI.x - DG.x}px,${MINI.y - DG.y}px,0) scale(${(1 - smooth(0, .28, e)).toFixed(3)})`;
+    pl.tail.style.transform = `translate3d(${f1(x + w / 2 - DG.x - 30)}px,${f1(y + h - 40 - DG.y)}px,0) scale(${(1 - smooth(.08, .42, e)).toFixed(3)})`;
+  }
+  updateStatus();
+}
+function updateStatus() { $('#status').classList.toggle('on-video', curTab === 1 || P.e.x > .5); }
+function setVideo(i) {
+  P.v = i; const v = V[i];
+  pl.el.style.background = thumbBg(v.g);
+  pl.blob.style.background = pl.tail.style.background = `linear-gradient(135deg, ${v.g[0]}, ${v.g[1]})`;
+  pl.ct.innerHTML = `<div class="w-title">${esc(v.t)}</div>
+    <div class="w-chan"><div class="av" style="background:${avBg(v.g)}"></div><div class="grow"><div class="cn">${v.c}</div><div class="cs">1.9M subscribers</div></div><button class="subbtn">Subscribe</button></div>
+    <div class="w-actions"><button class="tile t-like">${icon('up', 22)}<span>48K</span></button><button class="tile">${icon('dn', 22)}<span>610</span></button><button class="tile">${icon('share', 22)}<span>Share</span></button><button class="tile">${icon('save', 22)}<span>Save</span></button></div>
+    <div class="w-row"><button class="pillbtn" id="chap-btn">${icon('list', 20)}Chapters</button><button class="pillbtn" id="w-more" aria-label="More actions" style="padding:0 12px">${icon('more', 20)}</button></div>
+    <div class="desc"><b>${v.v} · ${v.a}</b><br>Thirty days, one lake, and a lot of rain. Everything about the build is in the chapters.</div>
+    <h2 class="sec">Up next</h2><div class="w-next">${V.map((_, j) => j).filter(j => j !== i).slice(0, 4).map(cardHTML).join('')}</div>`;
+  const sub = $('.subbtn', pl.ct); pressable(sub, { onTap: () => { sub.classList.toggle('on'); sub.textContent = sub.classList.contains('on') ? 'Subscribed' : 'Subscribe'; } });
+  $$('.tile', pl.ct).forEach(t => pressable(t, { onTap: () => t.classList.toggle('on') }));
+  const cb = $('#chap-btn'); pressable(cb, { onTap: () => Sheet.open(cb, chaptersSheet(i)) });
+  const wm = $('#w-more'); pressable(wm, { onTap: () => Sheet.open(wm, moreSheet(i)) });
+  wireCards($('.w-next', pl.ct));
+  if (watchScroller) { watchScroller.stop(); watchScroller.pos = 0; watchScroller.render(); }
+}
+function openVideo(i, fromEl) {
+  if (Menu.open || Sheet.isOpen || P.opening) return;
+  if (P.e.x > .5 && P.pv.target > 0) { setVideo(i); P.q.set(0); P.q.to(0, 2.2, SP.jelly); return; }
+  setVideo(i);
+  P.pv.set(1);
+  if (fromEl && !RM) { const r = rectOf(fromEl); P.from = { ...r, rad: 18 }; P.opening = true; P.fromEl = fromEl; fromEl.style.visibility = 'hidden'; P.e.set(0); }
+  else P.from = MINI;
+  P.e.to(1, 0, SP.player, endOpen);
+}
+function endOpen() { if (P.fromEl) P.fromEl.style.visibility = ''; P.fromEl = null; P.from = MINI; P.opening = false; }
+const expand = () => { P.from = MINI; P.e.to(1, 0, SP.player); };
+const collapse = () => { if (P.opening) endOpen(); P.from = MINI; P.e.to(0, 0, SP.player); };
+function playerDrag(cond, tap) {
+  const h = {
+    down() { h.cl = false; h.ok = !P.opening && P.pv.target > 0; },
+    move(rec) {
+      if (!h.ok) return;
+      if (!h.cl) {
+        if (!axisPassed(rec, 'y') || !cond(rec)) return;
+        if (!G.claim(rec, h)) return;
+        h.cl = true; P.e.stop(); P.dragging = true; h.e0 = P.e.x; h.y0 = rec.dy; P.from = MINI;
+      }
+      let e = h.e0 - (rec.dy - h.y0) / RANGE;
+      if (e > 1) e = 1 + rubber(e - 1, .25, .6); else if (e < 0) e = -rubber(-e, .12, .6);
+      P.e.x = e; P.dv = -rec.vt.get().y / RANGE; Loop.render(renderPlayer);
+    },
+    up(rec) {
+      if (!h.cl) { if (h.ok && tap && Math.hypot(rec.dx, rec.dy) < SLOP && !rec.pressTaken) tap(); return; }
+      P.dragging = false;
+      const v = -rec.vt.get().y / RANGE;
+      P.e.to(P.e.x + v * .22 > .5 ? 1 : 0, v, SP.player);
+    },
+    cancel() { if (h.cl) { P.dragging = false; P.e.to(P.e.x > .5 ? 1 : 0, 0, SP.player); } }
+  };
+  return h;
+}
+const togglePlay = () => {
+  P.playing = !P.playing;
+  $('.pp', pl.ctl).innerHTML = icon(P.playing ? 'pause' : 'play', 28); $('.m-pp', pl.mini).innerHTML = icon(P.playing ? 'pause' : 'play', 16);
+};
+const pDrag = playerDrag(() => true, () => { if (P.e.x < .5) expand(); else togglePlay(); });
+pl.el.addEventListener('pointerdown', e => G.join(e, pDrag));
+let watchScroller = null;
+watchScroller = new Scroller(pl.vp, pl.ct, { canStart: rec => !(rec.dy > 0 && watchScroller.pos <= .5) });
+const wDrag = playerDrag(rec => rec.dy > 0 && watchScroller.pos <= .5 && P.e.x > .5, null);
+pl.vp.addEventListener('pointerdown', e => G.join(e, wDrag));
+pressable($('.down', pl.ctl), { onTap: collapse });
+pressable($('.pp', pl.ctl), { onTap: togglePlay });
+pressable($('.m-pp', pl.mini), { onTap: togglePlay });
+// Close: the drop swells for an instant, then pops.
+pressable($('.m-x', pl.mini), { onTap: () => P.pv.to(0, 3, SP.snappy) });
+
+/* ============================== sheets ============================== */
+// The sheet grows out of the button that opened it: same rect and corner radius at p=0, the
+// height spring leads the width spring, and the sides swell mid-flight so it reads as a drop
+// filling out. Dragging down shrinks it back toward the button; dragging up rubber-bands the top.
+const Sheet = { layer: $('#sheet-layer'), el: $('#sheet'), tint: $('#sheet-tint'), body: $('#sheet-body'), scrim: $('#scrim'), isOpen: false, src: null, dst: null, srcEl: null, srcR: 22, closing: 0 };
+Sheet.renderFn = () => Sheet.render();
+Sheet.pw = new Spring(0, SP.sheetW, Sheet.renderFn, { fade: true });
+Sheet.ph = new Spring(0, SP.sheetH, Sheet.renderFn, { fade: true });
+Sheet.off = new Spring(0, SP.sheet, Sheet.renderFn, { eps: .1 });
+Sheet.top = new Spring(0, SP.bouncy, Sheet.renderFn, { eps: .1 });
+Sheet.open = (srcEl, spec) => {
+  const S = Sheet;
+  if (S.isOpen || Menu.open) return;
+  if (S.srcEl && S.srcEl !== srcEl) S.srcEl.style.visibility = '';
+  S.isOpen = true; S.srcEl = srcEl;
+  S.body.innerHTML = `<div class="sh-grab"></div><div class="sh-head"><div class="sh-title">${spec.title}</div><button class="sh-done">Done</button></div><div class="sh-list">${spec.html}</div>`;
+  S.layer.style.visibility = 'visible'; S.layer.classList.add('on');
+  S.el.setAttribute('aria-label', spec.title);
+  const h = S.body.offsetHeight; S.dst = { x: 8, y: H - 8 - h, w: W - 16, h };
+  S.body.style.top = S.dst.y + 'px';
+  const r = rectOf(srcEl), cs = getComputedStyle(srcEl);
+  S.src = r; S.srcR = Math.min(parseFloat(cs.borderTopLeftRadius) || 12, r.h / 2, r.w / 2);
+  const bg = cs.backgroundColor; S.tint.style.background = (!bg || bg === 'transparent' || bg === 'rgba(0, 0, 0, 0)') ? 'var(--surface2)' : bg;
+  srcEl.style.visibility = 'hidden';
+  pressable($('.sh-done', S.body), { onTap: () => S.close(0) });
+  if (spec.wire) spec.wire(S.body);
+  S.pw.set(0); S.ph.set(0); S.off.set(0); S.top.set(0);
+  S.ph.to(1, 0, SP.sheetH); S.pw.to(1, 0, SP.sheetW);
+};
+Sheet.close = (v = 0) => {
+  const S = Sheet;
+  if (!S.isOpen) return;
+  S.isOpen = false; S.layer.classList.remove('on');
+  const pv = -Math.max(0, v) / S.dst.h * 1.2;
+  S.top.to(0); S.closing = 2;
+  const done = () => { if (--S.closing === 0 && !S.isOpen) S.done(); };
+  S.ph.to(0, pv, SP.sheetClose, done); S.pw.to(0, pv, SP.sheetClose, done);
+};
+Sheet.done = () => {
+  const S = Sheet;
+  S.layer.style.visibility = 'hidden'; S.body.innerHTML = '';
+  if (S.srcEl) S.srcEl.style.visibility = ''; S.srcEl = null; S.src = null;
+};
+Sheet.render = () => {
+  const S = Sheet, a = S.src, d = S.dst; if (!a) return;
+  const pw = S.pw.x, ph = S.ph.x, off = S.off.x, st = S.top.x, p = Math.min(pw, ph), pc = clamp(p, 0, 1);
+  S.scrim.style.opacity = pc.toFixed(3);
+  if (RM) {
+    S.el.style.clipPath = `path('${blobRect(d.x, d.y, d.x + d.w, d.y + d.h, 34)}')`;
+    S.el.style.opacity = pc.toFixed(3); S.body.style.opacity = 1; S.body.style.transform = ''; S.tint.style.opacity = 0; return;
+  }
+  S.el.style.opacity = 1;
+  const cw = Math.max(0, pw), chh = Math.max(0, ph);
+  let l = lerp(a.x, d.x, cw), r = lerp(a.x + a.w, d.x + d.w, cw);
+  let t = lerp(a.y, d.y + off, chh) - st, b = lerp(a.y + a.h, d.y + d.h + off, chh);
+  if (p < 0) { // plops back into the button with a squash
+    const q = Math.min(.35, -p), cx = (l + r) / 2, cy = (t + b) / 2, hw = (r - l) / 2 * (1 + q), hh = (b - t) / 2 * (1 - q * .8);
+    l = cx - hw; r = cx + hw; t = cy - hh; b = cy + hh;
+  }
+  const rad = Math.max(0, Math.min(lerp(S.srcR, 34, smooth(0, 1, pc)), (r - l) / 2, (b - t) / 2));
+  const sw = Math.sin(pc * Math.PI), vel = Math.abs(S.ph.v + S.pw.v) * .5;
+  S.el.style.clipPath = `path('${blobRect(l, t, r, b, rad, sw * (8 + clamp(vel * 2, 0, 10)), sw * 18)}')`;
+  S.tint.style.opacity = (1 - smooth(.02, .45, pc)).toFixed(3);
+  S.body.style.opacity = smooth(.55, .95, pc).toFixed(3);
+  S.body.style.transform = `translate3d(0,${f1(off)}px,0) scale(${lerp(.94, 1, smooth(.4, 1, pc)).toFixed(4)})`;
+};
+const sheetDrag = {
+  down() { this.cl = false; },
+  move(rec) {
+    const S = Sheet; if (!S.isOpen) return;
+    if (!this.cl) { if (!axisPassed(rec, 'y')) return; if (!G.claim(rec, this)) return; this.cl = true; for (const s of [S.off, S.top, S.pw, S.ph]) s.stop(); this.y0 = rec.dy; }
+    const dy = rec.dy - this.y0;
+    if (dy >= 0) { const k = 1 - .42 * smooth(0, S.dst.h * 1.1, dy); S.off.x = dy; S.top.x = 0; S.pw.x = k; S.ph.x = k; }
+    else { S.off.x = 0; S.top.x = rubber(-dy, 140, .5); S.pw.x = 1; S.ph.x = 1; }
+    Loop.render(S.renderFn);
+  },
+  up(rec) {
+    const S = Sheet; if (!this.cl) return;
+    const v = rec.vt.get().y, dy = rec.dy - this.y0;
+    if (dy > 0 && (dy > S.dst.h * .28 || v > 650)) S.close(v);
+    else { S.off.to(0, v); S.top.to(0, -v); S.pw.to(1); S.ph.to(1); }
+  },
+  cancel() { const S = Sheet; if (this.cl && S.isOpen) { S.off.to(0); S.top.to(0); S.pw.to(1); S.ph.to(1); } }
+};
+Sheet.el.addEventListener('pointerdown', e => G.join(e, sheetDrag));
+Sheet.scrim.addEventListener('pointerdown', e => G.join(e, { up: rec => { if (Math.hypot(rec.dx, rec.dy) < 10) Sheet.close(0); } }));
+function chaptersSheet(i) {
+  const v = V[i];
+  return {
+    title: 'Chapters',
+    html: CHAPTERS.map((c, k) => `<button class="sh-row${k === 2 ? ' cur' : ''}"><div class="sh-th" style="background:${thumbBg(v.g)}"></div><div><div>${c[0]}</div><div class="s">${c[1]}</div></div></button>`).join(''),
+    wire: b => $$('.sh-row', b).forEach(r => pressable(r, { strength: .35, onTap: () => Sheet.close(0) }))
+  };
+}
+function moreSheet(i) {
+  const rows = [['queue', 'Play next'], ['clock', 'Save to Watch later'], ['save', 'Save to playlist'], ['share', 'Share'], ['flag', 'Not interested']];
+  return {
+    title: esc(V[i].c),
+    html: rows.map(r => `<button class="sh-row">${icon(r[0])}<span>${r[1]}</span></button>`).join(''),
+    wire: b => $$('.sh-row', b).forEach(r => pressable(r, { strength: .35, onTap: () => Sheet.close(0) }))
+  };
+}
+
+/* ============================== context menu ============================== */
+// Press and hold: the card lifts out of the blurred page; the menu oozes out of its bottom edge
+// through a goo bridge, then pinches off and floats on its own.
+const Menu = { layer: $('#menu-layer'), blur: $('#menu-blur'), wrap: $('#menu-goo'), bridge: $('#menu-bridge'), bg: $('#menu-bg'), items: $('#menu-items'), open: false, clone: null, card: null, shift: 0, mw: 250 };
+Menu.renderFn = () => Menu.render();
+Menu.lift = new Spring(0, SP.lift, Menu.renderFn, { fade: true });
+Menu.mx = new Spring(0, SP.menuX, Menu.renderFn, { fade: true });
+Menu.my = new Spring(0, SP.menuY, Menu.renderFn, { fade: true });
+Menu.show = card => {
+  const M = Menu;
+  if (M.open || Sheet.isOpen) return;
+  M.open = true; M.card = card;
+  const rr = rectOf(card), w = card.offsetWidth, h = card.offsetHeight;
+  const r = { x: rr.x + rr.w / 2 - w / 2, y: rr.y + rr.h / 2 - h / 2, w, h };
+  const rows = [['Play next', 'queue'], ['Save to Watch later', 'clock'], ['Share', 'share'], ['Not interested', 'flag', true]];
+  const mh = rows.length * 48 + 8, mw = M.mw;
+  let shift = Math.max(0, r.y + r.h + 16 + mh - (H - 40)); shift = Math.min(shift, Math.max(0, r.y - 56)); M.shift = shift;
+  const mxp = clamp(r.x + 8, 12, W - mw - 12), myp = r.y + r.h + 16;
+  const clone = card.cloneNode(true);
+  clone.className = 'card lifted'; clone.removeAttribute('tabindex');
+  clone.style.cssText = `left:${f1(r.x)}px;top:${f1(r.y)}px;width:${w}px;transform-origin:50% 100%`;
+  M.layer.insertBefore(clone, M.items); M.clone = clone;
+  card.style.visibility = 'hidden';
+  M.wrap.style.display = 'block';
+  Object.assign(M.wrap.style, { left: (mxp - 30) + 'px', top: (myp - 46) + 'px', width: (mw + 60) + 'px', height: (mh + 76) + 'px' });
+  M.bg.style.cssText = `left:30px;top:46px;width:${mw}px;height:${mh}px;transform-origin:36px 0`;
+  M.items.style.cssText = `left:${mxp}px;top:${myp}px;width:${mw}px`;
+  M.items.innerHTML = rows.map(x => `<div class="mi-w"><button class="mi${x[2] ? ' danger' : ''}" role="menuitem"><span>${x[0]}</span>${icon(x[1], 20)}</button></div>`).join('');
+  $$('.mi', M.items).forEach(b => pressable(b, { strength: .4, onTap: () => M.close() }));
+  M.layer.style.visibility = 'visible'; M.layer.classList.add('on');
+  M.lift.set(0); M.mx.set(0); M.my.set(0);
+  M.lift.to(1, 3); M.my.to(1); M.mx.to(1);
+};
+Menu.close = () => {
+  const M = Menu; if (!M.open) return;
+  M.open = false; M.layer.classList.remove('on');
+  M.my.to(0, 0, SP.menuClose); M.mx.to(0, 0, SP.menuClose);
+  M.lift.to(0, 0, SP.liftClose, () => { if (!M.open) M.done(); });
+};
+Menu.done = () => {
+  const M = Menu;
+  if (M.clone) M.clone.remove(); M.clone = null;
+  if (M.card) M.card.style.visibility = ''; M.card = null;
+  M.layer.style.visibility = 'hidden';
+  // Filtered layers can leave paint behind while merely hidden, so take them out of rendering.
+  M.bridge.style.transform = 'scale(0)'; M.bg.style.transform = 'scale(0)'; M.wrap.style.display = 'none';
+};
+Menu.render = () => {
+  const M = Menu; if (!M.clone) return;
+  const L = M.lift.x, m = Math.min(M.mx.x, M.my.x), mc = clamp(m, 0, 1);
+  M.blur.style.opacity = clamp(L, 0, 1).toFixed(3);
+  const sh = RM ? -M.shift : -M.shift * clamp(L, 0, 1.15);
+  M.clone.style.transform = RM ? `translate3d(0,${f1(sh)}px,0)` : `translate3d(0,${f1(sh)}px,0) scale(${(1 + .035 * L).toFixed(4)})`;
+  M.clone.style.opacity = RM ? clamp(L, 0, 1).toFixed(3) : '';
+  const tr = `translate3d(0,${f1(sh)}px,0)`;
+  M.wrap.style.transform = tr; M.items.style.transform = tr;
+  if (RM) {
+    M.bg.style.transform = ''; M.wrap.style.opacity = mc.toFixed(3); M.bridge.style.visibility = 'hidden';
+    $$('.mi-w', M.items).forEach(el => { el.style.opacity = mc.toFixed(3); el.style.transform = ''; });
+    return;
+  }
+  M.wrap.style.opacity = 1; M.bridge.style.visibility = 'inherit';
+  M.bg.style.transform = `scale(${Math.max(0, M.mx.x).toFixed(4)},${Math.max(0, M.my.x).toFixed(4)})`;
+  const rb = smooth(0, .18, m) * (1 - smooth(.5, .85, m));
+  M.bridge.style.transform = `translate3d(50px,10px,0) scale(${rb.toFixed(3)},${(rb * 1.3).toFixed(3)})`;
+  $$('.mi-w', M.items).forEach((el, i) => {
+    const a = smooth(.45 + i * .07, .85 + i * .07, m);
+    el.style.opacity = a.toFixed(3); el.style.transform = `translate3d(0,${f1((1 - a) * -8)}px,0)`;
+  });
+};
+Menu.blur.addEventListener('pointerdown', e => G.join(e, { up: rec => { if (Math.hypot(rec.dx, rec.dy) < 10) Menu.close(); } }));
+
+/* ============================== shorts ============================== */
+new Scroller($('#shorts-vp'), $('#shorts-ct'), { paging: H });
+$$('#shorts-ct .like').forEach(act => {
+  const btn = $('.ab', act), svg = $('.burst', btn), dots = $$('circle', svg);
+  let liked = false;
+  const b = new Spring(0, SP.bouncy, () => {
+    const x = b.x; svg.style.visibility = x > .005 ? 'inherit' : 'hidden'; svg.style.display = x > .005 ? 'block' : 'none';
+    dots.forEach((c, i) => {
+      const a = i / dots.length * Math.PI * 2 + .3, d = 34 * Math.max(0, x);
+      c.setAttribute('cx', f1(60 + Math.cos(a) * d)); c.setAttribute('cy', f1(60 + Math.sin(a) * d));
+      c.setAttribute('r', f1(Math.max(0, 7 * (1 - x * .45)) * smooth(0, .15, x + .1)));
+    });
+  }, { eps: .002 });
+  // Droplets burst out, detach through the goo, then fall back and merge into the button.
+  pressable(btn, { onTap: () => {
+    liked = !liked; act.classList.toggle('on', liked); btn.setAttribute('aria-pressed', liked);
+    if (liked && !RM) { b.set(0); b.to(1, 6, cfg(.34, .55), () => b.to(0, 0, cfg(.42, .9))); }
+  } });
+});
+$$('#shorts-ct .ab:not(.sh-more)').forEach(x => { if (!x.closest('.like')) pressable(x); });
+$$('#shorts-ct .sh-more').forEach(x => pressable(x, { onTap: () => Sheet.open(x, moreSheet(+x.dataset.v)) }));
+
+/* ============================== settings and bindings ============================== */
+const Bind = { theme: [], rm: [], slow: [] };
+function setTheme(t) {
+  PH.dataset.theme = t; document.body.classList.toggle('page-light', t === 'light');
+  $('#opt-light').checked = t === 'light'; Bind.theme.forEach(f => f(t));
+}
+function setRM(b) {
+  RM = b; PH.classList.toggle('rm', b); $('#opt-rm').checked = b; Bind.rm.forEach(f => f(b));
+  for (const fn of [renderScreens, renderTab, renderPlayer, rPage, Sheet.renderFn, Menu.renderFn]) Loop.render(fn);
+}
+function setSlow(b) { TIME_SCALE = b ? .25 : 1; $('#opt-slow').checked = b; Bind.slow.forEach(f => f(b)); }
+function settingsPage() {
+  return {
+    html: `<div class="gh">Appearance</div>
+      <div class="grp"><div class="row col"><span>Theme</span><div class="seg" id="seg-theme"></div></div>
+      <div class="row"><span class="grow">Liquid motion</span><button class="sw" id="sw-liquid2" aria-label="Liquid motion"></button></div></div>
+      <p class="foot">Off behaves like the system's Reduce motion: morphs become fades.</p>
+      <div class="gh">Experiment</div>
+      <div class="grp"><div class="row"><span class="grow">Slow motion</span><button class="sw" id="sw-slow" aria-label="Slow motion"></button></div>
+      <div class="row"><span class="grow">Version</span><span class="cnt">liquid mock</span></div></div>
+      <p class="foot">Swipe right anywhere on this page to go back; the page edge follows your finger.</p>`,
+    wire(root) {
+      const seg = new Segmented($('#seg-theme', root), ['Dark', 'Light'], PH.dataset.theme === 'light' ? 1 : 0, i => setTheme(i ? 'light' : 'dark'));
+      Bind.theme.push(t => seg.select(t === 'light' ? 1 : 0, 0, false));
+      const sl = new Switch($('#sw-liquid2', root), !RM, on => setRM(!on)); Bind.rm.push(b => sl.set(!b));
+      const ss = new Switch($('#sw-slow', root), TIME_SCALE < 1, on => setSlow(on)); Bind.slow.push(b => ss.set(b));
+    }
+  };
+}
+function listPage(title) {
+  const ids = title === 'History' ? [2, 6, 4, 1] : title === 'Liked videos' ? [0, 3, 5, 7, 4] : [1, 6, 2];
+  return { html: `<div style="padding-top:8px">${ids.map(cardHTML).join('')}</div>`, wire: root => wireCards(root) };
+}
+new Switch($('#sw-autoplay'), true);
+new Switch($('#sw-cc'), false);
+const swLiquid = new Switch($('#sw-liquid'), !RM, on => setRM(!on)); Bind.rm.push(b => swLiquid.set(!b));
+new Segmented($('#seg-q'), ['Auto', 'Higher', 'Data saver'], 0);
+
+/* ============================== panel, keyboard, layout ============================== */
+const LEGEND = [
+  ['Tab bar', 'Tap a tab, or drag along the bar: the pill stretches toward the target, necks in the middle and snaps in with overshoot.', 'home'],
+  ['Search droplet', 'Tap Search, or drag it left into the bar: it stretches, fuses with the bar (metaball) and becomes a field. ✕ splits it off again.', 'home'],
+  ['Squishy surfaces', 'Press any button, chip or card and move your finger: it dents under the finger and stretches after it; release for the jelly wobble.', 'home'],
+  ['Chips', 'Tap a chip on Home: the selected blob flows between chips; the label colour is clipped to the blob.', 'home'],
+  ['Pull to refresh', 'On Home, drag down from the top: a drop hangs on a neck, snaps off at the threshold and becomes a gooey spinner.', 'home'],
+  ['Context menu', 'Press and hold a card: it lifts, the page blurs, and the menu oozes out of the card, then pinches off.', 'home'],
+  ['Mini player ↔ watch', 'Drag the mini player up (or tap it): it stretches like a drop, leaves a droplet at the dock and morphs into the player. Drag the video down or flick to collapse; it lands with a squash.', 'watch'],
+  ['Sheets', 'On the watch page tap Chapters or ⋯ (or ⋯ on any card): the sheet swells out of the button. Drag down to shrink it back in; drag up to rubber-band.', 'watch'],
+  ['Toggles and segmented', 'You tab: tap or drag a switch knob or segmented thumb; the blob widens under the finger and stretches as it travels.', 'you'],
+  ['Page push and back', 'Open Settings (gear on You, avatar on Home). The page edge bulges as it pushes in; swipe right and the edge dents under your finger.', 'settings'],
+  ['Shorts', 'Swipe vertically between pages (they snap on springs); tap the heart for a goo splash.', 'shorts']
+];
+$('#legend').innerHTML = LEGEND.map(l => `<li><button data-go="${l[2]}">Show</button><b>${l[0]}</b>${l[1]}</li>`).join('');
+$$('#legend button').forEach(b => b.addEventListener('click', () => {
+  if (Sheet.isOpen) Sheet.close(0); if (Menu.open) Menu.close(); if (Tab.searching) setSearch(false);
+  const g = b.dataset.go;
+  if (g === 'watch') { if (curTab !== 0) selectTab(0); if (P.e.x < .5) openVideo(P.v); }
+  else {
+    if (P.e.x > .5) collapse();
+    if (g === 'settings') { selectTab(3); setTimeout(() => Page.push('Settings', settingsPage()), 120); }
+    else selectTab({ home: 0, shorts: 1, you: 3 }[g] ?? 0);
+  }
+}));
+$('#opt-light').addEventListener('change', e => setTheme(e.target.checked ? 'light' : 'dark'));
+$('#opt-rm').addEventListener('change', e => setRM(e.target.checked));
+$('#opt-slow').addEventListener('change', e => setSlow(e.target.checked));
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (Menu.open) Menu.close(); else if (Sheet.isOpen) Sheet.close(0); else if (Tab.searching) setSearch(false);
+  else if (Page.open) Page.pop(0); else if (P.e.x > .5) collapse();
+});
+function fit() {
+  const narrow = innerWidth < 820;
+  PS = Math.min(1, (innerWidth - 24) / 412, narrow ? 1 : (innerHeight - 40) / 915);
+  document.documentElement.style.setProperty('--s', PS);
+  G.r = null;
+}
+addEventListener('resize', fit);
+fit();
+
+/* ============================== init ============================== */
+PH.classList.toggle('rm', RM); $('#opt-rm').checked = RM;
+initChips(); renderChips();
+setVideo(0);
+renderScreens(); renderTab(); renderPlayer();
+</script>
+</body>
+</html>
