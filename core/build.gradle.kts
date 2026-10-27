@@ -12,12 +12,12 @@ dependencies {
     api("io.ktor:ktor-client-okhttp:3.6.0")
     api("io.ktor:ktor-client-content-negotiation:3.6.0")
     api("io.ktor:ktor-serialization-kotlinx-json:3.6.0")
-    api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
-    api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+    api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.12.0")
+    api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.12.0")
     api("com.squareup.okhttp3:okhttp:5.5.0")
 
     testImplementation(kotlin("test"))
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.12.0")
 }
 
 tasks.test {
