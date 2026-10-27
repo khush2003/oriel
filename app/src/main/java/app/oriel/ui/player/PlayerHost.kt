@@ -143,6 +143,10 @@ private val PIP_CORNER = 14.dp
 /** How small a pinch can make the window, relative to its default size. */
 private const val PIP_MIN_SCALE = 0.7f
 
+/** A spring can carry the picture above its rest position; that displacement isn't a radius. */
+internal fun fullscreenPullCorner(pull: Float, maxCorner: Float): Float =
+    (pull / 6f).coerceIn(0f, maxCorner)
+
 /**
  * A throw this fast (per second), mostly sideways and toward the side the window is already on,
  * or mostly down from the bottom half onto the tab bar, puts it away. Slower, or toward the far
@@ -817,7 +821,7 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
                     val pull = fsPull.value
                     val p = progress.value.coerceIn(0f, 1f)
                     val drag = pipDrag.value * (1f - p)
-                    val corner = lerp(pipCorner, 0f, p) + (pull / 6f).coerceAtMost(px(20.dp))
+                    val corner = lerp(pipCorner, 0f, p) + fullscreenPullCorner(pull, px(20.dp))
                     val d = drop
                     val fs = fsAnim.value
                     if (liquid && (pull != 0f || fs != 0f || fullscreen) && d?.docked != true) {

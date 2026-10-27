@@ -60,15 +60,15 @@ class PlayerGestureTest {
         rule.mainClock.advanceTimeBy(120)
     }
 
-    private fun start(liquid: Boolean = false) {
+    private fun start(liquid: Boolean = false, fullscreen: Boolean = false) {
         rule.mainClock.autoAdvance = false
         graph.pages.write("home-false", Feed.serializer(), Fixtures.homeFeed)
-        rule.setContent { Frame(liquid) }
+        rule.setContent { Frame(liquid, fullscreen) }
         settle(24)
     }
 
     @Composable
-    private fun Frame(liquid: Boolean) {
+    private fun Frame(liquid: Boolean, fullscreen: Boolean) {
         OrielTheme(ThemeMode.DARK, reduceAnimation = false) {
             CompositionLocalProvider(LocalLiquidMotion provides liquid) {
                 val nav = rememberNavController()
@@ -81,7 +81,8 @@ class PlayerGestureTest {
                     app.watch.preview(Fixtures.watch, Fixtures.comments, Fixtures.storyboard)
                     connection.preview(listOf(Fixtures.watch.video!!) + Fixtures.videos.drop(1).take(3), 0, playing = true, positionMs = 300_000)
                     nav.currentBackStackEntryFlow.first().lifecycle.currentStateFlow.first { it.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED) }
-                    app.sheet.progress.snapTo(0f)
+                    app.sheet.progress.snapTo(if (fullscreen) 1f else 0f)
+                    app.sheet.fullscreen = fullscreen
                 }
                 OrielRoot(app, inPip = false)
             }
@@ -110,6 +111,56 @@ class PlayerGestureTest {
     private fun line(to: Offset, steps: Int) = (1..steps).map { to * (it.toFloat() / steps) }
 
     private val stops get() = state.connection.stopRequests
+
+    private fun upwardFullscreenFlick() {
+        rule.onRoot().performTouchInput {
+            down(Offset(width * 0.3f, height * 0.6f))
+            repeat(8) { moveBy(Offset(0f, -20f)); advanceEventTime(16) }
+            up()
+        }
+    }
+
+    /** Render each return frame: an upward release from zero used to give the clip a negative radius. */
+    private fun returnFrames(count: Int = 60) = repeat(count) {
+        ShadowLooper.idleMainLooper()
+        rule.mainClock.advanceTimeByFrame()
+        rule.waitForIdle()
+    }
+
+    @Test fun upwardFullscreenFlickDoesNotCrash() {
+        start(fullscreen = true)
+        upwardFullscreenFlick()
+        returnFrames()
+        assertTrue("upward flick stays fullscreen", state.sheet.fullscreen)
+        assertEquals("watch page stays open", 1f, state.sheet.progress.value, 0.001f)
+    }
+
+    @Test fun anotherFlickDuringFullscreenReturnDoesNotCrash() {
+        start(fullscreen = true)
+        repeat(3) {
+            upwardFullscreenFlick()
+            returnFrames(3)
+        }
+        returnFrames()
+        assertTrue("repeated flicks stay fullscreen", state.sheet.fullscreen)
+        assertEquals("playback was not stopped", 0, stops)
+    }
+
+    @Test fun cancelledLiquidFullscreenPullReturnsWithoutLeaving() {
+        start(liquid = true, fullscreen = true)
+        rule.onRoot().performTouchInput {
+            down(0, Offset(width * 0.35f, height * 0.25f))
+            repeat(10) { moveBy(0, Offset(0f, 22f)); advanceEventTime(16) }
+            // A second finger takes over, cancelling the one-finger pull even past its leave threshold.
+            down(1, Offset(width * 0.65f, height * 0.5f))
+            moveBy(1, Offset(30f, 0f))
+            up(1)
+            up(0)
+        }
+        returnFrames()
+        assertTrue("cancelled pull stays fullscreen", state.sheet.fullscreen)
+        assertEquals("watch page stays open", 1f, state.sheet.progress.value, 0.001f)
+    }
 
     /**
      * Dragged across to the other side at a fair pace and let go there, it lands in that corner.
