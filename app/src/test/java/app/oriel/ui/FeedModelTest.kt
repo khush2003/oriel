@@ -9,6 +9,8 @@ import app.oriel.core.model.Feed
 import app.oriel.core.model.Shelf
 import app.oriel.core.model.ShelfKind
 import app.oriel.core.model.Video
+import app.oriel.core.model.Chip
+import kotlinx.coroutines.CompletableDeferred
 import app.oriel.ui.screens.FeedModel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -163,6 +165,64 @@ class FeedModelTest {
         settle { m.state.value.error != null }
         assertNull(m.state.value.feed)
         assertFalse(m.state.value.loading)
+    }
+
+    @Test fun refreshingDoesNotAppendTheOldFeedsContinuation() {
+        val refresh = CompletableDeferred<Feed>()
+        val started = CompletableDeferred<Unit>()
+        val tokens = ArrayList<String>()
+        var calls = 0
+        val m = FeedModel(graph, null, load = {
+            if (calls++ == 0) feed("old", "old-token")
+            else { started.complete(Unit); refresh.await() }
+        }, more = { token -> tokens += token; feed("next") })
+        settle { m.state.value.feed != null && !m.state.value.loading }
+        m.reload(true)
+        settle { started.isCompleted }
+        m.loadMore()
+        settle { true }
+        assertEquals("pagination waits for the replacement feed", emptyList<String>(), tokens)
+        assertTrue(m.state.value.refreshing)
+        assertEquals("old", m.state.value.feed?.items?.first()?.id)
+        refresh.complete(feed("new", "new-token"))
+        settle { m.state.value.feed?.items?.first()?.id == "new" && !m.state.value.refreshing }
+        m.loadMore()
+        settle { !m.state.value.loadingMore && m.state.value.feed?.items?.size == 2 }
+        assertEquals(listOf("new-token"), tokens)
+        assertEquals(listOf("new", "next"), m.state.value.feed?.items?.map { it.id })
+        assertEquals(1L, m.state.value.refreshVersion)
+    }
+
+    @Test fun backgroundOrFailedRefreshDoesNotRequestAScrollReset() {
+        val m = model()
+        settle { m.state.value.feed != null && !m.state.value.loading }
+        m.reload(true, quiet = true)
+        settle { m.state.value.feed?.items?.first()?.id == "v2" }
+        assertEquals(0L, m.state.value.refreshVersion)
+        failLoads = true
+        m.reload(true)
+        settle { m.state.value.error != null }
+        assertEquals(0L, m.state.value.refreshVersion)
+    }
+
+    @Test fun refreshedFilterChipsReplaceTheirOldTokens() {
+        val m = FeedModel(graph, null, load = { feed("all").copy(chips = listOf(Chip("Music", "old-token"))) })
+        settle { m.baseChips.isNotEmpty() }
+        m.reload(true, replace = { feed("music").copy(chips = listOf(Chip("Music", "fresh-token"))) }, key = "Music")
+        settle { m.state.value.feed?.items?.first()?.id == "music" }
+        assertEquals("fresh-token", m.baseChips.single().token)
+    }
+
+    @Test fun aNewRootFeedDoesNotKeepAChipBarFromThePreviousResponse() {
+        var first = true
+        val m = FeedModel(graph, null, load = {
+            feed("home").copy(chips = if (first) listOf(Chip("Music", "old-token")) else emptyList())
+        })
+        settle { m.baseChips.isNotEmpty() }
+        first = false
+        m.reload(true)
+        settle { !m.state.value.refreshing }
+        assertTrue(m.baseChips.isEmpty())
     }
 
     private companion object {

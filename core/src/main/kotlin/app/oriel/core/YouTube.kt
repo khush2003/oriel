@@ -52,6 +52,7 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -328,6 +329,15 @@ class YouTube(
 
     /** The next page of any feed, or the reloaded feed for a chip. */
     suspend fun more(token: String): Feed = Pages.continuation(browseJson(continuation = token))
+
+    /** A refresh needs the current page's chip token, not the one issued with yesterday's recommendations. */
+    suspend fun homeFilter(title: String, token: String, fresh: Boolean): Feed {
+        if (!fresh) return more(token)
+        val home = browse(HOME, fresh = true)
+        val current = home.chips.firstOrNull { it.title == title }?.token
+            ?: throw YTException(0, "This Home filter is no longer available")
+        return more(current).copy(chips = home.chips.map { it.copy(selected = it.title == title) })
+    }
 
     suspend fun topic(topic: Topic, fresh: Boolean = false): Feed {
         val key = "topic:${topic.name}"
@@ -832,22 +842,24 @@ internal class PageCache(private val capacity: Int) {
             inflight[key] ?: run {
                 val started = generation
                 // The lock is held until this is registered, so the load's own removal below comes after.
-                scope.async {
+                lateinit var pending: Deferred<Any?>
+                pending = scope.async(start = CoroutineStart.LAZY) {
                     try {
                         load().also { value ->
-                            synchronized(lock) { if (generation == started) map[key] = Entry(value, System.currentTimeMillis() + ttlMs) }
+                            synchronized(lock) { if (generation == started && inflight[key] === pending) map[key] = Entry(value, System.currentTimeMillis() + ttlMs) }
                         }
                     } finally {
-                        synchronized(lock) { if (generation == started) inflight.remove(key) }
+                        synchronized(lock) { if (inflight[key] === pending) inflight.remove(key) }
                     }
-                }.also { inflight[key] = it }
+                }
+                pending.also { inflight[key] = it; it.start() }
             }
         }
         return deferred.await() as T
     }
 
-    fun remove(key: String) { synchronized(lock) { map.remove(key) } }
-    fun removeWhere(predicate: (String) -> Boolean) { synchronized(lock) { map.keys.removeAll(predicate) } }
+    fun remove(key: String) { synchronized(lock) { map.remove(key); inflight.remove(key) } }
+    fun removeWhere(predicate: (String) -> Boolean) { synchronized(lock) { map.keys.removeAll(predicate); inflight.keys.removeAll(predicate) } }
     fun clear() {
         synchronized(lock) {
             generation++
