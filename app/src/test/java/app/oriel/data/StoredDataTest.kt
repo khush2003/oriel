@@ -71,6 +71,7 @@ class StoredDataTest {
         assertTrue(s.backgroundPlay)
         assertFalse(s.liquidMotion)
         assertFalse(s.liquidMotionAsked)
+        assertTrue(s.preferOriginalAudio)
     }
 
     @Test

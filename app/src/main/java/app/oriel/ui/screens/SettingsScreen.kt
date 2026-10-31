@@ -157,6 +157,9 @@ fun SettingsScreen() {
                 RowDivider()
                 SwitchRow("Captions", s.captions, { v -> set { it.copy(captions = v) } }, OrielIcons.Captions, subtitle = "Turn captions on when a video has them")
                 RowDivider()
+                // Changing it outranks a track picked in the player earlier this session.
+                SwitchRow("Prefer original audio", s.preferOriginalAudio, { v -> graph.sessionAudio = null; set { it.copy(preferOriginalAudio = v) } }, OrielIcons.Language, subtitle = "Play videos in the language they were made in, not an auto-dub")
+                RowDivider()
                 SwitchRow("Prefetch what's next", s.prefetchNext, { v -> set { it.copy(prefetchNext = v) } }, OrielIcons.Queue, subtitle = "Start the next video instantly")
             }
         }

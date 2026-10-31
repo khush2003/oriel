@@ -10,11 +10,15 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
+import androidx.media3.common.TrackGroup
+import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import app.oriel.AppGraph
 import app.oriel.core.extras.Segment
+import app.oriel.core.stream.AudioPreference
 import app.oriel.core.model.Video
 import app.oriel.core.stream.StreamRequest
 import kotlinx.coroutines.CoroutineScope
@@ -32,6 +36,15 @@ import kotlinx.coroutines.launch
 
 /** One queue row: its position in the player's playlist and the video. */
 data class QueueEntry(val index: Int, val video: Video)
+
+/** One of the playing video's sound tracks, for the Audio track menu. */
+class AudioTrackOption(
+    val name: String,
+    val language: String?,
+    val isOriginal: Boolean,
+    val selected: Boolean,
+    internal val group: TrackGroup,
+)
 
 /** Cards that sit on screen warm at most one stream per this long; see [PlayerConnection.warmAhead]. */
 private const val QUIET_WARM_INTERVAL_MS = 8_000L
@@ -79,6 +92,9 @@ class PlayerConnection(private val context: Context, private val graph: AppGraph
     val hasPrevious: StateFlow<Boolean> = _hasPrevious.asStateFlow()
     private val _isLive = MutableStateFlow(false)
     val isLive: StateFlow<Boolean> = _isLive.asStateFlow()
+    private val _audioTracks = MutableStateFlow<List<AudioTrackOption>>(emptyList())
+    /** The sound tracks the player can switch between now: more than one only for a dubbed video on Auto (HLS). */
+    val audioTracks: StateFlow<List<AudioTrackOption>> = _audioTracks.asStateFlow()
 
     // Service-side state.
     private val _queueTitle = MutableStateFlow<String?>(null)
@@ -177,6 +193,7 @@ class PlayerConnection(private val context: Context, private val graph: AppGraph
             if (events.contains(Player.EVENT_REPEAT_MODE_CHANGED)) _repeat.value = player.repeatMode
             if (events.contains(Player.EVENT_PLAYBACK_PARAMETERS_CHANGED)) _speed.value = player.playbackParameters.speed
             if (events.contains(Player.EVENT_VIDEO_SIZE_CHANGED)) _videoSize.value = player.videoSize
+            if (events.contains(Player.EVENT_TRACKS_CHANGED)) _audioTracks.value = audioOptions(player.currentTracks)
         }
     }
 
@@ -196,6 +213,7 @@ class PlayerConnection(private val context: Context, private val graph: AppGraph
         _repeat.value = player.repeatMode
         _speed.value = player.playbackParameters.speed
         _videoSize.value = player.videoSize
+        _audioTracks.value = audioOptions(player.currentTracks)
     }
 
     private fun syncCurrent(player: Player) {
@@ -235,7 +253,7 @@ class PlayerConnection(private val context: Context, private val graph: AppGraph
 
     /** Puts the UI-facing state into a given shape without a player, for screenshot tests. */
     @VisibleForTesting
-    internal fun preview(queue: List<Video>, index: Int, playing: Boolean, positionMs: Long, title: String? = null) {
+    internal fun preview(queue: List<Video>, index: Int, playing: Boolean, positionMs: Long, title: String? = null, audioTracks: List<AudioTrackOption> = emptyList()) {
         _queue.value = queue.mapIndexed { i, v -> QueueEntry(i, v) }
         _current.value = queue.getOrNull(index)
         _currentIndex.value = index
@@ -243,6 +261,7 @@ class PlayerConnection(private val context: Context, private val graph: AppGraph
         _playWhenReady.value = playing
         _duration.value = (queue.getOrNull(index)?.durationSec ?: 0) * 1000L
         _queueTitle.value = title
+        _audioTracks.value = audioTracks
         previewPosition = positionMs
     }
 
@@ -375,9 +394,40 @@ class PlayerConnection(private val context: Context, private val graph: AppGraph
         c.trackSelectionParameters = c.trackSelectionParameters.buildUpon().setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, !videoVisible).build()
     }
 
+    /**
+     * Plays [option]'s sound from here on, in place: a track selection, so the position and
+     * play state carry on. The videos after this one start the same way this session.
+     */
+    fun selectAudioTrack(option: AudioTrackOption) {
+        graph.sessionAudio = if (option.isOriginal || option.language == null) {
+            AudioPreference(preferOriginal = true)
+        } else {
+            AudioPreference(preferOriginal = graph.settings.current.preferOriginalAudio, language = option.language)
+        }
+        withController { c ->
+            // The first of the group's renditions: the codec AudioRenditionOrder put first for Sound quality.
+            c.trackSelectionParameters = c.trackSelectionParameters.buildUpon().setOverrideForType(TrackSelectionOverride(option.group, 0)).build()
+        }
+    }
+
     fun setSleepTimer(minutes: Int) = withService { it.setSleepTimer(minutes) }
     fun sleepAtEndOfVideo() = withService { it.sleepAtEndOfVideo() }
     fun cancelSleepTimer() = withService { it.cancelSleepTimer() }
 
     fun currentMediaItem(): MediaItem? = controller?.currentMediaItem
 }
+
+/** [tracks]' sound tracks a menu can offer: one per language (Media3 groups each language's codecs). */
+internal fun audioOptions(tracks: Tracks): List<AudioTrackOption> =
+    tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO && it.isSupported }.mapIndexed { i, g ->
+        val format = g.getTrackFormat(0)
+        AudioTrackOption(
+            name = format.label?.takeUnless { it.isBlank() }
+                ?: format.language?.let { java.util.Locale.forLanguageTag(it).displayName }?.takeUnless { it.isBlank() }
+                ?: "Track ${i + 1}",
+            language = format.language,
+            isOriginal = format.roleFlags and C.ROLE_FLAG_MAIN != 0,
+            selected = g.isSelected,
+            group = g.mediaTrackGroup,
+        )
+    }

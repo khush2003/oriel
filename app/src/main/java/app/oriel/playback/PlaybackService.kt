@@ -105,7 +105,7 @@ class PlaybackService : MediaLibraryService() {
         val graph = applicationContext.graph
         player = ExoPlayer.Builder(this)
             .setRenderersFactory(DefaultRenderersFactory(this).setEnableDecoderFallback(true))
-            .setMediaSourceFactory(OrielMediaSourceFactory(graph.dataSources.playback, graph.dataSources.live, graph.adaptive.dataSource) { graph.settings.lowAudio(graph.network.metered.value) })
+            .setMediaSourceFactory(OrielMediaSourceFactory(graph.dataSources.playback, graph.dataSources.live, graph.adaptive.dataSource, graph::audioPreference) { graph.settings.lowAudio(graph.network.metered.value) })
             .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true)
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
@@ -185,6 +185,12 @@ class PlaybackService : MediaLibraryService() {
             if (decoderCapped != null && mediaItem?.mediaId != decoderCapped) {
                 decoderCapped = null
                 queue.restoreCeiling()
+            }
+            // A track picked in the Audio track menu was for that video; the next one starts by the
+            // preference, which the pick updated. A loop replays the same video, pick and all.
+            val params = player.trackSelectionParameters
+            if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT && params.overrides.keys.any { it.type == C.TRACK_TYPE_AUDIO }) {
+                player.trackSelectionParameters = params.buildUpon().clearOverridesOfType(C.TRACK_TYPE_AUDIO).build()
             }
             queue.onTransition()
             queue.scheduleSave()

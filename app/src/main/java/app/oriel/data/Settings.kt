@@ -68,6 +68,8 @@ data class SettingsState(
     val captionLanguage: String? = null,
     val resumePlayback: Boolean = true,
     val doubleTapSeekSec: Int = 10,
+    // Start videos in the language they were made in, not YouTube's dub (often a machine one) in the app's language.
+    val preferOriginalAudio: Boolean = true,
     // Community extras
     val sponsorBlock: Boolean = true,
     val sponsorCategories: Set<String> = SponsorBlock.DEFAULT_CATEGORIES,
