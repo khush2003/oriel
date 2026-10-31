@@ -36,6 +36,8 @@ data class FeedState(
     val updatedAt: Long? = null,
     /** The next page failed; the list ends in a "Try again" until it's asked for again. */
     val moreFailed: Boolean = false,
+    /** Successful refreshes the viewer asked for, so Home can show the new page from its beginning. */
+    val refreshVersion: Long = 0,
 )
 
 /**
@@ -60,6 +62,7 @@ class FeedModel(
     val state: StateFlow<FeedState> = _state.asStateFlow()
     private var job: Job? = null
     private var moreJob: Job? = null
+    private var requestVersion = 0L
     /** What's shown when it isn't the feed itself: a chip's page. Refreshes reload that. */
     private var shownLoader: (suspend (Boolean) -> Feed)? = null
     /** Which page [shownLoader] is (a chip's title): a fresh lambda for the same chip isn't a switch. */
@@ -85,9 +88,11 @@ class FeedModel(
         // The disk copy is read off the main thread (the model is made during composition);
         // if the network wins the race, the older copy is never shown.
         cacheKey?.let { key ->
+            val initialVersion = requestVersion + 1
+            val generation = graph.pages.generation
             viewModelScope.launch {
                 val cached = withContext(Dispatchers.IO) { runCatching { graph.pages.read(key, Feed.serializer())?.let { it to graph.pages.savedAt(key) } }.getOrNull() }
-                if (cached != null) _state.update { if (it.feed == null) it.copy(feed = cached.first, stale = true, updatedAt = cached.second, loading = false) else it }
+                if (cached != null && requestVersion == initialVersion && graph.pages.generation == generation) _state.update { if (it.feed == null) it.copy(feed = cached.first, stale = true, updatedAt = cached.second, loading = false) else it }
             }
         }
         reload(fresh = false)
@@ -102,6 +107,7 @@ class FeedModel(
      * network. [quiet] shows no spinner: the list changes when the copy lands.
      */
     fun reload(fresh: Boolean = true, replace: (suspend (Boolean) -> Feed)? = null, quiet: Boolean = false, key: String? = replace?.let { "page" }) {
+        val version = ++requestVersion
         job?.cancel()
         moreJob?.cancel()
         // Another page in place of the shown one (a chip, or back to the feed): skeletons, not
@@ -122,6 +128,7 @@ class FeedModel(
         val generation = graph.pages.generation
         job = viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { (replace ?: load)(fresh) } }
+            if (version != requestVersion) return@launch
             result.onSuccess { feed ->
                 // An empty answer (offline, everything failed) never replaces something to show.
                 val shown = _state.value.feed
@@ -131,8 +138,8 @@ class FeedModel(
                 }
                 val now = clock()
                 loadedAt = now
-                _state.value = FeedState(feed = feed, updatedAt = now)
-                if (replace == null && feed.chips.isNotEmpty()) baseChips = feed.chips
+                _state.value = FeedState(feed = feed, updatedAt = now, refreshVersion = _state.value.refreshVersion + if (fresh && !quiet) 1 else 0)
+                if (replace == null || feed.chips.isNotEmpty()) baseChips = feed.chips
                 // An empty page with nothing to say (everything failed) isn't worth keeping: the next
                 // launch would paint it over nothing instead of the last good copy.
                 val keep = !feed.isEmpty || feed.message != null
@@ -169,14 +176,16 @@ class FeedModel(
     fun loadMore() {
         val s = _state.value
         val token = s.feed?.continuation ?: return
-        // While the network copy of a disk feed is on its way, its own continuation is what's wanted.
+        // Paging an older copy while its replacement loads would mix two recommendation rankings.
         // After a failure only "Try again" asks again ([retryMore]): the near-end ticks would retry forever.
-        if (s.loadingMore || s.moreFailed || s.loading || (s.stale && job?.isActive == true) || moreJob?.isActive == true) return
+        if (s.loadingMore || s.moreFailed || s.loading || job?.isActive == true || moreJob?.isActive == true) return
+        val version = requestVersion
         _state.update { it.copy(loadingMore = true, moreFailed = false) }
         moreJob = viewModelScope.launch {
             val next = withContext(Dispatchers.IO) { runCatching { more(token) } }
             next.exceptionOrNull()?.let { if (it is CancellationException) throw it }
             _state.update { st ->
+                if (version != requestVersion) return@update st
                 val feed = st.feed ?: return@update st.copy(loadingMore = false)
                 val page = next.getOrNull()
                 // A failed page keeps its token, so "Try again" (or scrolling back down) asks again.

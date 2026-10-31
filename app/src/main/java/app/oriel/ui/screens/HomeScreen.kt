@@ -1,6 +1,10 @@
 package app.oriel.ui.screens
 
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.lazy.rememberLazyListState
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.Box
@@ -69,6 +73,13 @@ fun HomeScreen() {
         })
     }
     val state by model.state.collectAsState()
+    val listState = rememberLazyListState()
+    LaunchedEffect(model, listState) {
+        model.state.map { it.refreshVersion }.distinctUntilChanged().drop(1).collect {
+            // Stable row keys otherwise keep an old video anchored when the new ranking moves it down.
+            listState.requestScrollToItem(0)
+        }
+    }
     // Another account signing in after this one reuses the signed-in model: its feed goes.
     val owner = accountOwner(account)
     LaunchedEffect(model, owner) {
@@ -87,10 +98,10 @@ fun HomeScreen() {
         if (chip == null) return null
         if (!signedIn) {
             val topic = HomeComposer.topicOf(chip) ?: return null
-            return { _ -> graph.yt.topic(topic) }
+            return { fresh -> graph.yt.topic(topic, fresh = fresh) }
         }
         val token = chip.token ?: return null
-        return { _ -> graph.yt.more(token) }
+        return { fresh -> graph.yt.homeFilter(chip.title, token, fresh) }
     }
     val chips = remember(signedIn, baseChips, selected) {
         if (signedIn) {
@@ -105,6 +116,7 @@ fun HomeScreen() {
 
     PageScaffold(
         title = "Home",
+        state = listState,
         tab = Tab.HOME,
         refreshing = state.refreshing,
         onRefresh = ::retry,
