@@ -24,8 +24,8 @@ android {
         applicationId = "app.oriel"
         minSdk = 26
         targetSdk = 36
-        versionCode = 20
-        versionName = "1.0.0-beta.5"
+        versionCode = 21
+        versionName = "1.0.0-beta.6"
         // Opt-in usage counts (see Telemetry.kt). Empty, the default, builds an app that reports
         // nowhere and never asks: set -PaptabaseKey=A-EU-… or APTABASE_KEY for official releases.
         val aptabaseKey = (project.findProperty("aptabaseKey") as String?) ?: System.getenv("APTABASE_KEY") ?: ""

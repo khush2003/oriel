@@ -262,7 +262,7 @@ private class ShortsPlayback(context: android.content.Context, private val graph
         }
     }
 
-    private val sources = OrielMediaSourceFactory(graph.dataSources.playback, graph.dataSources.live, graph.adaptive.dataSource) { graph.settings.lowAudio(graph.network.metered.value) }
+    private val sources = OrielMediaSourceFactory(graph.dataSources.playback, graph.dataSources.live, graph.adaptive.dataSource, graph::audioPreference) { graph.settings.lowAudio(graph.network.metered.value) }
     private val builder = DefaultPreloadManager.Builder(context, control)
         .setMediaSourceFactory(sources)
         // Starts on half a second of picture: a short is a swipe away from being skipped.

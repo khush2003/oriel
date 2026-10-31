@@ -21,7 +21,7 @@ After 1.0, things ship when they're ready: a feature release (`1.1.0`) every wee
 hotfixes (`1.1.1`) when something breaks, and a beta first (`1.2.0-beta.1`) when a change is big.
 Issues go in the **Later** milestone. In no particular order:
 
-- **YouTube features not in Oriel yet:** dubbed and multi-language audio, mixes and radio,
+- **YouTube features not in Oriel yet:** dubbed and multi-language audio outside Auto quality, mixes and radio,
   Explore and trending pages, transcripts, end screens, clips, channel posts, live chat, caption
   styling, search history management
 - **Interface:** finishing every screen, tablets and foldables, accessibility, translations

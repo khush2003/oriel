@@ -50,14 +50,14 @@ import app.oriel.ui.components.SwitchRow
 import app.oriel.ui.components.TextAction
 import java.util.Locale
 
-private enum class Page { Main, Quality, Speed, Captions, Translate, Sleep }
+private enum class Page { Main, Quality, Speed, Audio, Captions, Translate, Sleep }
 
 private val SPEEDS = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f, 3f)
 private val TRANSLATE_TO = listOf("en", "es", "fr", "de", "pt", "it", "hi", "ja", "ko", "zh-Hans", "ar", "ru", "tr", "id")
 
 fun speedLabel(speed: Float): String = if (speed == 1f) "Normal" else (if (speed % 1f == 0f) "${speed.toInt()}×" else "${speed}×")
 
-/** Quality, speed, captions, audio only, loop and sleep, as an iOS grouped sheet with drill-down pages. */
+/** Quality, speed, audio track, captions, audio only, loop and sleep, as an iOS grouped sheet with drill-down pages. */
 @Composable
 fun PlayerSettingsSheet(app: AppState, onDismiss: () -> Unit, onPip: () -> Unit, onChapters: () -> Unit = {}) {
     val connection = app.connection
@@ -72,6 +72,7 @@ fun PlayerSettingsSheet(app: AppState, onDismiss: () -> Unit, onPip: () -> Unit,
     val sleepAtEnd by connection.sleepAtEnd.collectAsState()
     val captions by app.watch.captions.collectAsState()
     val isLive by connection.isLive.collectAsState()
+    val audioTracks by connection.audioTracks.collectAsState()
     val chapterCount = app.watch.state.collectAsState().value.page?.chapters?.distinctBy { it.startMs }?.size ?: 0
     var page by remember { mutableStateOf(Page.Main) }
     val graph = app.graph
@@ -115,7 +116,7 @@ fun PlayerSettingsSheet(app: AppState, onDismiss: () -> Unit, onPip: () -> Unit,
             Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 4.dp)) {
                 if (p != Page.Main) {
                     SheetTitle(
-                        when (p) { Page.Translate -> "Auto-translate"; Page.Speed -> "Playback speed"; Page.Sleep -> "Sleep timer"; else -> p.name },
+                        when (p) { Page.Translate -> "Auto-translate"; Page.Speed -> "Playback speed"; Page.Audio -> "Audio track"; Page.Sleep -> "Sleep timer"; else -> p.name },
                         onBack = { page = if (p == Page.Translate) Page.Captions else Page.Main },
                     )
                 }
@@ -130,6 +131,11 @@ fun PlayerSettingsSheet(app: AppState, onDismiss: () -> Unit, onPip: () -> Unit,
                             }, chevron = true, enabled = !isLive, onClick = { page = Page.Quality })
                             RowDivider()
                             SettingsRow("Playback speed", OrielIcons.Speed, value = speedLabel(speed), chevron = true, enabled = !isLive, onClick = { page = Page.Speed })
+                            // Only a dubbed video has a choice to offer.
+                            if (audioTracks.size > 1) {
+                                RowDivider()
+                                SettingsRow("Audio track", OrielIcons.Language, value = audioTracks.firstOrNull { it.selected }?.name, chevron = true, onClick = { page = Page.Audio })
+                            }
                             RowDivider()
                             SettingsRow("Captions", OrielIcons.Captions, value = captions.selected?.let { it.name + (captions.translateTo?.let { t -> " → ${Locale.forLanguageTag(t).displayLanguage}" } ?: "") } ?: if (captions.tracks.isEmpty()) "None" else "Off", chevron = true, enabled = captions.tracks.isNotEmpty(), onClick = { page = Page.Captions })
                             if (chapterCount > 0) {
@@ -168,6 +174,12 @@ fun PlayerSettingsSheet(app: AppState, onDismiss: () -> Unit, onPip: () -> Unit,
                         SPEEDS.forEachIndexed { i, s ->
                             if (i > 0) RowDivider(inset = false)
                             ChoiceRow(speedLabel(s), speed == s) { connection.setSpeed(s); page = Page.Main }
+                        }
+                    }
+                    Page.Audio -> SettingsGroup(top = 12.dp, footer = "Videos after this one start in the same language when they have it. Settings › Prefer original audio decides how the others start.") {
+                        audioTracks.forEachIndexed { i, t ->
+                            if (i > 0) RowDivider(inset = false)
+                            ChoiceRow(t.name, t.selected) { connection.selectAudioTrack(t); page = Page.Main }
                         }
                     }
                     Page.Captions -> SettingsGroup(top = 12.dp) {

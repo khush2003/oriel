@@ -8,6 +8,7 @@ import app.oriel.core.YouTube
 import app.oriel.core.extras.ReturnDislike
 import app.oriel.core.extras.SponsorBlock
 import app.oriel.core.net.CredentialGuard
+import app.oriel.core.stream.AudioPreference
 import app.oriel.core.stream.KeyValueStore
 import app.oriel.core.stream.StreamResolver
 import app.oriel.data.AccountManager
@@ -178,6 +179,15 @@ class AppGraph(val context: Context) {
     val caches by lazy { MediaCaches(context, settings) }
     val dataSources by lazy { StreamDataSources(this) }
     val adaptive by lazy { AdaptiveSources(this) }
+
+    /**
+     * A sound track picked in the player this session: the videos after it start the same way
+     * (that language, or the original). Not kept past the process; null follows the setting.
+     */
+    @Volatile var sessionAudio: AudioPreference? = null
+
+    /** Which sound a video starts in, read as each HLS ladder is parsed. */
+    fun audioPreference(): AudioPreference = sessionAudio ?: AudioPreference(preferOriginal = settings.current.preferOriginalAudio)
     @get:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     val abr by lazy { app.oriel.playback.Abr(context) }
 

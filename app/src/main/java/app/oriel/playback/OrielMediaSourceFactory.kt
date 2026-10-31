@@ -13,6 +13,7 @@ import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import androidx.media3.extractor.DefaultExtractorsFactory
+import app.oriel.core.stream.AudioPreference
 
 /**
  * Sound-only items play as one progressive stream. Video items (`oriel://av/…`)
@@ -25,6 +26,8 @@ class OrielMediaSourceFactory(
     dataSourceFactory: DataSource.Factory,
     liveDataSourceFactory: DataSource.Factory,
     adaptiveDataSourceFactory: DataSource.Factory = liveDataSourceFactory,
+    /** Which language's sound HLS starts in; see [AudioRenditionOrder]. */
+    audioPreference: () -> AudioPreference = { AudioPreference() },
     /** HE-AAC over AAC-LC when HLS offers both; see [AudioRenditionOrder]. */
     preferLowAudio: () -> Boolean = { false },
 ) : MediaSource.Factory {
@@ -32,7 +35,7 @@ class OrielMediaSourceFactory(
         dataSourceFactory,
         DefaultExtractorsFactory().setConstantBitrateSeekingEnabled(true),
     )
-    private val audioOrder = AudioRenditionOrder(preferLowAudio)
+    private val audioOrder = AudioRenditionOrder(audioPreference, preferLowAudio)
     private val hls = HlsMediaSource.Factory(liveDataSourceFactory).setAllowChunklessPreparation(true).setPlaylistParserFactory(audioOrder)
     private val adaptive = HlsMediaSource.Factory(adaptiveDataSourceFactory).setAllowChunklessPreparation(true).setPlaylistParserFactory(audioOrder)
 

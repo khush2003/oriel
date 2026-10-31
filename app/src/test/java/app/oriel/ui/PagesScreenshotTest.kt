@@ -13,11 +13,13 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.navigation.compose.rememberNavController
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import app.oriel.TestApp
 import app.oriel.core.model.Feed
+import app.oriel.core.stream.AudioPreference
 import app.oriel.data.ThemeMode
 import app.oriel.playback.PlayerConnection
 import app.oriel.ui.navigation.ChannelRoute
@@ -165,4 +167,21 @@ class PagesScreenshotTest {
         settle(12)
         rule.onNodeWithText("Pause watch history").assertDoesNotExist()
     }
+    private fun originalAudioSetting(theme: ThemeMode, name: String) {
+        graph.sessionAudio = AudioPreference(language = "es")
+        shoot(name, theme, setup = { it.navigate(SettingsRoute) }, after = {
+            rule.onAllNodes(hasScrollToIndexAction()).onFirst().performScrollToIndex(4)
+            rule.onNodeWithText("Prefer original audio").assertIsDisplayed()
+        })
+        org.junit.Assert.assertTrue(graph.settings.current.preferOriginalAudio)
+        rule.onNodeWithText("Prefer original audio").performClick()
+        settle(8)
+        org.junit.Assert.assertFalse(graph.settings.current.preferOriginalAudio)
+        org.junit.Assert.assertNull(graph.sessionAudio)
+        rule.onRoot().captureRoboImage("build/screenshots/${name}_off.png")
+    }
+
+    @Test fun originalAudioSettingDark() = originalAudioSetting(ThemeMode.DARK, "87_original_audio_setting_dark")
+    @Test fun originalAudioSettingLight() = originalAudioSetting(ThemeMode.LIGHT, "88_original_audio_setting_light")
+
 }
