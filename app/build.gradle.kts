@@ -93,9 +93,12 @@ android {
     }
 
     lint {
-        // Errors that predate CI are frozen here; anything new fails the build. Don't add to it.
+        // Findings that predate CI are frozen here; anything new fails the build. Don't add to it.
         baseline = file("lint-baseline.xml")
         abortOnError = true
+        warningsAsErrors = true
+        // Dependabot handles version updates; a new upstream release must not break validation.
+        disable += setOf("GradleDependency", "NewerVersionAvailable", "AndroidGradlePluginVersion")
         checkReleaseBuilds = false
     }
 

@@ -21,6 +21,9 @@ please read this page before you write code. It's short.
 - `./gradlew :app:assembleDebug` builds a debug APK into `app/build/outputs/apk/debug/`.
 - Builds are tuned for a 16 GB machine (`gradle.properties`); run one build at a time.
 
+See [the architecture map](docs/ARCHITECTURE.md) to find the code and tests for a change,
+and [the QA guide](docs/QA.md) for environment configuration and a phone smoke test.
+
 ## Making the change
 
 - **Look and feel:** follow [`docs/DESIGN.md`](docs/DESIGN.md). Every visual change needs before and
@@ -53,6 +56,12 @@ survive every update. Each stored document carries a `schema` version (see `util
 ## Tests
 
 All of these must pass; CI runs them on every PR.
+
+Run `scripts/verify.sh` for the complete local check, including the debug APK build and
+lint-baseline guard. It stops Gradle on exit. New lint warnings fail; dependency-update notices
+are handled by Dependabot. The existing baseline may shrink, but must not gain suppressions.
+The automated guard checks baseline XML entries; reviewers must also check inline suppressions
+and disabled lint rules. See [targeted feedback](docs/QA.md#targeted-feedback) for iteration commands.
 
 ```sh
 ./gradlew :core:test :app:testDebugUnitTest   # unit, Robolectric and screenshot tests

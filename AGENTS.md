@@ -25,8 +25,16 @@ changing anything, and follow it over any conflicting habit.
 
 ## How to work here
 
+- **Orient first.** Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for ownership and test
+  locations, and [`docs/QA.md`](docs/QA.md) for setup and phone verification. Inspect
+  `git status --short` before editing; preserve staged, unstaged and untracked work outside the task.
+  Check branch drift against fetched `origin/main` before building on an existing checkout.
+- **One verification command.** `scripts/verify.sh` runs guardrails, the lint-baseline check,
+  offline tests, lint and a debug build, and stops Gradle even on failure. CI uses it too.
+  It requires Bash, Python 3, JDK 17 and Android SDK platform 37 (Gradle provisions test JDK 21).
 - **Build gently.** The project is tuned for a 16 GB machine. Run one Gradle build at a time with
-  `-Dorg.gradle.jvmargs=-Xmx2g`, and stop the daemon afterwards (`./gradlew --stop`).
+  `'-Dorg.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8'`, and stop the daemon afterwards
+  (`./gradlew --stop`). This stops all daemons of that version, so coordinate across worktrees.
 - **Check your work.** Before you say you're done, run
   `./gradlew :core:test :app:testDebugUnitTest`, `./gradlew :app:lintDebug` and
   `scripts/check-guardrails.sh`, and report the results as they are.
@@ -36,6 +44,10 @@ changing anything, and follow it over any conflicting habit.
   YouTube, and a "sign in to confirm you're not a bot" answer is the network, not the code.
 - **Comments** explain *why*, briefly, as the surrounding code does. No comments narrating the change.
 - **Match the code around you**: naming, idioms, how state and effects are structured.
+- **Style and lint.** Follow `.editorconfig` and Kotlin official style: types and composables
+  use PascalCase, functions and properties camelCase, constants UPPER_SNAKE_CASE. Tests end in
+  `Test`. Android Lint treats new warnings as errors; fix findings rather than adding suppressions
+  or expanding `app/lint-baseline.xml`. Do not run a whole-repository formatter.
 
 ## Submitting agent-written changes
 
