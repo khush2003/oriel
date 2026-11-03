@@ -17,7 +17,7 @@
 - [ ] This PR does one thing, and it's linked to an accepted issue (or is a small fix).
 - [ ] Nothing here is on the never-list in `docs/SCOPE.md` (no downloads, no PO tokens or bot-check workarounds, no Google branding, no Premium features).
 - [ ] It follows `docs/DESIGN.md`: 44dp touch targets, springs from `Motion.kt`, reduced motion respected, labels for TalkBack.
-- [ ] `./gradlew :core:test :app:testDebugUnitTest`, `./gradlew :app:lintDebug` and `scripts/check-guardrails.sh` pass locally.
+- [ ] `scripts/verify.sh` passes locally (guardrails, docs/baseline checks, offline tests, lint and debug APK).
 - [ ] No cookies, tokens, signed URLs, recorded YouTube responses or personal data in code, tests or logs.
 - [ ] New third-party code or dependencies are GPL-3.0-compatible and listed in `THIRD_PARTY.md`; copyright and attribution notices (`NOTICE`) are untouched.
 - [ ] Anything new sent off the phone is described in `PRIVACY.md`.

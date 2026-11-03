@@ -145,14 +145,16 @@ You need JDK 17 to run Gradle and the Android SDK (compileSdk 37). The test task
 ./gradlew :app:assembleRelease      # app/build/outputs/apk/release/app-release.apk (R8)
 ```
 
-Release builds are signed with the debug key unless you add a `keystore.properties`; see `keystore.properties.example`.
+Release builds need your release signing configuration to be installable. Without it, APKs are
+unsigned, never debug-signed; see [the signing guide](docs/RELEASING.md#signing).
 
 `gradle.properties` caps Gradle at a 2 GB heap with no parallel module work, so a build leaves a 16 GB machine usable. Run one build at a time.
 
 ## Tests
 
 ```sh
-./gradlew :core:test                                   # offline: parsers against saved responses
+scripts/verify.sh                                     # complete local and CI verification
+./gradlew :core:test                                   # offline: parsers against invented fixtures
 ./gradlew :core:test -Plive=true                       # against the real YouTube
 ./gradlew :app:testDebugUnitTest -Proborazzi.test.record=true
 ./gradlew :app:testDebugUnitTest --tests 'app.oriel.ui.LiveAppTest' -Plive=true -Proborazzi.test.record=true

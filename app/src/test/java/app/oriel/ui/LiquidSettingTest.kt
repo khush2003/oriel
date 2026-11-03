@@ -174,7 +174,7 @@ class LiquidSettingTest {
         rule.mainClock.autoAdvance = false
         rule.setContent { OrielTheme(ThemeMode.LIGHT) { LiquidMotionPrompt { answer = it } } }
         rule.mainClock.advanceTimeBy(1_000)
-        rule.onAllNodes(isRoot()).onLast()
+        rule.onAllNodes(isRoot()).onLast().assertExists()
         rule.onNode(hasText("Turn On")).performClick()
         rule.mainClock.advanceTimeBy(1_000)
         rule.waitForIdle()
