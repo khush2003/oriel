@@ -62,6 +62,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import app.oriel.ui.LocalWindowLayout
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -565,9 +566,12 @@ fun ShortsScreen(startId: String?) {
             when {
                 ids.isEmpty() && error != null -> MessageState(error!!, Modifier.align(Alignment.Center), action = "Try again", onAction = model::retry)
                 ids.isEmpty() -> ActivityIndicator(Modifier.align(Alignment.Center), size = 30.dp, color = Color.White)
-                else -> VerticalPager(
+                else -> androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    // On a wide screen the short keeps its portrait shape, centred on black, rather than stretching across it.
+                    val column = if (LocalWindowLayout.current.wide) minOf(maxWidth, maxHeight * 9f / 16f) else maxWidth
+                    VerticalPager(
                     pager,
-                    Modifier.fillMaxSize().clip(RoundedCornerShape(bottomStart = SHORT_CORNER, bottomEnd = SHORT_CORNER)),
+                    Modifier.width(column).fillMaxHeight().clip(RoundedCornerShape(bottomStart = SHORT_CORNER, bottomEnd = SHORT_CORNER)),
                     key = { ids[it] },
                     beyondViewportPageCount = 1,
                     flingBehavior = if (liquid) PagerDefaults.flingBehavior(pager, snapAnimationSpec = Sp.Page.spec()) else PagerDefaults.flingBehavior(pager),
@@ -589,6 +593,7 @@ fun ShortsScreen(startId: String?) {
                         onComments = { commentsFor = it },
                         onSound = { soundFor = it },
                     ) }
+                    }
                 }
             }
         }

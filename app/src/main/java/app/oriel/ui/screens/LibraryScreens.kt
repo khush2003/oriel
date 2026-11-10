@@ -73,7 +73,6 @@ import app.oriel.ui.components.RemoteImage
 import app.oriel.ui.components.SectionHeader
 import app.oriel.ui.components.SettingsGroup
 import app.oriel.ui.components.SwitchRow
-import app.oriel.ui.components.VideoCardSkeleton
 import app.oriel.ui.components.VideoRow
 import app.oriel.ui.components.SearchField
 import app.oriel.ui.components.SwipeToRemove
@@ -81,6 +80,9 @@ import app.oriel.ui.components.feedItem
 import app.oriel.ui.components.longPressMenuClickable
 import app.oriel.ui.components.rowKeys
 import app.oriel.ui.components.feedShelves
+import app.oriel.ui.components.cardSkeletons
+import app.oriel.ui.LocalWindowLayout
+import app.oriel.ui.PageWidth
 import app.oriel.ui.navigation.LocalPlaylistRoute
 import app.oriel.util.Thumbnails
 import java.util.Calendar
@@ -91,7 +93,7 @@ private fun VideoListScreen(title: String, videos: List<Video>, empty: String, o
     val app = LocalAppState.current
     val context = remember(title) { QueueContext(title = title) }
     val keys = remember(videos) { rowKeys(videos) }
-    PageScaffold(title = title, onBack = app::back) {
+    PageScaffold(title = title, onBack = app::back, width = PageWidth.List) {
         if (videos.isEmpty()) {
             item(key = "empty", contentType = "message") { MessageState(empty) }
             return@PageScaffold
@@ -204,6 +206,7 @@ fun HistoryScreen() {
     PageScaffold(
         title = "History",
         onBack = app::back,
+        width = PageWidth.List,
         // Clearing is this device's history only, so it's offered only while that's shown.
         actions = if (onYouTube) null else ({
             PillAction(OrielIcons.Delete, "Clear history") {
@@ -273,7 +276,7 @@ fun ChannelsScreen() {
     val app = LocalAppState.current
     val subscriptions by app.graph.library.state.collectSlice { it.subscriptions }
     val channels = remember(subscriptions) { subscriptions.distinctBy { it.id }.sortedBy { it.title.lowercase() } }
-    PageScaffold(title = "Channels", onBack = app::back) {
+    PageScaffold(title = "Channels", onBack = app::back, width = PageWidth.List) {
         if (channels.isEmpty()) item(key = "empty", contentType = "message") { MessageState("Channels you subscribe to appear here.", icon = OrielIcons.Subscriptions) }
         items(channels, key = { it.id }, contentType = { "channel" }) { ChannelRow(it) }
     }
@@ -300,6 +303,7 @@ fun PlaylistsScreen() {
     PageScaffold(
         title = "Playlists",
         onBack = app::back,
+        width = PageWidth.List,
         actions = { PillAction(OrielIcons.Add, "New playlist") { creating = true } },
         refreshing = remoteState?.refreshing == true,
         onRefresh = remote?.let { r -> { r.reload(true) } },
@@ -385,14 +389,16 @@ fun TopicScreen(topicName: String) {
     val topic = Topic.entries.firstOrNull { it.name == topicName } ?: Topic.MUSIC
     val model: FeedModel = viewModel(key = "topic:$topicName") { FeedModel(graph, "topic-$topicName", load = { fresh -> graph.yt.topic(topic, fresh) }, maxAgeMs = 30 * 60_000L) }
     val state by model.state.collectAsState()
+    val layout = LocalWindowLayout.current
+    val columns = layout.columns(PageWidth.Feed)
     PageScaffold(title = topic.title, onBack = app::back, refreshing = state.refreshing, onRefresh = { model.reload(true) }, onNearEnd = model::loadMore, onShown = model::refreshIfStale) {
         val feed = state.feed
         refreshNotice(state, onRetry = { model.reload(true) })
         when {
-            feed == null && state.loading -> items(4, key = { "sk$it" }, contentType = { "skeleton" }) { VideoCardSkeleton(it) }
+            feed == null && state.loading -> cardSkeletons(4, columns)
             feed == null && state.error != null -> item(key = "error", contentType = "message") { MessageState(state.error!!, action = "Try again", onAction = { model.reload() }) }
             feed != null && feed.isEmpty && !state.loading -> item(key = "empty", contentType = "message") { MessageState(feed.message ?: "Nothing here right now.", action = "Try again", onAction = { model.reload() }) }
-            feed != null -> feedShelves(feed, keyPrefix = "topic")
+            feed != null -> feedShelves(feed, keyPrefix = "topic", columns = columns, shortColumns = layout.shortColumns(PageWidth.Feed))
         }
         feedFooter(state, onRetry = model::retryMore)
     }

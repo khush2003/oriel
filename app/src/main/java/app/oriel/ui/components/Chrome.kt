@@ -166,8 +166,8 @@ fun bottomBarsPadding(withMiniPlayer: Boolean, withTabBar: Boolean = true): Dp {
 }
 
 @Composable
-fun pagePadding(withMiniPlayer: Boolean, top: Dp = topBarContentPadding(), withTabBar: Boolean = true) =
-    PaddingValues(top = top, bottom = bottomBarsPadding(withMiniPlayer, withTabBar))
+fun pagePadding(withMiniPlayer: Boolean, top: Dp = topBarContentPadding(), withTabBar: Boolean = true, horizontal: Dp = 0.dp) =
+    PaddingValues(start = horizontal, top = top, end = horizontal, bottom = bottomBarsPadding(withMiniPlayer, withTabBar))
 
 // ---- floating tab bar ----------------------------------------------------------------------
 

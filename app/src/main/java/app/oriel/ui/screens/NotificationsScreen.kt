@@ -36,6 +36,7 @@ import app.oriel.core.model.InboxNotification
 import app.oriel.core.model.InboxPage
 import app.oriel.core.model.Video
 import app.oriel.ui.LocalAppState
+import app.oriel.ui.PageWidth
 import app.oriel.ui.components.Avatar
 import app.oriel.ui.components.OrielIcons
 import app.oriel.ui.components.MessageState
@@ -133,6 +134,7 @@ fun NotificationsScreen() {
     PageScaffold(
         title = "Notifications",
         onBack = app::back,
+        width = PageWidth.Form,
         refreshing = state.refreshing,
         onRefresh = { model.load(refresh = true) },
         onNearEnd = model::loadMore,

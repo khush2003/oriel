@@ -235,6 +235,7 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
         // no longer keep a strip clear for it at the bottom.
         LocalMiniPlayerVisible provides false,
         LocalTabBarVisible provides showTabBar,
+        LocalWindowLayout provides rememberWindowLayout(),
     ) {
         if (inPip) {
             PlayerHost(app, withTabBar = false, hidden = false, inPip = true)

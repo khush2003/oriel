@@ -33,6 +33,7 @@ import app.oriel.data.VideoQuality
 import app.oriel.ui.AlertAction
 import app.oriel.ui.AlertSpec
 import app.oriel.ui.LocalAppState
+import app.oriel.ui.PageWidth
 import app.oriel.ui.components.Avatar
 import app.oriel.ui.components.ChoiceRow
 import app.oriel.ui.components.OrielIcons
@@ -82,7 +83,7 @@ fun SettingsScreen() {
     val updates = remember(context) { Updates.get(context) }
     val update by updates.state.collectAsState()
 
-    PageScaffold(title = "Settings", onBack = app::back) {
+    PageScaffold(title = "Settings", onBack = app::back, width = PageWidth.Form) {
         if (signedIn && expired) item(key = "expired") { SessionExpiredCard(onSignIn = { app.navigate(LoginRoute) }) }
         item(key = "account") {
             SettingsGroup(header = "Account", footer = if (signedIn) "Your Google sign-in stays on this device and is only ever sent to YouTube." else "Oriel works fully without an account. Signing in brings your recommendations, subscriptions, likes and playlists, and lets likes and saves reach YouTube.") {

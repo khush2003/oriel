@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
@@ -50,7 +51,9 @@ import app.oriel.ui.components.ChipsRow
 import app.oriel.ui.components.OrielIcons
 import app.oriel.ui.components.MessageState
 import app.oriel.ui.components.PAGE_GUTTER
-import app.oriel.ui.components.VideoCardSkeleton
+import app.oriel.ui.components.cardSkeletons
+import app.oriel.ui.LocalWindowLayout
+import app.oriel.ui.PageWidth
 import app.oriel.ui.components.feedShelves
 import app.oriel.ui.navigation.LoginRoute
 import app.oriel.ui.navigation.Tab
@@ -93,6 +96,8 @@ fun HomeScreen() {
     val bannerDismissed by graph.settings.state.collectSlice { it.signInBannerDismissed }
     val haptics = rememberHaptics()
     val feed = state.feed
+    val layout = LocalWindowLayout.current
+    val columns = layout.columns(PageWidth.Feed)
 
     fun loaderFor(chip: Chip?): (suspend (Boolean) -> Feed)? {
         if (chip == null) return null
@@ -148,14 +153,14 @@ fun HomeScreen() {
             SignInCard(onSignIn = { app.navigate(LoginRoute) }, onDismiss = { graph.settings.update { it.copy(signInBannerDismissed = true) } })
         }
         when {
-            feed == null && state.loading -> items(5, key = { "sk$it" }, contentType = { "skeleton" }) { VideoCardSkeleton(it) }
+            feed == null && state.loading -> cardSkeletons(5, columns)
             // A chip's page that failed is tried again as that chip, not as the whole feed under it.
             feed == null && state.error != null -> item(key = "error", contentType = "message") { MessageState(state.error!!, action = "Try again", onAction = ::retry) }
             feed != null && feed.isEmpty && !state.loading -> item(key = "empty", contentType = "message") {
                 MessageState(feed.message ?: "Nothing here yet. Watch something or follow a few channels and Home fills in.", icon = OrielIcons.Home)
             }
             feed != null -> {
-                if (state.loading) items(5, key = { "sk$it" }, contentType = { "skeleton" }) { VideoCardSkeleton(it) } else feedShelves(feed, keyPrefix = "home")
+                if (state.loading) cardSkeletons(5, columns) else feedShelves(feed, keyPrefix = "home", columns = columns, shortColumns = layout.shortColumns(PageWidth.Feed))
             }
         }
         feedFooter(state, onRetry = model::retryMore)
@@ -165,7 +170,7 @@ fun HomeScreen() {
 @Composable
 fun SignInCard(onSignIn: () -> Unit, onDismiss: (() -> Unit)?, text: String = "Sign in to get your recommendations, subscriptions feed, playlists and history from YouTube. Everything else works without an account.") {
     Column(
-        Modifier.padding(horizontal = PAGE_GUTTER, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.surfaceVariant).padding(16.dp),
+        Modifier.padding(horizontal = PAGE_GUTTER, vertical = 8.dp).widthIn(max = 640.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.surfaceVariant).padding(16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(OrielIcons.Person, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))

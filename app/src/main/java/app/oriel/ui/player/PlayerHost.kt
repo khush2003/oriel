@@ -1,5 +1,6 @@
 package app.oriel.ui.player
 
+import app.oriel.ui.LocalWindowLayout
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import app.oriel.ui.theme.animatedBackground
@@ -339,8 +340,12 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
         // In landscape (a phone turned for fullscreen, a tablet) 16:9 of the width is taller
         // than the cap, so the floor gives way to it rather than forming an empty range.
         val maxH = H * 0.62f
-        val fullH = (W / aspect).coerceIn(minOf(W * 9f / 16f, maxH), maxH)
-        val fullVideo = Box4(0f, px(statusTop), W, fullH)
+        // A wide tablet in landscape puts what to watch next beside the video, so the picture
+        // takes the left part of the screen rather than all of it.
+        val split = LocalWindowLayout.current.splitWatch
+        val fullW = if (split) W * SPLIT_VIDEO_FRACTION else W
+        val fullH = (fullW / aspect).coerceIn(minOf(fullW * 9f / 16f, maxH), maxH)
+        val fullVideo = Box4(0f, px(statusTop), fullW, fullH)
         val screen = Box4(0f, 0f, W, H)
 
         // The window: about half the width for a wide video, as tall as a third of the screen
@@ -369,7 +374,8 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
         val pipRest = Box4(rest.x, rest.y, pipW, pipH)
         val pipRect = { val d = pipDrag.value; Box4(rest.x + d.x, rest.y + d.y, pipW, pipH) }
         val travel = (pipBottom - fullVideo.y).coerceAtLeast(1f)
-        val contentTop = fullVideo.y + fullVideo.h
+        // The details start under the picture, or (split) at its top, beside it.
+        val contentTop = if (split) fullVideo.y else fullVideo.y + fullVideo.h
         // Where the picture rests at the sheet's progress now: what a drop flies into.
         val pictureAt = { pipRest.lerpTo(fullVideo, sheet.progress.value) }
         // The sheet grows out of the tapped thumbnail, not the dock, while one is flying with it.
@@ -741,7 +747,7 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
                             }
                         },
                 ) {
-                    WatchContent(app, palette)
+                    WatchContent(app, palette, split = if (split) WatchSplit(with(density) { fullH.toDp() }, with(density) { fullW.toDp() }) else null)
                 }
             }
         }
@@ -1337,3 +1343,5 @@ private fun FullscreenEffects(app: AppState, video: Video) {
 fun defaultOrientation(activity: android.app.Activity): Int =
     if (activity.resources.configuration.smallestScreenWidthDp >= 600) ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED else ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT
 
+/** How much of a wide screen the video takes on the split watch page; the rest is what to watch next. */
+private const val SPLIT_VIDEO_FRACTION = 0.64f

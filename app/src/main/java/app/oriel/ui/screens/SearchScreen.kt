@@ -51,6 +51,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -102,8 +103,10 @@ import app.oriel.ui.components.MessageState
 import app.oriel.ui.components.PAGE_GUTTER
 import app.oriel.ui.components.SearchField
 import app.oriel.ui.components.TextAction
-import app.oriel.ui.components.VideoCardSkeleton
 import app.oriel.ui.components.feedShelves
+import app.oriel.ui.components.cardSkeletons
+import app.oriel.ui.LocalWindowLayout
+import app.oriel.ui.PageWidth
 import app.oriel.ui.components.pagePadding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -191,7 +194,7 @@ class SearchModel(private val graph: AppGraph, initial: String?, private val sav
         moreJob?.cancel()
         _state.update { it.copy(query = q, submitted = q, params = params, picked = picked, selectedChip = chip, chips = if (it.submitted == q) it.chips else emptyList(), allFilters = if (it.submitted == q) it.allFilters else emptyList(), loading = true, error = null, moreFailed = false, loadingMore = false, suggestions = emptyList(), page = if (it.submitted == q) it.page else null) }
         job = viewModelScope.launch {
-            val result = withContext(Dispatchers.IO) { runCatching { graph.yt.search(q, params) } }
+            val result = withContext(Dispatchers.IO) { runCatching { previewPage ?: graph.yt.search(q, params) } }
             result.onSuccess { page ->
                 _state.update {
                     it.copy(
@@ -308,10 +311,14 @@ class SearchModel(private val graph: AppGraph, initial: String?, private val sav
         loadMore()
     }
 
-    private companion object {
-        const val KEY_SUBMITTED = "submitted"
-        const val KEY_PARAMS = "params"
-        const val KEY_CHIP = "chip"
+    companion object {
+        private const val KEY_SUBMITTED = "submitted"
+        private const val KEY_PARAMS = "params"
+        private const val KEY_CHIP = "chip"
+
+        /** Frame strips and screenshots: a page to show in place of the network. */
+        @androidx.annotation.VisibleForTesting
+        internal var previewPage: SearchPage? = null
     }
 }
 
@@ -405,9 +412,13 @@ fun SearchScreen(initial: String?) {
         onDispose { if (app.searchField === field) app.searchField = null }
     }
 
-    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    // Suggestions and recents are one centred column; results are the feed's grid.
+    val layout = LocalWindowLayout.current
+    val kind = if (showResults) PageWidth.Feed else PageWidth.List
+    val columns = layout.columns(kind)
+    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), horizontalAlignment = Alignment.CenterHorizontally) {
         if (bottomField) Spacer(Modifier.fillMaxWidth().statusBarsPadding().height(8.dp)) else Row(
-            Modifier.fillMaxWidth().statusBarsPadding().padding(start = PAGE_GUTTER, end = PAGE_GUTTER - 4.dp, top = 8.dp, bottom = 8.dp),
+            Modifier.widthIn(max = layout.contentWidth(PageWidth.List)).fillMaxWidth().statusBarsPadding().padding(start = PAGE_GUTTER, end = PAGE_GUTTER - 4.dp, top = 8.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             SearchField(
@@ -423,7 +434,7 @@ fun SearchScreen(initial: String?) {
         }
         // A hairline under the bar once content scrolls beneath it, as iOS bars do.
         Box(Modifier.fillMaxWidth().height(0.5.dp).background(if (scrolled) MaterialTheme.colorScheme.outlineVariant else Color.Transparent))
-        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().then(if (bottomField) Modifier.imePadding() else Modifier), contentPadding = pagePadding(LocalMiniPlayerVisible.current, top = 0.dp, withTabBar = LocalTabBarVisible.current)) {
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().then(if (bottomField) Modifier.imePadding() else Modifier), contentPadding = pagePadding(LocalMiniPlayerVisible.current, top = 0.dp, withTabBar = LocalTabBarVisible.current, horizontal = layout.inset(kind))) {
             when {
                 focused && state.query.isNotBlank() && state.query != state.submitted -> {
                     val typed = state.query.trim()
@@ -462,13 +473,13 @@ fun SearchScreen(initial: String?) {
                         }
                     }
                     when {
-                        state.loading && page == null -> items(5, key = { "sk$it" }, contentType = { "skeleton" }) { VideoCardSkeleton(it) }
+                        state.loading && page == null -> cardSkeletons(5, columns)
                         state.error != null && page == null -> item(key = "error", contentType = "message") { MessageState(state.error!!, action = "Try again", onAction = model::retry) }
                         page != null && page.feed.isEmpty -> item(key = "none", contentType = "message") { MessageState(page.feed.message ?: "No results for “${state.submitted}”.", icon = OrielIcons.Search) }
                         page != null -> {
                             if (state.loading) item(key = "reloading") { LoadingRow() }
                             else state.error?.let { e -> item(key = "notice") { NoticeRow(e, action = "Try again", onAction = model::retry) } }
-                            feedShelves(page.feed, keyPrefix = "search")
+                            feedShelves(page.feed, keyPrefix = "search", columns = columns, shortColumns = layout.shortColumns(PageWidth.Feed))
                         }
                     }
                     moreFooter(state.loadingMore, state.moreFailed, model::retryMore)

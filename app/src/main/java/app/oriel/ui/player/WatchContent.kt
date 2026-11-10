@@ -100,6 +100,7 @@ import app.oriel.core.model.Item
 import app.oriel.core.model.LikeStatus
 import app.oriel.core.model.Video
 import app.oriel.playback.QueueContext
+import app.oriel.ui.LocalWindowLayout
 import app.oriel.ui.AppState
 import app.oriel.ui.components.Avatar
 import app.oriel.ui.components.ExpandableText
@@ -132,15 +133,27 @@ private enum class Panel { None, Description, Comments }
  * what to watch next. Description and comments open as panels over it,
  * leaving the video playing above.
  */
+/**
+ * The watch page's two panes on a wide landscape screen: the page lays out as the video's
+ * column ([primaryWidth] wide, the picture [videoHeight] tall above its details) beside a column
+ * of what to watch next.
+ */
+class WatchSplit(val videoHeight: androidx.compose.ui.unit.Dp, val primaryWidth: androidx.compose.ui.unit.Dp)
+
 @Composable
-fun WatchContent(app: AppState, palette: ArtworkPalette, modifier: Modifier = Modifier) {
+fun WatchContent(app: AppState, palette: ArtworkPalette, modifier: Modifier = Modifier, split: WatchSplit? = null) {
     val state by app.watch.state.collectAsState()
     val video = state.video ?: return
     val page = state.page
     var panel by rememberSaveable(video.id) { mutableStateOf(Panel.None) }
     val listState = rememberLazyListState()
-    LaunchedEffect(video.id) { listState.scrollToItem(0) }
-    val nearEnd by remember { derivedStateOf { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index?.let { it >= listState.layoutInfo.totalItemsCount - 4 } == true } }
+    val relatedState = rememberLazyListState()
+    LaunchedEffect(video.id) { listState.scrollToItem(0); relatedState.scrollToItem(0) }
+    // The list that ends in what to watch next: the page's own, or the second pane's.
+    val endList = if (split != null) relatedState else listState
+    val nearEnd by remember(endList) { derivedStateOf { endList.layoutInfo.visibleItemsInfo.lastOrNull()?.index?.let { it >= endList.layoutInfo.totalItemsCount - 4 } == true } }
+    // Wide screens list what's next as rows, as YouTube's tablet layout does; a full-width card would be huge.
+    val relatedRows = split != null || LocalWindowLayout.current.wide
     LaunchedEffect(nearEnd, state.relatedContinuation) { if (nearEnd) app.watch.loadMoreRelated() }
     val relatedGroups = remember(state.related) { groupRelated(state.related) }
     val playlist = page?.playlist
@@ -156,7 +169,8 @@ fun WatchContent(app: AppState, palette: ArtworkPalette, modifier: Modifier = Mo
         panel = p
     }
 
-    Box(modifier.fillMaxSize().onPlaced { morph.box = it }) {
+    Box(modifier.fillMaxSize()) {
+    Box((if (split != null) Modifier.padding(top = split.videoHeight).width(split.primaryWidth).fillMaxHeight() else Modifier.fillMaxSize()).onPlaced { morph.box = it }) {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize().then(
@@ -182,12 +196,14 @@ fun WatchContent(app: AppState, palette: ArtworkPalette, modifier: Modifier = Mo
             }
             if (playlist != null) playlistPanelItems(app, playlist, current?.id, playlistOpen, { playlistOpen = !playlistOpen }, palette)
             if (!page?.chapters.isNullOrEmpty()) item(key = "chapters") { ChaptersShelf(app, page.chapters, palette) }
-            when {
-                state.loading -> items(4, key = { "rsk$it" }, contentType = { "skeleton" }) { RelatedSkeleton() }
-                state.error != null && page == null -> item(key = "error") { MessageState(state.error!!, action = "Try again", onAction = { app.watch.retry() }) }
-                else -> relatedItems(relatedGroups, palette)
+            if (split == null) {
+                when {
+                    state.loading -> items(4, key = { "rsk$it" }, contentType = { "skeleton" }) { RelatedSkeleton(relatedRows) }
+                    state.error != null && page == null -> item(key = "error") { MessageState(state.error!!, action = "Try again", onAction = { app.watch.retry() }) }
+                    else -> relatedItems(relatedGroups, palette, relatedRows)
+                }
+                if (state.loadingMore) item { LoadingRow() }
             }
-            if (state.loadingMore) item { LoadingRow() }
         }
 
         // Back steps out one level at a time, as on YouTube: a reply thread, then the panel, and
@@ -250,6 +266,21 @@ fun WatchContent(app: AppState, palette: ArtworkPalette, modifier: Modifier = Mo
                 panelBody()
             }
         }
+    }
+    if (split != null) {
+        LazyColumn(
+            state = relatedState,
+            modifier = Modifier.fillMaxSize().padding(start = split.primaryWidth),
+            contentPadding = PaddingValues(top = 8.dp, bottom = 32.dp),
+        ) {
+            when {
+                state.loading -> items(6, key = { "rsk$it" }, contentType = { "skeleton" }) { RelatedSkeleton(true) }
+                state.error != null && page == null -> item(key = "error") { MessageState(state.error!!, action = "Try again", onAction = { app.watch.retry() }) }
+                else -> relatedItems(relatedGroups, palette, rows = true)
+            }
+            if (state.loadingMore) item { LoadingRow() }
+        }
+    }
     }
 }
 
@@ -372,7 +403,7 @@ private fun groupRelated(related: List<Item>): List<List<Item>> {
     return groups
 }
 
-private fun androidx.compose.foundation.lazy.LazyListScope.relatedItems(groups: List<List<Item>>, palette: ArtworkPalette) {
+private fun androidx.compose.foundation.lazy.LazyListScope.relatedItems(groups: List<List<Item>>, palette: ArtworkPalette, rows: Boolean) {
     groups.forEachIndexed { i, group ->
         val first = group.first()
         if (first is Video && first.isShort) {
@@ -387,7 +418,9 @@ private fun androidx.compose.foundation.lazy.LazyListScope.relatedItems(groups: 
         } else {
             item(key = "rel:${first.id}", contentType = first::class.simpleName) {
                 Box(feedItem()) {
-                    if (first is Video) VideoCard(first, titleColor = palette.onBackground, metaColor = palette.onBackgroundVariant) else ItemRow(first)
+                    if (first !is Video) ItemRow(first)
+                    else if (rows) VideoRow(first, titleColor = palette.onBackground, metaColor = palette.onBackgroundVariant, thumbWidth = 150.dp)
+                    else VideoCard(first, titleColor = palette.onBackground, metaColor = palette.onBackgroundVariant)
                 }
             }
         }
@@ -644,7 +677,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.playlistPanelItems(
 }
 
 @Composable
-private fun RelatedSkeleton() = VideoCardSkeleton(0)
+private fun RelatedSkeleton(rows: Boolean) = if (rows) app.oriel.ui.components.VideoRowSkeleton(0) else VideoCardSkeleton(0)
 
 // ---- panels ------------------------------------------------------------------------------
 

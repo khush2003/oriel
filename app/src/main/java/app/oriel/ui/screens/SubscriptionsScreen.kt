@@ -50,8 +50,12 @@ import app.oriel.ui.components.OrielIcons
 import app.oriel.ui.components.MessageState
 import app.oriel.ui.components.PAGE_GUTTER
 import app.oriel.ui.components.TextAction
-import app.oriel.ui.components.VideoCardSkeleton
 import app.oriel.ui.components.feedShelves
+import app.oriel.ui.components.cardSkeletons
+import app.oriel.ui.LocalWindowLayout
+import app.oriel.ui.LocalPageInset
+import app.oriel.ui.fullBleed
+import app.oriel.ui.PageWidth
 import app.oriel.ui.components.longPressMenuClickable
 import app.oriel.ui.navigation.ChannelsRoute
 import app.oriel.ui.navigation.LoginRoute
@@ -89,6 +93,8 @@ fun SubscriptionsScreen() {
     LaunchedEffect(filters) { if (filter !in filters) filter = SubsFilter.All }
     val feed = remember(fullFeed, filter) { fullFeed?.let { filter.apply(it) } }
     val haptics = rememberHaptics()
+    val layout = LocalWindowLayout.current
+    val columns = layout.columns(PageWidth.Feed)
     // The channel strip leads with whoever uploaded last, as YouTube's does.
     val strip = remember(channels, fullFeed) {
         val order = HashMap<String, Int>()
@@ -114,7 +120,7 @@ fun SubscriptionsScreen() {
         onShown = model::refreshIfStale,
     ) {
         if (channels.isNotEmpty()) item(key = "channels", contentType = "channels") {
-            LazyRow(contentPadding = PaddingValues(horizontal = PAGE_GUTTER, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            LazyRow(Modifier.fullBleed(), contentPadding = PaddingValues(horizontal = PAGE_GUTTER + LocalPageInset.current, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 items(strip, key = { it.id }, contentType = { "channel" }) { ch ->
                     // Held, the channel's own menu (Unsubscribe, Share), as every other item has.
                     Column(Modifier.width(64.dp).clip(RoundedCornerShape(12.dp)).longPressMenuClickable(onClick = { haptics.play(Haptic.Tap); app.openChannel(ch.id) }, onLongClick = { app.showMenu(ch) }), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -146,10 +152,10 @@ fun SubscriptionsScreen() {
                     SignInCard(onSignIn = { app.navigate(LoginRoute) }, onDismiss = null, text = "Or sign in to bring your YouTube subscriptions with you.")
                 }
             }
-            feed == null && state.loading -> items(4, key = { "sk$it" }, contentType = { "skeleton" }) { VideoCardSkeleton(it) }
+            feed == null && state.loading -> cardSkeletons(4, columns)
             feed == null && state.error != null -> item(key = "error", contentType = "message") { MessageState(state.error!!, action = "Try again", onAction = { model.reload() }) }
             feed != null && feed.isEmpty -> item(key = "empty", contentType = "message") { MessageState(feed.message ?: if (filter == SubsFilter.All) "No new videos from your channels." else "Nothing ${filter.empty} from your channels.") }
-            feed != null -> feedShelves(feed, keyPrefix = "subs")
+            feed != null -> feedShelves(feed, keyPrefix = "subs", columns = columns, shortColumns = layout.shortColumns(PageWidth.Feed))
         }
         feedFooter(state, onRetry = model::retryMore)
     }
