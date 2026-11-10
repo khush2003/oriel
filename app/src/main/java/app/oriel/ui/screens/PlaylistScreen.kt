@@ -51,6 +51,7 @@ import app.oriel.playback.QueueContext
 import app.oriel.ui.AlertAction
 import app.oriel.ui.AlertSpec
 import app.oriel.ui.LocalAppState
+import app.oriel.ui.PageWidth
 import app.oriel.ui.components.feedItem
 import app.oriel.ui.components.rowKeys
 import app.oriel.ui.components.ActionPill
@@ -243,6 +244,7 @@ fun PlaylistScreen(id: String) {
         title = playlist?.title ?: "",
         onBack = app::back,
         edgeToEdge = true,
+        width = PageWidth.List,
         largeTitle = false,
         background = palette.background,
         refreshing = state.refreshing,
@@ -316,6 +318,7 @@ fun LocalPlaylistScreen(id: String) {
         title = playlist.name,
         onBack = app::back,
         edgeToEdge = true,
+        width = PageWidth.List,
         largeTitle = false,
         background = palette.background,
         actions = {

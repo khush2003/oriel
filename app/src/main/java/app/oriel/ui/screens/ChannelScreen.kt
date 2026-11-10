@@ -89,8 +89,11 @@ import app.oriel.ui.components.SearchField
 import app.oriel.ui.components.SkeletonLine
 import app.oriel.ui.components.shimmer
 import app.oriel.ui.components.VerifiedBadge
-import app.oriel.ui.components.VideoCardSkeleton
 import app.oriel.ui.components.feedShelves
+import app.oriel.ui.components.cardSkeletons
+import app.oriel.ui.LocalWindowLayout
+import app.oriel.ui.fullBleed
+import app.oriel.ui.PageWidth
 import app.oriel.ui.components.topBarContentPadding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -280,6 +283,10 @@ fun ChannelScreen(id: String, params: String?) {
     var searching by rememberSaveable { mutableStateOf(false) }
     var query by rememberSaveable { mutableStateOf("") }
     val channel = state.page?.channel
+    val layout = LocalWindowLayout.current
+    val columns = layout.columns(PageWidth.Feed)
+    // A banner as wide as a tablet would stand taller than the rest of the header put together.
+    val bannerRatio = if (layout.wide) 5.5f else 2.9f
 
     PageScaffold(
         title = channel?.title ?: "",
@@ -303,13 +310,13 @@ fun ChannelScreen(id: String, params: String?) {
             val pull = LocalPagePull.current
             // Where the bar's title sits, in the window: what the avatar and the name flow into.
             val barCenter = with(LocalDensity.current) { (WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + TopBarContentHeight / 2).toPx() }
-            Column {
+            Column(Modifier.fullBleed()) {
                 val banner = state.page?.banner
                 // Most channels have a banner: its space is held while the page loads, so the
                 // header doesn't drop by a banner's height when it lands.
                 val bannered = banner != null || state.page == null && state.loading
                 if (banner == null && bannered) {
-                    Box(Modifier.fillMaxWidth().aspectRatio(2.9f).shimmer())
+                    Box(Modifier.fillMaxWidth().aspectRatio(bannerRatio).shimmer())
                 } else if (banner != null) {
                     Box(
                         Modifier.fillMaxWidth().then(
@@ -325,7 +332,7 @@ fun ChannelScreen(id: String, params: String?) {
                             },
                         ),
                     ) {
-                        RemoteImage(Thumbnails.sized(banner, 1280), Modifier.fillMaxWidth().aspectRatio(2.9f).graphicsLayer {
+                        RemoteImage(Thumbnails.sized(banner, 1280), Modifier.fillMaxWidth().aspectRatio(bannerRatio).graphicsLayer {
                             // A gentle parallax as the page scrolls up.
                             translationY = if (listState.firstVisibleItemIndex == 0) listState.firstVisibleItemScrollOffset * 0.4f else 0f
                         }, RoundedCornerShape(0.dp), border = false)
@@ -413,12 +420,12 @@ fun ChannelScreen(id: String, params: String?) {
         }
         val feed = state.feed
         when {
-            state.loading || state.loadingTab -> items(4, key = { "sk$it" }, contentType = { "skeleton" }) { VideoCardSkeleton(it) }
+            state.loading || state.loadingTab -> cardSkeletons(4, columns)
             state.error != null && feed == null -> item(key = "error", contentType = "message") { MessageState(state.error!!, action = "Try again", onAction = model::retry) }
             feed != null && feed.isEmpty -> item(key = "empty", contentType = "message") { MessageState(feed.message ?: if (state.searchQuery != null) "No results in this channel." else "Nothing here yet.") }
             feed != null -> {
                 state.error?.let { e -> item(key = "notice") { NoticeRow(e, action = "Try again", onAction = model::retry) } }
-                feedShelves(feed, keyPrefix = "ch:${state.selectedTab}:${state.searchQuery}")
+                feedShelves(feed, keyPrefix = "ch:${state.selectedTab}:${state.searchQuery}", columns = columns, shortColumns = layout.shortColumns(PageWidth.Feed))
             }
         }
         moreFooter(state.loadingMore, state.moreFailed, model::retryMore)

@@ -59,6 +59,8 @@ import app.oriel.core.model.Post
 import app.oriel.core.model.ShelfKind
 import app.oriel.core.model.Video
 import app.oriel.ui.LocalAppState
+import app.oriel.ui.LocalPageInset
+import app.oriel.ui.fullBleed
 import app.oriel.ui.haptics.Haptic
 import app.oriel.ui.haptics.rememberHaptics
 import app.oriel.util.Thumbnails
@@ -360,9 +362,12 @@ fun PostCard(post: Post, modifier: Modifier = Modifier, inset: Boolean = true) {
 fun ShelfRow(items: List<Item>, spacing: Dp = 14.dp, content: @Composable (Item) -> Unit) {
     val state = rememberLazyListState()
     val distinct = remember(items) { items.distinctBy { it.id } }
+    // On a centred page the row still scrolls to the screen's edges, its first card lined up with the page.
+    val inset = LocalPageInset.current
     LazyRow(
         state = state,
-        contentPadding = PaddingValues(horizontal = PAGE_GUTTER),
+        modifier = Modifier.fullBleed(),
+        contentPadding = PaddingValues(horizontal = PAGE_GUTTER + inset),
         horizontalArrangement = Arrangement.spacedBy(spacing),
         flingBehavior = rememberSnapFlingBehavior(state),
     ) {
@@ -401,19 +406,68 @@ fun ItemCard(item: Item) {
 }
 
 /**
+ * Items laid [columns] to a row. Each row is one list item, so the page keeps its lazy list, its
+ * scroll state and its pull to refresh; one column is the plain list. A short last row leaves its
+ * cells the same width as the rest.
+ */
+fun <T> LazyListScope.gridItems(
+    items: List<T>,
+    columns: Int,
+    key: (T) -> Any,
+    contentType: (T) -> Any? = { null },
+    cell: @Composable LazyItemScope.(T) -> Unit,
+) {
+    if (columns <= 1) {
+        items(items, key = key, contentType = contentType) { cell(it) }
+        return
+    }
+    val rows = items.chunked(columns)
+    items(rows, key = { "row:" + key(it.first()) }, contentType = { "row$columns:" + contentType(it.first()) }) { row ->
+        Row(feedItem(), verticalAlignment = Alignment.Top) {
+            row.forEach { Box(Modifier.weight(1f)) { cell(it) } }
+            repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+        }
+    }
+}
+
+/** Placeholder cards while a feed loads, laid out in the columns the feed will have. */
+fun LazyListScope.cardSkeletons(count: Int, columns: Int) =
+    gridItems(List(maxOf(count, columns * 2)) { it }, columns, key = { "sk$it" }, contentType = { "skeleton" }) { VideoCardSkeleton(it) }
+
+/** The same for pages of rows. */
+fun LazyListScope.rowSkeletons(count: Int, columns: Int, prefix: String = "sk") =
+    gridItems(List(maxOf(count, columns * 2)) { it }, columns, key = { "$prefix$it" }, contentType = { "rowSkeleton" }) { VideoRowSkeleton(it) }
+
+/**
  * Every [Feed] renders through here, one renderer per shelf kind: home,
  * subscriptions, topics, channel tabs, search. [compact] lays plain feeds out
  * as rows rather than full cards (search, channel tabs on narrow layouts).
+ * On a wide window video cards sit [columns] to a row; channels, playlists and posts keep a row of their own.
  */
-fun LazyListScope.feedShelves(feed: Feed, compact: Boolean = false, keyPrefix: String = "") {
+fun LazyListScope.feedShelves(feed: Feed, compact: Boolean = false, keyPrefix: String = "", columns: Int = 1, shortColumns: Int = 2) {
     feed.shelves.forEachIndexed { s, shelf ->
         val k = "$keyPrefix$s"
         when (shelf.kind) {
             ShelfKind.FEED, ShelfKind.LIST -> {
                 if (shelf.title != null) item(key = "h$k", contentType = "header") { SectionHeader(shelf.title!!, shelf.subtitle) }
-                items(shelf.items.distinctBy { it.id }, key = { "i$k:${it.id}" }, contentType = { it::class.simpleName + compact }) { item ->
-                    Box(feedItem()) { if (compact || shelf.kind == ShelfKind.LIST) ItemRow(item) else ItemCard(item) }
+                val asRows = compact || shelf.kind == ShelfKind.LIST
+                val perRow = if (asRows) 1 else columns
+                // Runs of videos share rows; anything else stands alone between them.
+                var run = ArrayList<Item>()
+                fun flush() {
+                    if (run.isEmpty()) return
+                    gridItems(run, perRow, key = { "i$k:${it.id}" }, contentType = { it::class.simpleName + compact }) { item ->
+                        Box(if (perRow > 1) Modifier else feedItem()) { if (asRows) ItemRow(item) else ItemCard(item) }
+                    }
+                    run = ArrayList()
                 }
+                shelf.items.distinctBy { it.id }.forEach { entry ->
+                    if (perRow > 1 && entry !is Video) {
+                        flush()
+                        item(key = "i$k:${entry.id}", contentType = entry::class.simpleName + compact) { Box(feedItem()) { if (asRows) ItemRow(entry) else ItemCard(entry) } }
+                    } else run.add(entry)
+                }
+                flush()
                 if (shelf.title != null) item(key = "g$k", contentType = "gap") { Spacer(Modifier.height(12.dp)) }
             }
             ShelfKind.CAROUSEL -> item(key = "c$k", contentType = "carousel") {
@@ -429,11 +483,11 @@ fun LazyListScope.feedShelves(feed: Feed, compact: Boolean = false, keyPrefix: S
                 }
             }
             ShelfKind.SHORTS_GRID -> {
-                val rows = shelf.items.filterIsInstance<Video>().chunked(2)
+                val rows = shelf.items.filterIsInstance<Video>().chunked(shortColumns)
                 items(rows.size, key = { "r$k:$it" }, contentType = { "shortsRow" }) { r ->
                     Row(feedItem().padding(horizontal = PAGE_GUTTER, vertical = 7.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         rows[r].forEach { v -> ShortCard(v, Modifier.weight(1f), width = null) }
-                        if (rows[r].size == 1) Spacer(Modifier.weight(1f))
+                        repeat(shortColumns - rows[r].size) { Spacer(Modifier.weight(1f)) }
                     }
                 }
             }

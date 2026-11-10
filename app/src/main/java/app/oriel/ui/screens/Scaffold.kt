@@ -77,6 +77,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import app.oriel.ui.LocalPageInset
+import app.oriel.ui.LocalWindowLayout
+import app.oriel.ui.PageWidth
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import app.oriel.ui.LocalAppState
@@ -129,6 +132,8 @@ fun PageScaffold(
     largeTitle: Boolean = true,
     /** Pages with their own header (banners, artwork) start under the status bar instead of below the bar. */
     edgeToEdge: Boolean = false,
+    /** What the page is made of, which decides how it's centred on a wide window. */
+    width: PageWidth = PageWidth.Feed,
     refreshing: Boolean = false,
     onRefresh: (() -> Unit)? = null,
     onNearEnd: (() -> Unit)? = null,
@@ -226,7 +231,8 @@ fun PageScaffold(
         largeTitle && title != null && !barContent -> bareTopPadding()
         else -> topBarContentPadding()
     }
-    val padding = pagePadding(LocalMiniPlayerVisible.current, top = top, withTabBar = LocalTabBarVisible.current)
+    val inset = LocalWindowLayout.current.inset(width)
+    val padding = pagePadding(LocalMiniPlayerVisible.current, top = top, withTabBar = LocalTabBarVisible.current, horizontal = inset)
     // Under the bar: content passes beneath it as soon as it scrolls when the page starts below
     // the bar; on a tab root the large title sits there at rest, so not until it's gone.
     val edge: () -> Float = remember(state, barContent, hasLargeTitle, collapse, density) {
@@ -264,7 +270,7 @@ fun PageScaffold(
                     content()
                 }
             }
-            CompositionLocalProvider(LocalPagePull provides if (liquid) pull else NO_PULL) {
+            CompositionLocalProvider(LocalPagePull provides if (liquid) pull else NO_PULL, LocalPageInset provides inset) {
                 if (onRefresh != null) {
                     IosPullToRefresh(refreshing, onRefresh, spinnerTop = top) { offset -> list(Modifier.graphicsLayer { translationY = offset() }) }
                 } else list(Modifier)

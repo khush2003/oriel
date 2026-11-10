@@ -66,6 +66,7 @@ import app.oriel.ui.navigation.SettingsRoute
 import app.oriel.ui.navigation.Tab
 import app.oriel.ui.navigation.WatchLaterRoute
 import kotlinx.coroutines.launch
+import app.oriel.ui.PageWidth
 import app.oriel.ui.haptics.Haptic
 import app.oriel.ui.haptics.rememberHaptics
 
@@ -90,6 +91,7 @@ fun YouScreen() {
     PageScaffold(
         title = "You",
         tab = Tab.YOU,
+        width = PageWidth.Form,
         refreshing = syncing,
         onRefresh = if (signedIn) ({ syncLibrary(app) }) else null,
         // In the title row, as Home's avatar is, so the page needs no bar row above its title.
@@ -206,7 +208,7 @@ fun syncLibrary(app: AppState) {
 @Composable
 fun SessionExpiredCard(onSignIn: () -> Unit) {
     Column(
-        Modifier.padding(horizontal = PAGE_GUTTER, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.surfaceVariant).padding(16.dp),
+        Modifier.padding(horizontal = PAGE_GUTTER, vertical = 8.dp).widthIn(max = 640.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.surfaceVariant).padding(16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(OrielIcons.SignIn, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
