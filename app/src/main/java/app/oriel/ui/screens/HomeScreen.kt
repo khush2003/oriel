@@ -73,7 +73,7 @@ fun HomeScreen() {
     val model: FeedModel = viewModel(key = "home:$signedIn") {
         FeedModel(graph, cacheKey = "home-$signedIn", load = { fresh ->
             if (signedIn) graph.yt.browse(YouTube.HOME, fresh = fresh) else graph.homeComposer.compose(fresh)
-        })
+        }, hideWatched = true)
     }
     val state by model.state.collectAsState()
     val listState = rememberLazyListState()

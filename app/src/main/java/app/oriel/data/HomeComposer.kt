@@ -43,7 +43,7 @@ class HomeComposer(private val yt: YouTube, private val library: LibraryStore) {
             val uploads = state.subscriptions.take(CHANNELS).map { ch -> async { limited { yt.channel(ch.id, VIDEOS_TAB, fresh).feed.items.filterIsInstance<Video>().take(4) } } }
             val topics = HOME_TOPICS.map { t -> async { limited { yt.topic(t, fresh) } } }
 
-            val watched = state.history.take(50).mapTo(HashSet()) { it.video.id }
+            val watched = state.history.mapTo(HashSet()) { it.video.id }
             val uploadLists = uploads.awaitAll()
             val relatedLists = related.awaitAll()
             val topicResults = topics.awaitAll()
@@ -67,7 +67,7 @@ class HomeComposer(private val yt: YouTube, private val library: LibraryStore) {
             val duration = (v.durationSec ?: 0) * 1000L
             v.copy(progress = if (duration > 0) (state.positions[v.id]!!.toFloat() / duration).coerceIn(0f, 1f) else null)
         }
-        if (resume.isNotEmpty()) shelves += Shelf(title = "Continue watching", items = resume, kind = ShelfKind.CAROUSEL)
+        if (resume.isNotEmpty()) shelves += Shelf(title = RESUME_TITLE, items = resume, kind = ShelfKind.CAROUSEL)
         shelves += Shelf(items = main.take(4), kind = ShelfKind.FEED)
         if (shorts.isNotEmpty()) shelves += Shelf(title = "Shorts", items = shorts.take(12), kind = ShelfKind.SHORTS)
         shelves += Shelf(items = main.drop(4), kind = ShelfKind.FEED)
@@ -106,6 +106,8 @@ class HomeComposer(private val yt: YouTube, private val library: LibraryStore) {
     }
 
     companion object {
+        /** The shelf of videos to pick up again: watched by definition, so never filtered as watched. */
+        const val RESUME_TITLE = "Continue watching"
         private const val SEEDS = 6
         private const val CHANNELS = 16
         private const val REQUEST_TIMEOUT_MS = 6_000L
@@ -119,6 +121,22 @@ class HomeComposer(private val yt: YouTube, private val library: LibraryStore) {
         fun chips(selected: String? = null): List<Chip> =
             listOf(Chip("All", selected = selected == null)) +
                 Topic.entries.map { Chip(it.title, token = TOPIC_PREFIX + it.name, selected = selected == it.name) }
+
+        /**
+         * [feed] without the videos in [watched]: what was watched here isn't recommended again, whatever
+         * feed it comes from. A video with a progress bar is kept, as that is YouTube's own "continue
+         * watching"; a shelf left empty goes.
+         */
+        fun dropWatched(feed: Feed, watched: Set<String>): Feed {
+            if (watched.isEmpty()) return feed
+            var changed = false
+            val shelves = feed.shelves.mapNotNull { shelf ->
+                if (shelf.title == RESUME_TITLE) return@mapNotNull shelf
+                val kept = shelf.items.filterNot { it is Video && it.id in watched && it.progress == null }
+                if (kept.size == shelf.items.size) shelf else { changed = true; if (kept.isEmpty()) null else shelf.copy(items = kept) }
+            }
+            return if (changed) feed.copy(shelves = shelves) else feed
+        }
 
         fun topicOf(chip: Chip): Topic? = chip.token?.takeIf { it.startsWith(TOPIC_PREFIX) }?.removePrefix(TOPIC_PREFIX)?.let { n -> Topic.entries.firstOrNull { it.name == n } }
     }

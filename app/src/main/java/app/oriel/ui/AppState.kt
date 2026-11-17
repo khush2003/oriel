@@ -35,6 +35,7 @@ import app.oriel.ui.navigation.HomeRoute
 import app.oriel.ui.navigation.PlaylistRoute
 import app.oriel.ui.navigation.SearchRoute
 import app.oriel.ui.navigation.ShortsRoute
+import app.oriel.ui.navigation.shortsAfter
 import app.oriel.ui.navigation.SubscriptionsRoute
 import app.oriel.ui.navigation.Tab
 import app.oriel.ui.navigation.YouRoute
@@ -184,11 +185,11 @@ class AppState(
     // ---- opening things ----------------------------------------------------------------
 
     /** Plays [video] and opens the watch page. */
-    fun openVideo(video: Video, context: QueueContext = QueueContext(), positionMs: Long? = null, expand: Boolean = true, origin: VideoOrigin? = TapOrigin.take()) {
+    fun openVideo(video: Video, context: QueueContext = QueueContext(), positionMs: Long? = null, expand: Boolean = true, origin: VideoOrigin? = TapOrigin.take(), shortsFeed: List<String> = emptyList()) {
         if (video.isShort) {
             // The origin was taken for the player; it's the Shorts page's to grow out of.
             TapOrigin.record(origin)
-            return openShort(video)
+            return openShort(video, feed = shortsFeed)
         }
         watch.load(video, context.playlistId)
         if (expand) handOff(video.id, origin)
@@ -232,11 +233,12 @@ class AppState(
      */
     fun takeShortOrigin(): VideoOrigin? = shortOrigin?.takeIf { System.nanoTime() - shortOriginAt < 5_000_000_000L }
 
-    fun openShort(video: Video, fromLink: Boolean = false) {
+    /** [feed]: the shorts of the list [video] was tapped in, so the next ones come from it. */
+    fun openShort(video: Video, fromLink: Boolean = false, feed: List<String> = emptyList()) {
         shortOrigin = if (fromLink) null else TapOrigin.take()
         shortOriginAt = System.nanoTime()
         connection.pause()
-        navigate(ShortsRoute(startId = video.id), fromLink)
+        navigate(ShortsRoute(startId = video.id, queue = shortsAfter(video.id, feed)), fromLink)
     }
 
     fun openItem(item: Item) {
