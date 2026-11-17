@@ -101,6 +101,22 @@ class FeedModelTest {
         settle { loads == before + 1 }
     }
 
+    @Test fun aRecommendationFeedDropsWhatWasWatchedLongAgo() {
+        // Older than any recent-history window.
+        for (i in 1..80) graph.library.addHistory(Video("old$i", "Old $i"))
+        val items = listOf(Video("old1", "Old 1"), Video("fresh", "Fresh"))
+        val m = FeedModel(
+            graph, null, hideWatched = true, clock = { now },
+            load = { Feed(shelves = listOf(Shelf(items = items, kind = ShelfKind.FEED)), continuation = "more") },
+            more = { Feed(shelves = listOf(Shelf(items = listOf(Video("old2", "Old 2"), Video("later", "Later")), kind = ShelfKind.FEED))) },
+        )
+        settle { m.state.value.feed != null }
+        assertEquals(listOf("fresh"), m.state.value.feed!!.items.map { it.id })
+        m.loadMore()
+        settle { m.state.value.feed!!.items.size == 2 }
+        assertEquals(listOf("fresh", "later"), m.state.value.feed!!.items.map { it.id })
+    }
+
     @Test fun aListReadPartwayDownIsNeverChangedUnderTheReader() {
         val m = model()
         settle { m.state.value.feed != null }

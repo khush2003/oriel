@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.oriel.AppGraph
 import app.oriel.core.model.Feed
+import app.oriel.data.HomeComposer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -57,6 +58,8 @@ class FeedModel(
     private val more: suspend (token: String) -> Feed = { graph.yt.more(it) },
     private val maxAgeMs: Long = 10 * MINUTE,
     private val clock: () -> Long = System::currentTimeMillis,
+    /** Recommendation feeds: videos already watched here are dropped, whatever the server still lists. */
+    private val hideWatched: Boolean = false,
 ) : ViewModel() {
     private val _state = MutableStateFlow(FeedState())
     val state: StateFlow<FeedState> = _state.asStateFlow()
@@ -84,6 +87,9 @@ class FeedModel(
     /** When the shown feed came from the network; null until it has. */
     private var loadedAt: Long? = null
 
+    private fun tidy(feed: Feed): Feed =
+        if (!hideWatched) feed else HomeComposer.dropWatched(feed, graph.library.state.value.history.mapTo(HashSet()) { it.video.id })
+
     init {
         // The disk copy is read off the main thread (the model is made during composition);
         // if the network wins the race, the older copy is never shown.
@@ -92,7 +98,7 @@ class FeedModel(
             val generation = graph.pages.generation
             viewModelScope.launch {
                 val cached = withContext(Dispatchers.IO) { runCatching { graph.pages.read(key, Feed.serializer())?.let { it to graph.pages.savedAt(key) } }.getOrNull() }
-                if (cached != null && requestVersion == initialVersion && graph.pages.generation == generation) _state.update { if (it.feed == null) it.copy(feed = cached.first, stale = true, updatedAt = cached.second, loading = false) else it }
+                if (cached != null && requestVersion == initialVersion && graph.pages.generation == generation) _state.update { if (it.feed == null) it.copy(feed = tidy(cached.first), stale = true, updatedAt = cached.second, loading = false) else it }
             }
         }
         reload(fresh = false)
@@ -129,7 +135,8 @@ class FeedModel(
         job = viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { (replace ?: load)(fresh) } }
             if (version != requestVersion) return@launch
-            result.onSuccess { feed ->
+            result.onSuccess { loaded ->
+                val feed = tidy(loaded)
                 // An empty answer (offline, everything failed) never replaces something to show.
                 val shown = _state.value.feed
                 if (feed.isEmpty && feed.message == null && shown != null && !shown.isEmpty && !switching) {
@@ -187,7 +194,7 @@ class FeedModel(
             _state.update { st ->
                 if (version != requestVersion) return@update st
                 val feed = st.feed ?: return@update st.copy(loadingMore = false)
-                val page = next.getOrNull()
+                val page = next.getOrNull()?.let(::tidy)
                 // A failed page keeps its token, so "Try again" (or scrolling back down) asks again.
                 if (page == null) st.copy(loadingMore = false, moreFailed = true)
                 else st.copy(loadingMore = false, feed = feed + page)

@@ -42,6 +42,7 @@ import app.oriel.ui.theme.LocalReduceAnimation
 import kotlinx.coroutines.delay
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -105,6 +106,9 @@ fun MoreButton(onClick: () -> Unit, modifier: Modifier = Modifier, tint: Color =
     ) { Icon(OrielIcons.More, "More", tint = tint, modifier = Modifier.size(20.dp)) }
 }
 
+/** The shorts of the list a card sits in, in order: tapping one carries on through them rather than the general feed. */
+val LocalShortsFeed = compositionLocalOf<List<String>> { emptyList() }
+
 // ---- videos ------------------------------------------------------------------------------
 
 /**
@@ -116,13 +120,14 @@ fun MoreButton(onClick: () -> Unit, modifier: Modifier = Modifier, tint: Color =
 fun VideoCard(video: Video, modifier: Modifier = Modifier, showAvatar: Boolean = false, titleColor: Color = MaterialTheme.colorScheme.onSurface, metaColor: Color = MaterialTheme.colorScheme.onSurfaceVariant) {
     val app = LocalAppState.current
     val haptics = rememberHaptics()
+    val shortsFeed = LocalShortsFeed.current
     val origin = remember { OriginCapture() }
     // A card gives under the finger rather than washing over, as Apple's TV app's do.
     CompositionLocalProvider(LocalIndication provides CardPress) {
     Column(
         modifier
             .fillMaxWidth()
-            .longPressMenuClickable(onClick = { origin.record(); app.openVideo(video) }, onLongClick = { app.showMenu(video) }, onPress = { app.connection.warmAhead(video, pressed = true) })
+            .longPressMenuClickable(onClick = { origin.record(); app.openVideo(video, shortsFeed = shortsFeed) }, onLongClick = { app.showMenu(video) }, onPress = { app.connection.warmAhead(video, pressed = true) })
             .padding(horizontal = PAGE_GUTTER, vertical = 10.dp),
     ) {
         // A card that stays on screen gets its stream resolved, so the tap plays at once.
@@ -167,12 +172,13 @@ fun VideoRow(
     trailing: (@Composable () -> Unit)? = null,
 ) {
     val app = LocalAppState.current
+    val shortsFeed = LocalShortsFeed.current
     val origin = remember { OriginCapture() }
     Row(
         modifier
             .fillMaxWidth()
             .background(if (active) activeTint.copy(alpha = 0.14f) else Color.Transparent)
-            .longPressMenuClickable(onClick = { origin.record(); onClick?.invoke() ?: app.openVideo(video) }, onLongClick = { app.showMenu(video) }, onPress = { app.connection.warmAhead(video, pressed = true) })
+            .longPressMenuClickable(onClick = { origin.record(); onClick?.invoke() ?: app.openVideo(video, shortsFeed = shortsFeed) }, onLongClick = { app.showMenu(video) }, onPress = { app.connection.warmAhead(video, pressed = true) })
             .padding(horizontal = PAGE_GUTTER, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -212,13 +218,14 @@ fun VideoShelfCard(video: Video, width: Dp = 260.dp) {
 @Composable
 fun ShortCard(video: Video, modifier: Modifier = Modifier, width: Dp? = 150.dp, titleColor: Color = MaterialTheme.colorScheme.onSurface) {
     val app = LocalAppState.current
+    val shortsFeed = LocalShortsFeed.current
     val origin = remember { OriginCapture() }
     origin.corner = with(androidx.compose.ui.platform.LocalDensity.current) { CARD_CORNER.toPx() }
     CompositionLocalProvider(LocalIndication provides TilePress) {
         Column(
             modifier
                 .then(if (width != null) Modifier.width(width) else Modifier.fillMaxWidth())
-                .longPressMenuClickable(onClick = { origin.record(); app.openShort(video) }, onLongClick = { app.showMenu(video) }),
+                .longPressMenuClickable(onClick = { origin.record(); app.openShort(video, feed = shortsFeed) }, onLongClick = { app.showMenu(video) }),
         ) {
             RemoteImage(Thumbnails.short(video), Modifier.fillMaxWidth().aspectRatio(9f / 16f).then(origin.modifier), RoundedCornerShape(CARD_CORNER), border = true)
             Spacer(Modifier.height(8.dp))
@@ -445,8 +452,11 @@ fun LazyListScope.rowSkeletons(count: Int, columns: Int, prefix: String = "sk") 
  * On a wide window video cards sit [columns] to a row; channels, playlists and posts keep a row of their own.
  */
 fun LazyListScope.feedShelves(feed: Feed, compact: Boolean = false, keyPrefix: String = "", columns: Int = 1, shortColumns: Int = 2) {
+    val feedShorts = feed.shelves.flatMap { it.items }.filter { it is Video && it.isShort }.map { it.id }.distinct()
     feed.shelves.forEachIndexed { s, shelf ->
         val k = "$keyPrefix$s"
+        // A shelf of shorts carries on through its own; a list with shorts among its videos, through the list's.
+        val shortsFeed = if (shelf.kind == ShelfKind.SHORTS || shelf.kind == ShelfKind.CAROUSEL) shelf.items.filter { it is Video && it.isShort }.map { it.id } else feedShorts
         when (shelf.kind) {
             ShelfKind.FEED, ShelfKind.LIST -> {
                 if (shelf.title != null) item(key = "h$k", contentType = "header") { SectionHeader(shelf.title!!, shelf.subtitle) }
@@ -457,37 +467,43 @@ fun LazyListScope.feedShelves(feed: Feed, compact: Boolean = false, keyPrefix: S
                 fun flush() {
                     if (run.isEmpty()) return
                     gridItems(run, perRow, key = { "i$k:${it.id}" }, contentType = { it::class.simpleName + compact }) { item ->
-                        Box(if (perRow > 1) Modifier else feedItem()) { if (asRows) ItemRow(item) else ItemCard(item) }
+                        CompositionLocalProvider(LocalShortsFeed provides shortsFeed) { Box(if (perRow > 1) Modifier else feedItem()) { if (asRows) ItemRow(item) else ItemCard(item) } }
                     }
                     run = ArrayList()
                 }
                 shelf.items.distinctBy { it.id }.forEach { entry ->
                     if (perRow > 1 && entry !is Video) {
                         flush()
-                        item(key = "i$k:${entry.id}", contentType = entry::class.simpleName + compact) { Box(feedItem()) { if (asRows) ItemRow(entry) else ItemCard(entry) } }
+                        item(key = "i$k:${entry.id}", contentType = entry::class.simpleName + compact) { CompositionLocalProvider(LocalShortsFeed provides shortsFeed) { Box(feedItem()) { if (asRows) ItemRow(entry) else ItemCard(entry) } } }
                     } else run.add(entry)
                 }
                 flush()
                 if (shelf.title != null) item(key = "g$k", contentType = "gap") { Spacer(Modifier.height(12.dp)) }
             }
             ShelfKind.CAROUSEL -> item(key = "c$k", contentType = "carousel") {
-                Column(feedItem().padding(bottom = 18.dp)) {
-                    shelf.title?.let { SectionHeader(it, shelf.subtitle) }
-                    ShelfRow(shelf.items) { ItemCarouselCard(it) }
+                CompositionLocalProvider(LocalShortsFeed provides shortsFeed) {
+                    Column(feedItem().padding(bottom = 18.dp)) {
+                        shelf.title?.let { SectionHeader(it, shelf.subtitle) }
+                        ShelfRow(shelf.items) { ItemCarouselCard(it) }
+                    }
                 }
             }
             ShelfKind.SHORTS -> item(key = "s$k", contentType = "shorts") {
-                Column(feedItem().padding(top = 6.dp, bottom = 18.dp)) {
-                    SectionHeader(shelf.title ?: "Shorts", icon = OrielIcons.ShortsSelected)
-                    ShelfRow(shelf.items, spacing = 12.dp) { (it as? Video)?.let { v -> ShortCard(v, width = 150.dp) } }
+                CompositionLocalProvider(LocalShortsFeed provides shortsFeed) {
+                    Column(feedItem().padding(top = 6.dp, bottom = 18.dp)) {
+                        SectionHeader(shelf.title ?: "Shorts", icon = OrielIcons.ShortsSelected)
+                        ShelfRow(shelf.items, spacing = 12.dp) { (it as? Video)?.let { v -> ShortCard(v, width = 150.dp) } }
+                    }
                 }
             }
             ShelfKind.SHORTS_GRID -> {
                 val rows = shelf.items.filterIsInstance<Video>().chunked(shortColumns)
                 items(rows.size, key = { "r$k:$it" }, contentType = { "shortsRow" }) { r ->
-                    Row(feedItem().padding(horizontal = PAGE_GUTTER, vertical = 7.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        rows[r].forEach { v -> ShortCard(v, Modifier.weight(1f), width = null) }
-                        repeat(shortColumns - rows[r].size) { Spacer(Modifier.weight(1f)) }
+                    CompositionLocalProvider(LocalShortsFeed provides shortsFeed) {
+                        Row(feedItem().padding(horizontal = PAGE_GUTTER, vertical = 7.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            rows[r].forEach { v -> ShortCard(v, Modifier.weight(1f), width = null) }
+                            repeat(shortColumns - rows[r].size) { Spacer(Modifier.weight(1f)) }
+                        }
                     }
                 }
             }

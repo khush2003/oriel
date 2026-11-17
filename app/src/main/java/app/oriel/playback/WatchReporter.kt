@@ -9,6 +9,7 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -67,7 +68,7 @@ class WatchReporter(private val graph: AppGraph, private val clock: () -> Long =
 
     private fun begin(videoId: String, positionMs: Long, short: Boolean) {
         val report = WatchReport(videoId, clock)
-        val tracking = graph.scope.async(Dispatchers.IO) { graph.yt.playbackTracking(videoId) }
+        val tracking = graph.scope.async(Dispatchers.IO) { retrying({ it != null }) { graph.yt.playbackTracking(videoId) } }
         val next = Viewing(report, short, tracking)
         viewing = next
         report.observe(positionMs / 1000.0, playing = true)
@@ -75,7 +76,7 @@ class WatchReporter(private val graph: AppGraph, private val clock: () -> Long =
         outbox.trySend {
             val urls = tracking.await()
             if (urls == null) log(videoId, "no signed-in tracking URLs")
-            else log(videoId, "start → ${graph.yt.reportStart(urls, report, at, short)}")
+            else log(videoId, "start → ${retrying(::delivered) { graph.yt.reportStart(urls, report, at, short) }}")
         }
     }
 
@@ -83,10 +84,27 @@ class WatchReporter(private val graph: AppGraph, private val clock: () -> Long =
         val ping = viewing.report.ping(final) ?: return
         outbox.trySend {
             val urls = viewing.tracking.await() ?: return@trySend
-            val status = graph.yt.reportWatchtime(urls, viewing.report, ping, viewing.short)
+            val status = retrying(::delivered) { graph.yt.reportWatchtime(urls, viewing.report, ping, viewing.short) }
             log(viewing.report.videoId, "watchtime ${ping.startTimes}–${ping.endTimes}${if (final) " final" else ""} → $status")
         }
     }
+
+    /**
+     * [block] again, a couple of times with a pause, while [ok] says it didn't land: a dropped
+     * connection or a refused ping used to be lost without a trace, and with it the entry in
+     * YouTube's history that keeps a watched video out of the recommendations.
+     */
+    private suspend fun <T> retrying(ok: (T) -> Boolean, block: suspend () -> T): T {
+        var result = block()
+        var tries = 0
+        while (!ok(result) && tries < RETRIES) {
+            delay(RETRY_DELAY_MS * (++tries))
+            result = block()
+        }
+        return result
+    }
+
+    private fun delivered(status: Int?) = status != null && status in 200..299
 
     // Statuses only: never a URL, which carries the session's identifiers.
     // Debug builds only: the ids are a watch history, and logcat isn't the place for one.
@@ -96,5 +114,7 @@ class WatchReporter(private val graph: AppGraph, private val clock: () -> Long =
 
     private companion object {
         const val TAG = "WatchReporter"
+        const val RETRIES = 2
+        const val RETRY_DELAY_MS = 1_000L
     }
 }

@@ -7,7 +7,14 @@ import kotlinx.serialization.Serializable
 
 // Tabs
 @Serializable data object HomeRoute
-@Serializable data class ShortsRoute(val startId: String? = null)
+/** [queue]: the shorts to play after [startId], from the feed it was opened from; empty for the general sequence. */
+@Serializable data class ShortsRoute(val startId: String? = null, val queue: List<String> = emptyList())
+
+/** The shorts of [feed] after [tappedId], in the feed's order: where the Shorts page carries on from a tap. */
+fun shortsAfter(tappedId: String, feed: List<String>, limit: Int = 60): List<String> {
+    val at = feed.indexOf(tappedId)
+    return if (at < 0) emptyList() else feed.drop(at + 1).filterNot { it == tappedId }.distinct().take(limit)
+}
 @Serializable data object SubscriptionsRoute
 @Serializable data object YouRoute
 @Serializable data class SearchRoute(val query: String? = null)

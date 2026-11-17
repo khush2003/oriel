@@ -175,8 +175,8 @@ import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.withContext
 
 /** The endless Shorts sequence, with each short's overlay info fetched as it comes up. */
-class ShortsModel(private val graph: AppGraph, startId: String?) : ViewModel() {
-    private val _ids = MutableStateFlow(listOfNotNull(startId))
+class ShortsModel(private val graph: AppGraph, startId: String?, queue: List<String> = emptyList()) : ViewModel() {
+    private val _ids = MutableStateFlow(seed(startId, queue))
     val ids: StateFlow<List<String>> = _ids.asStateFlow()
     private val _info = MutableStateFlow<Map<String, ShortInfo>>(emptyMap())
     val info: StateFlow<Map<String, ShortInfo>> = _info.asStateFlow()
@@ -188,7 +188,8 @@ class ShortsModel(private val graph: AppGraph, startId: String?) : ViewModel() {
 
     init {
         _info.value = previewInfo
-        loadMore()
+        // Opened from a list, its shorts play first: the general sequence waits until the pager nears the end of them.
+        if (queue.isEmpty()) loadMore()
     }
 
     /**
@@ -232,6 +233,9 @@ class ShortsModel(private val graph: AppGraph, startId: String?) : ViewModel() {
     }
 
     companion object {
+        /** The shorts to start with: the tapped one, then the rest of the list it was opened from. */
+        internal fun seed(startId: String?, queue: List<String>): List<String> = (listOfNotNull(startId) + queue).distinct()
+
         /** Screenshot tests: overlay info to start with, in place of the network. */
         @androidx.annotation.VisibleForTesting
         internal var previewInfo: Map<String, ShortInfo> = emptyMap()
@@ -429,10 +433,10 @@ private fun rememberShortsPlayback(graph: AppGraph, maxHeight: Int): ShortsPlayb
 @kotlin.OptIn(ExperimentalFoundationApi::class)
 @OptIn(UnstableApi::class)
 @Composable
-fun ShortsScreen(startId: String?) {
+fun ShortsScreen(startId: String?, queue: List<String> = emptyList()) {
     val app = LocalAppState.current
     val graph = app.graph
-    val model: ShortsModel = viewModel(key = "shorts:$startId") { ShortsModel(graph, startId) }
+    val model: ShortsModel = viewModel(key = "shorts:$startId") { ShortsModel(graph, startId, queue) }
     val ids by model.ids.collectAsState()
     val infos by model.info.collectAsState()
     val error by model.error.collectAsState()
@@ -517,12 +521,15 @@ fun ShortsScreen(startId: String?) {
         if (pager.settledPage >= ids.size - 4) model.loadMore()
     }
 
-    // Into history once the short's title is known, which can be after it starts playing.
+    // Into history as soon as it's shown, then again with its title once that's known (which can be
+    // after it starts playing, or never if it's swiped past first): a short skipped through still counts as seen.
     val shownId = ids.getOrNull(pager.settledPage)
     val shownTitle = shownId?.let { infos[it]?.title }
     LaunchedEffect(shownId, shownTitle) {
-        if (shownId == null || shownTitle == null || graph.settings.current.pauseHistory) return@LaunchedEffect
-        graph.library.addHistory(Video(shownId, shownTitle, channel = infos[shownId]?.channel, isShort = true))
+        if (shownId == null || graph.settings.current.pauseHistory) return@LaunchedEffect
+        // Without a title, an entry that already has one is left as it is.
+        if (shownTitle == null && graph.library.state.value.history.any { it.video.id == shownId }) return@LaunchedEffect
+        graph.library.addHistory(Video(shownId, shownTitle.orEmpty(), channel = infos[shownId]?.channel, isShort = true))
     }
 
     // The picture ends above the tab bar, which sits on black here, as YouTube's does:
