@@ -110,6 +110,59 @@ class LibraryStoreTest {
     }
 
     @Test
+    fun aPartialLikesSyncKeepsYouTubeOrderAheadOfTheUnseenCachedTail() = runBlocking {
+        val s = store()
+        s.awaitLoaded()
+        s.mergeRemoteLikes(listOf(video("cachedOne"), video("cachedTwo"), video("olderUpload")), complete = true)
+        s.beginSync()
+
+        val remote = listOf(
+            video("olderUpload").copy(publishedText = "6 years ago"),
+            video("newerUpload").copy(publishedText = "1 day ago"),
+            video("olderUpload"),
+        )
+        s.mergeRemoteLikes(remote, complete = false)
+        assertEquals(listOf("olderUpload", "newerUpload", "cachedOne", "cachedTwo"), s.state.value.liked.map { it.id })
+        assertEquals("6 years ago", s.state.value.liked.first().publishedText)
+
+        s.beginSync()
+        s.mergeRemoteLikes(remote, complete = true)
+        assertEquals(listOf("olderUpload", "newerUpload"), s.state.value.liked.map { it.id })
+    }
+
+    @Test
+    fun aFirstLikesSyncKeepsLocalOnlyLikesWithoutInterruptingYouTubeOrder() = runBlocking {
+        val s = store()
+        s.awaitLoaded()
+        s.setLiked(video("localOlder"), true)
+        s.setLiked(video("localNewer"), true)
+        s.beginSync()
+
+        s.mergeRemoteLikes(listOf(video("remoteNewer"), video("remoteOlder")), complete = true, keepLocal = true)
+        assertEquals(listOf("remoteNewer", "remoteOlder", "localNewer", "localOlder"), s.state.value.liked.map { it.id })
+    }
+
+    @Test
+    fun likesChangedDuringSyncKeepTheirNewLocalOrderAndRemovals() = runBlocking {
+        val s = store()
+        s.awaitLoaded()
+        val reliked = video("reliked")
+        val removed = video("removed")
+        val unchanged = video("unchanged")
+        val remote = listOf(removed, unchanged, reliked)
+        s.mergeRemoteLikes(remote, complete = true)
+        s.beginSync()
+
+        s.setLiked(reliked, false)
+        s.setLiked(reliked, true)
+        s.setLiked(video("brandNew"), true)
+        s.setLiked(removed, false)
+        s.mergeRemoteLikes(remote, complete = true)
+
+        assertEquals(listOf("brandNew", "reliked", "unchanged"), s.state.value.liked.map { it.id })
+    }
+
+    @Test
     fun addingToAPlaylistKeepsOrderAndSkipsWhatsThere() = runBlocking {
         val s = store()
         s.awaitLoaded()

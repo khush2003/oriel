@@ -355,7 +355,17 @@ class LibraryStore(
      * in, which mustn't lose what was liked here while signed out).
      */
     fun mergeRemoteLikes(remote: List<Video>, complete: Boolean, keepLocal: Boolean = false) = update { s ->
-        s.copy(liked = reconcile(s.liked, remote, replace = complete && !keepLocal, touchedLikes) { it.id })
+        val changed = touchedLikes.toSet()
+        val remoteIds = remote.mapTo(HashSet()) { it.id }
+        // A like made during the fetch is newer than its snapshot, even when re-liking a video
+        // that the snapshot still lists in its old position. An unlike stays out of the result.
+        val newLikes = s.liked.filter { it.id in changed }
+        val accountLikes = remote.filterNot { it.id in changed }
+        // We don't know where local-only entries belong in YouTube's chronology. Keep them in
+        // their local order after the known account prefix rather than mixing them into that prefix.
+        val localTail = if (complete && !keepLocal) emptyList() else
+            s.liked.filter { it.id !in changed && it.id !in remoteIds }
+        s.copy(liked = (newLikes + accountLikes + localTail).distinctBy { it.id })
     }
 
     // ---- watch later ---------------------------------------------------------------------
