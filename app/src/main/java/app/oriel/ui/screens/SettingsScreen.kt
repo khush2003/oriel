@@ -70,6 +70,8 @@ fun SettingsScreen() {
     val account by graph.account.account.collectAsState()
     val syncing by graph.account.syncing.collectAsState()
     val expired by graph.account.sessionExpired.collectAsState()
+    val profiles by graph.account.profiles.collectAsState()
+    val profile by graph.account.active.collectAsState()
     var picker by remember { mutableStateOf<Picker<*>?>(null) }
     var licences by remember { mutableStateOf(false) }
     var cacheBytes by remember { mutableStateOf<Long?>(null) }
@@ -84,7 +86,7 @@ fun SettingsScreen() {
     val update by updates.state.collectAsState()
 
     PageScaffold(title = "Settings", onBack = app::back, width = PageWidth.Form) {
-        if (signedIn && expired) item(key = "expired") { SessionExpiredCard(onSignIn = { app.navigate(LoginRoute) }) }
+        if (signedIn && expired) item(key = "expired") { SessionExpiredCard(onSignIn = { app.navigate(LoginRoute(reauth = graph.account.active.value.id)) }) }
         item(key = "account") {
             SettingsGroup(header = "Account", footer = if (signedIn) "Your Google sign-in stays on this device and is only ever sent to YouTube." else "Oriel works fully without an account. Signing in brings your recommendations, subscriptions, likes and playlists, and lets likes and saves reach YouTube.") {
                 if (signedIn) {
@@ -99,14 +101,20 @@ fun SettingsScreen() {
                     RowDivider()
                     SettingsRow("Sync library now", OrielIcons.Repeat, value = if (syncing) "Syncing…" else null, enabled = !syncing, onClick = { syncLibrary(app) })
                     RowDivider()
+                    SettingsRow("Accounts", OrielIcons.Person, chevron = true, onClick = { app.openAccounts() })
+                    RowDivider()
                     SettingsRow("Sign out", OrielIcons.SignOut, destructive = true, onClick = {
-                        app.alert = AlertSpec("Sign out?", "Your library on this device stays. Recommendations go back to Oriel's own.", listOf(
+                        app.alert = AlertSpec("Sign out?", "This account's library stays on this device for when you sign in again, and you'll be switched to Guest. Recommendations go back to Oriel's own.", listOf(
                             AlertAction("Cancel"),
-                            AlertAction("Sign out", destructive = true) { graph.account.signOut() },
+                            AlertAction("Sign out", destructive = true) { app.scope.launch { graph.account.signOut() } },
                         ))
                     })
                 } else {
-                    SettingsRow("Sign in with Google", OrielIcons.SignIn, chevron = true, onClick = { app.navigate(LoginRoute) })
+                    SettingsRow("Sign in with Google", OrielIcons.SignIn, chevron = true, onClick = { app.signIn() })
+                    if (profiles.any { !it.isGuest }) {
+                        RowDivider()
+                        SettingsRow("Accounts", OrielIcons.Person, chevron = true, onClick = { app.openAccounts() })
+                    }
                 }
             }
         }
@@ -134,7 +142,7 @@ fun SettingsScreen() {
                 })
                 if (signedIn) {
                     RowDivider()
-                    SwitchRow("Premium formats", s.premium, { v -> set { it.copy(premium = v) } }, OrielIcons.Verified, subtitle = "256 kbps audio where YouTube offers it to a Premium account")
+                    SwitchRow("Premium formats", profile.premiumFormats, { v -> graph.account.setPremium(profile.id, v) }, OrielIcons.Verified, subtitle = "256 kbps audio where YouTube offers it to a Premium account")
                 }
             }
         }

@@ -68,7 +68,8 @@ class InboxModel(private val graph: AppGraph) : ViewModel() {
     private val _state = MutableStateFlow(InboxState())
     val state = _state.asStateFlow()
     /** Per account, so a different sign-in never opens on someone else's last inbox. */
-    private val cacheKey = "inbox-" + (graph.account.account.value?.name?.hashCode() ?: 0)
+    // The page cache is the active profile's own.
+    private val cacheKey = "inbox"
 
     init {
         // The last inbox shows at once, as every feed's last copy does, while the new one loads.
@@ -129,7 +130,7 @@ class InboxModel(private val graph: AppGraph) : ViewModel() {
 @Composable
 fun NotificationsScreen() {
     val app = LocalAppState.current
-    val model: InboxModel = viewModel { InboxModel(app.graph) }
+    val model: InboxModel = viewModel(key = "inbox:${app.graph.account.active.collectAsState().value.id}") { InboxModel(app.graph) }
     val state by model.state.collectAsState()
     PageScaffold(
         title = "Notifications",

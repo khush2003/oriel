@@ -75,7 +75,10 @@ substitute. Do not clear an existing installation's data or uninstall it without
 5. Sign-in is optional and manual, using only an authorized test account. Never ask for or
    extract cookies. If account behavior is in scope, check sign-out and that account-specific
    pages don't show the previous account's state. A bot check is a network/upstream result,
-   not permission to bypass it.
+   not permission to bypass it. For multi-account changes, use two authorized test accounts:
+   add the second from You › Accounts, switch back and forth (also while a video plays and in
+   picture-in-picture), and check that likes, Watch later, history and the Home feed follow the
+   account, on the device and on youtube.com. Sign one out and remove the other, then relaunch.
 6. Change a harmless setting and create an invented local playlist. Relaunch and check they
    persist. For storage changes, also test an authorized in-place update without clearing data.
 7. For UI changes, check dark/light themes and relevant gestures on the changed surface.

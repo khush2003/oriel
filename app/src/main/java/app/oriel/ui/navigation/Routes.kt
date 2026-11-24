@@ -30,7 +30,8 @@ fun shortsAfter(tappedId: String, feed: List<String>, limit: Int = 60): List<Str
 @Serializable data object ChannelsRoute
 @Serializable data object PlaylistsRoute
 @Serializable data object SettingsRoute
-@Serializable data object LoginRoute
+/** Google's sign-in; [reauth] is the profile whose sign-in expired, when it's signing in again. */
+@Serializable data class LoginRoute(val reauth: String? = null)
 @Serializable data object NotificationsRoute
 
 enum class Tab { HOME, SHORTS, SUBSCRIPTIONS, YOU }

@@ -55,7 +55,6 @@ import app.oriel.ui.components.cardSkeletons
 import app.oriel.ui.LocalWindowLayout
 import app.oriel.ui.PageWidth
 import app.oriel.ui.components.feedShelves
-import app.oriel.ui.navigation.LoginRoute
 import app.oriel.ui.navigation.Tab
 
 /**
@@ -70,7 +69,8 @@ fun HomeScreen() {
     val graph = app.graph
     val signedIn by graph.account.signedIn.collectAsState()
     val account by graph.account.account.collectAsState()
-    val model: FeedModel = viewModel(key = "home:$signedIn") {
+    val profile by graph.account.active.collectAsState()
+    val model: FeedModel = viewModel(key = "home:${profile.id}:$signedIn") {
         FeedModel(graph, cacheKey = "home-$signedIn", load = { fresh ->
             if (signedIn) graph.yt.browse(YouTube.HOME, fresh = fresh) else graph.homeComposer.compose(fresh)
         }, hideWatched = true)
@@ -129,9 +129,10 @@ fun HomeScreen() {
         onShown = model::refreshIfStale,
         onAtTop = model::readerAt,
         titleTrailing = {
+            val anchor = remember { AnchorHolder() }
             Box(
-                Modifier.size(44.dp).clip(CircleShape)
-                    .clickable(onClickLabel = "Open You") { haptics.play(Haptic.Tap); app.selectTab(Tab.YOU) }
+                Modifier.size(44.dp).accountsAnchor(anchor).clip(CircleShape)
+                    .clickable(onClickLabel = "Accounts") { haptics.play(Haptic.Expand); app.openAccounts(anchor.bounds) }
                     .semantics { contentDescription = account?.name?.let { "Account, $it" } ?: "Account" },
                 contentAlignment = Alignment.Center,
             ) { Avatar(account?.avatar, 34.dp, name = account?.name) }
@@ -151,7 +152,7 @@ fun HomeScreen() {
         }
         refreshNotice(state, onRetry = ::retry)
         if (!signedIn && !bannerDismissed) item(key = "signin", contentType = "banner") {
-            SignInCard(onSignIn = { app.navigate(LoginRoute) }, onDismiss = { graph.settings.update { it.copy(signInBannerDismissed = true) } })
+            SignInCard(onSignIn = { app.signIn() }, onDismiss = { graph.settings.update { it.copy(signInBannerDismissed = true) } })
         }
         when {
             feed == null && state.loading -> cardSkeletons(5, columns)

@@ -5,12 +5,15 @@ import app.oriel.AppGraph
 import app.oriel.BuildConfig
 import app.oriel.core.PlaybackTracking
 import app.oriel.core.WatchReport
+import app.oriel.data.AccountManager
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Tells YouTube what a signed-in user watches, as its own player would, so it
@@ -21,9 +24,12 @@ import kotlinx.coroutines.launch
  * Nothing is sent signed out or while history is paused. The pings go out
  * one at a time, in order, on the app's scope, so the final one of a viewing
  * still leaves when the player that made it is gone.
+ *
+ * A viewing belongs to the account it began under: its pings carry that [AccountManager.epoch]
+ * and are dropped once another account is in use, never sent with its sign-in.
  */
 class WatchReporter(private val graph: AppGraph, private val clock: () -> Long = System::currentTimeMillis) {
-    private class Viewing(val report: WatchReport, val short: Boolean, val tracking: Deferred<PlaybackTracking?>)
+    private class Viewing(val report: WatchReport, val short: Boolean, val tracking: Deferred<PlaybackTracking?>, val epoch: Int)
 
     private var viewing: Viewing? = null
     private val outbox = Channel<suspend () -> Unit>(Channel.UNLIMITED)
@@ -60,6 +66,14 @@ class WatchReporter(private val graph: AppGraph, private val clock: () -> Long =
         send(current, final = true)
     }
 
+    /** Ends the current viewing and waits, up to [timeoutMs], for the pings queued before it to go out. */
+    suspend fun drain(timeoutMs: Long) {
+        finish()
+        val sent = CompletableDeferred<Unit>()
+        if (outbox.trySend { sent.complete(Unit) }.isFailure) return
+        withTimeoutOrNull(timeoutMs) { sent.await() }
+    }
+
     /** Ends the current viewing and lets the pings still queued drain; this reporter is done. */
     fun close() {
         finish()
@@ -68,15 +82,17 @@ class WatchReporter(private val graph: AppGraph, private val clock: () -> Long =
 
     private fun begin(videoId: String, positionMs: Long, short: Boolean) {
         val report = WatchReport(videoId, clock)
-        val tracking = graph.scope.async(Dispatchers.IO) { retrying({ it != null }) { graph.yt.playbackTracking(videoId) } }
-        val next = Viewing(report, short, tracking)
+        val epoch = graph.account.epoch
+        val tracking = graph.scope.async(Dispatchers.IO) { if (graph.account.epoch == epoch) retrying({ it != null || graph.account.epoch != epoch }) { graph.yt.playbackTracking(videoId) } else null }
+        val next = Viewing(report, short, tracking, epoch)
         viewing = next
         report.observe(positionMs / 1000.0, playing = true)
         val at = positionMs / 1000.0
         outbox.trySend {
             val urls = tracking.await()
+            if (graph.account.epoch != epoch) return@trySend
             if (urls == null) log(videoId, "no signed-in tracking URLs")
-            else log(videoId, "start → ${retrying(::delivered) { graph.yt.reportStart(urls, report, at, short) }}")
+            else log(videoId, "start → ${retrying({ delivered(it) || graph.account.epoch != epoch }) { graph.yt.reportStart(urls, report, at, short) }}")
         }
     }
 
@@ -84,7 +100,9 @@ class WatchReporter(private val graph: AppGraph, private val clock: () -> Long =
         val ping = viewing.report.ping(final) ?: return
         outbox.trySend {
             val urls = viewing.tracking.await() ?: return@trySend
-            val status = retrying(::delivered) { graph.yt.reportWatchtime(urls, viewing.report, ping, viewing.short) }
+            if (graph.account.epoch != viewing.epoch) return@trySend
+            // Not asked again once the account has changed: the ping would go out as the next one.
+            val status = retrying({ delivered(it) || graph.account.epoch != viewing.epoch }) { graph.yt.reportWatchtime(urls, viewing.report, ping, viewing.short) }
             log(viewing.report.videoId, "watchtime ${ping.startTimes}–${ping.endTimes}${if (final) " final" else ""} → $status")
         }
     }

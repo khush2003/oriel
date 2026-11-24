@@ -140,18 +140,64 @@ class YouTube(
     private val cache = PageCache(capacity = 128)
     private val visitorMutex = Mutex()
 
+    /**
+     * Guards the session's parts (cookie, channel, visitor identity) so a request reads them
+     * together: with several accounts, one read halfway through a switch would otherwise send
+     * one account's cookie with another's channel or visitor id.
+     */
+    private val sessionLock = Any()
+
+    /** Goes up with every change of session, so an answer to the old one can't write into the new. */
+    @Volatile
+    private var sessionGeneration = 0
+
     /** Raw cookie header of a signed-in youtube.com session, or null when signed out. */
     var cookie: String?
         get() = innerTube.cookie
-        set(value) {
-            innerTube.cookie = value
-            innerTube.useLoginForBrowse = !value.isNullOrBlank()
+        set(value) = synchronized(sessionLock) {
+            sessionGeneration++
+            putCookie(value)
             cache.clear()
         }
 
     var dataSyncId: String?
         get() = innerTube.dataSyncId
-        set(value) { innerTube.dataSyncId = value?.substringBefore("||")?.ifBlank { null } }
+        set(value) = synchronized(sessionLock) { innerTube.dataSyncId = channelOf(value) }
+
+    /**
+     * Puts a whole session on the client at once: [cookie] (null for signed out), the account's
+     * [dataSyncId] and the [visitorData] YouTube issued to it before (null to have a new one
+     * issued). Cached pages of the old session are dropped.
+     */
+    fun setSession(cookie: String?, dataSyncId: String?, visitorData: String?) = synchronized(sessionLock) {
+        sessionGeneration++
+        // Signed out first, so that what the library's own requests read in between is never a
+        // mix of the two sessions.
+        putCookie(null)
+        innerTube.dataSyncId = channelOf(dataSyncId)
+        innerTube.visitorData = visitorData
+        visitorRetryAt = 0L
+        putCookie(cookie)
+        cache.clear()
+    }
+
+    private fun putCookie(value: String?) {
+        innerTube.cookie = value
+        innerTube.useLoginForBrowse = !value.isNullOrBlank()
+    }
+
+    private fun channelOf(dataSyncId: String?) = dataSyncId?.substringBefore("||")?.ifBlank { null }
+
+    private class SessionParts(val cookie: String?, val dataSyncId: String?, val visitorData: String?, val generation: Int)
+
+    private fun sessionParts() = synchronized(sessionLock) {
+        SessionParts(innerTube.cookie, innerTube.dataSyncId, innerTube.visitorData, sessionGeneration)
+    }
+
+    /** Keeps the visitor identity YouTube issued with an answer, unless the session changed since it was asked. */
+    private fun adoptVisitor(visitorData: String, generation: Int) = synchronized(sessionLock) {
+        if (generation == sessionGeneration && innerTube.visitorData == null) innerTube.visitorData = visitorData
+    }
 
     private val sapisid: String? get() = sapisidOf(cookie)
 
@@ -179,6 +225,7 @@ class YouTube(
         return visitorMutex.withLock {
             innerTube.visitorData?.let { return@withLock it }
             if (System.currentTimeMillis() < visitorRetryAt) return@withLock null
+            val generation = sessionGeneration
             val fetched = try {
                 innerTube.fetchFreshVisitorData()
             } catch (e: CancellationException) {
@@ -187,7 +234,7 @@ class YouTube(
                 null
             }
             if (fetched == null) visitorRetryAt = System.currentTimeMillis() + VISITOR_BACKOFF_MS
-            else innerTube.visitorData = fetched
+            else adoptVisitor(fetched, generation)
             fetched
         }
     }
@@ -227,9 +274,13 @@ class YouTube(
         val started = System.currentTimeMillis()
         fun canRetry(attempt: Int) = attempt < retries && System.currentTimeMillis() - started < RETRY_BUDGET_MS
         var attempt = 0
+        // Each try goes as the session the call began in: a retry after a switch of account would
+        // otherwise answer one account's page with another's.
+        val session = sessionParts()
         while (true) {
+            if (session.generation != sessionGeneration) throw IOException("The session changed during the request")
             val response = try {
-                send(endpoint, body)
+                send(endpoint, session, body)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: IOException) {
@@ -245,7 +296,7 @@ class YouTube(
                 continue
             }
             val json = response.json()
-            if (innerTube.visitorData == null) json.at("responseContext", "visitorData").string?.let { innerTube.visitorData = it }
+            if (session.visitorData == null) json.at("responseContext", "visitorData").string?.let { adoptVisitor(it, session.generation) }
             return json
         }
     }
@@ -259,11 +310,11 @@ class YouTube(
         return base + Random.nextLong(base / 2)
     }
 
-    private suspend fun send(endpoint: String, body: JsonObjectBuilder.() -> Unit): HttpResponse {
+    private suspend fun send(endpoint: String, session: SessionParts, body: JsonObjectBuilder.() -> Unit): HttpResponse {
         // Without visitor data yet, the call goes without; its answer carries one, which [post] keeps.
-        val visitor = innerTube.visitorData
+        val visitor = session.visitorData
         val locale = innerTube.locale
-        val auth = sapisid
+        val auth = sapisidOf(session.cookie)
         val payload = buildJsonObject {
             putJsonObject("context") {
                 putJsonObject("client") {
@@ -277,7 +328,7 @@ class YouTube(
                 }
                 putJsonObject("user") {
                     put("lockedSafetyMode", false)
-                    if (auth != null) dataSyncId?.let { put("onBehalfOfUser", it) }
+                    if (auth != null) session.dataSyncId?.let { put("onBehalfOfUser", it) }
                 }
             }
             body()
@@ -295,7 +346,7 @@ class YouTube(
             header(HttpHeaders.AcceptLanguage, "${locale.hl},en;q=0.8")
             visitor?.let { header("X-Goog-Visitor-Id", it) }
             val prefs = "PREF=hl=${locale.hl}&gl=${locale.gl}"
-            val cookie = cookie
+            val cookie = session.cookie
             header(HttpHeaders.Cookie, if (cookie.isNullOrBlank() || auth == null) prefs else cookie)
             if (auth != null) {
                 header(HttpHeaders.Authorization, sapisidHash(auth))

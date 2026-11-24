@@ -32,6 +32,7 @@ import app.oriel.ui.components.LongPressOrigin
 import app.oriel.ui.navigation.ChannelRoute
 import app.oriel.ui.navigation.HistoryRoute
 import app.oriel.ui.navigation.HomeRoute
+import app.oriel.ui.navigation.LoginRoute
 import app.oriel.ui.navigation.PlaylistRoute
 import app.oriel.ui.navigation.SearchRoute
 import app.oriel.ui.navigation.ShortsRoute
@@ -163,6 +164,18 @@ class AppState(
     var report by mutableStateOf<ReportRequest?>(null)
     /** A playlist on this device being renamed from its menu (its id is "local:…"). */
     var renameTarget by mutableStateOf<Playlist?>(null)
+
+    /** The account card: switch, add and sign out of the accounts kept on this device. */
+    var accounts by mutableStateOf(false)
+
+    /** The avatar the account card grows out of, in window coordinates; null opens it from the top. */
+    var accountsAnchor: androidx.compose.ui.geometry.Rect? = null
+        private set
+
+    fun openAccounts(from: androidx.compose.ui.geometry.Rect? = null) {
+        accountsAnchor = from
+        accounts = true
+    }
 
     /** Opens "Report a problem"; a [videoId] fills in the video's link. */
     fun reportProblem(kind: ReportKind = ReportKind.BROKEN, videoId: String? = null) {
@@ -343,6 +356,31 @@ class AppState(
         if (!current.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) return
         if (nav.popBackStack()) return
         if (current.tabRoot() != null) activity.moveTaskToBack(true)
+    }
+
+    /**
+     * Google's sign-in. With a signed-out account in use, signing in is that account's again:
+     * its library is picked up even if the page doesn't say which account it was.
+     */
+    fun signIn() = navigate(LoginRoute(reauth = graph.account.active.value.takeIf { !it.isGuest && !it.signedIn }?.id))
+
+    /**
+     * Back to the first page of the tab on top, with the watch page down, and the other tabs'
+     * kept pages let go: after a switch of account, a page further in (a playlist, a channel)
+     * was the last account's.
+     */
+    fun backToTabRoot() {
+        if (sheet.expanded) sheet.collapse()
+        while (nav.currentBackStackEntry?.tabRoot() == null && nav.popBackStack()) Unit
+        val here = nav.currentBackStackEntry?.tabRoot()
+        Tab.entries.filter { it != here }.forEach { tab ->
+            when (tab) {
+                Tab.HOME -> nav.clearBackStack(HomeRoute)
+                Tab.SHORTS -> nav.clearBackStack(ShortsRoute())
+                Tab.SUBSCRIPTIONS -> nav.clearBackStack(SubscriptionsRoute)
+                Tab.YOU -> nav.clearBackStack(YouRoute)
+            }
+        }
     }
 
     fun selectTab(tab: Tab) {

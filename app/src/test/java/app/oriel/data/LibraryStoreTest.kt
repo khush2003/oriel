@@ -173,7 +173,7 @@ class LibraryStoreTest {
 
     @Test
     fun pagesFromBeforeAClearAreDropped() {
-        val pages = PageDiskCache(File(dir, "pages"), scope)
+        val pages = PageDiskCache(File(dir, "pages"), scope, profileId = "guest")
         val before = pages.generation
         pages.write("home", Feed.serializer(), Feed(message = "one"))
         assertEquals("one", pages.read("home", Feed.serializer())?.message)
@@ -184,6 +184,22 @@ class LibraryStoreTest {
         assertNull(pages.read("home", Feed.serializer()))
         pages.write("home", Feed.serializer(), Feed(message = "fresh"))
         assertEquals("fresh", pages.read("home", Feed.serializer())?.message)
-        assertTrue(File(dir, "pages/v${PageDiskCache.VERSION}/home.json").isFile)
+        assertTrue(File(dir, "pages/v${PageDiskCache.VERSION}/guest/home.json").isFile)
+    }
+
+    @Test
+    fun eachProfileHasItsOwnPages() {
+        val pages = PageDiskCache(File(dir, "pages"), scope, profileId = "guest")
+        pages.write("home", Feed.serializer(), Feed(message = "guest's"))
+        val before = pages.generation
+        pages.use("a0")
+        assertNull(pages.read("home", Feed.serializer()))
+        // A load begun for the Guest finishing now doesn't land in the account's pages.
+        pages.write("home", Feed.serializer(), Feed(message = "late"), before)
+        assertNull(pages.read("home", Feed.serializer()))
+        pages.use("guest")
+        assertEquals("guest's", pages.read("home", Feed.serializer())?.message)
+        pages.delete("guest")
+        assertNull(pages.read("home", Feed.serializer()))
     }
 }

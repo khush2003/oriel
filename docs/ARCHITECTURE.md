@@ -25,6 +25,13 @@ on `core`, owns Android storage, and supplies the playback service and Media3 da
 `PlayerConnection` connects UI controls to the media session; avoid making a second player
 in a screen. Check existing state owners before adding another cache or coroutine scope.
 
+Accounts are profiles (`data/ProfileStore.kt`): the Guest and each account signed in here, each
+with its own directory under `files/profiles/`, sealed cookie and visitor ID. `AccountManager`
+owns which one is in use and switches between them; `graph.library` is an `ActiveLibrary` that
+follows the switch. Work that outlives a frame (syncs, mirrors to YouTube, watch-time reports)
+captures `AccountManager.epoch` when it starts and drops its result once the epoch has moved, so
+nothing of one account is written to, or sent as, another.
+
 Parsed page caching lives in `core`'s `PageCache`; disk pages live in `data/PageDiskCache.kt`.
 Playback byte caches live in `playback/MediaCaches.kt` and stay private. Persisted user data
 has migration rules in CONTRIBUTING; disposable cached pages use a cache version instead.

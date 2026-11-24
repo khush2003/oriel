@@ -85,7 +85,16 @@ class QueueController(
     /** The speed play() last set; the player's differing from it means the user chose another. */
     private var appliedSpeed: Float? = null
     private var saveJob: Job? = null
-    private val file = File(graph.context.filesDir, "queue.json")
+    /** The active profile's saved queue: each profile comes back to what it was playing. */
+    @Volatile
+    private var file = queueFile()
+
+    private fun queueFile() = File(graph.profiles.dir(graph.account.active.value.id), "queue.json")
+
+    private val fileLock = Any()
+
+    /** Set while a switch has let go of one profile and the next isn't in place: nothing is saved to either. */
+    private var held = false
 
     fun height(): Int? = if (_audioOnly.value) null else _heightOverride.value ?: graph.settings.videoHeight(graph.network.metered.value)
 
@@ -279,7 +288,7 @@ class QueueController(
     // ---- persistence ---------------------------------------------------------------------
 
     fun scheduleSave() {
-        if (!graph.settings.current.persistQueue) return
+        if (held || !graph.settings.current.persistQueue) return
         saveJob?.cancel()
         saveJob = scope.launch {
             delay(1_000)
@@ -290,7 +299,7 @@ class QueueController(
 
     /** Writes the queue now, on this thread: for the service going away, when a delayed save would be cancelled with it. */
     fun saveNow() {
-        if (!graph.settings.current.persistQueue) return
+        if (held || !graph.settings.current.persistQueue) return
         saveJob?.cancel()
         write(snapshot())
     }
@@ -304,13 +313,15 @@ class QueueController(
     }
 
     /** From the main thread's [saveNow] and the IO dispatcher's scheduled saves alike, one at a time. */
-    private fun write(saved: SavedQueue) = synchronized(file) {
+    private fun write(saved: SavedQueue) = synchronized(fileLock) {
         runCatching { AtomicJson.write(file, AppJson.encodeToString(SavedQueue.serializer(), saved)) }
             .onFailure { CrashLog.nonFatal(graph.context, "Queue save", it) }
         Unit
     }
 
-    private fun readSaved(): SavedQueue? = synchronized(file) {
+    private fun readSaved(): SavedQueue? = synchronized(fileLock) {
+        // Files from before profiles may still be on their way into the profile's directory.
+        runCatching { graph.profiles.adoptLegacyFiles() }
         runCatching { AtomicJson.read(file)?.let { AppJson.decodeFromString(SavedQueue.serializer(), it) } }.getOrNull()?.takeIf { it.videos.isNotEmpty() }
     }
 
@@ -343,6 +354,25 @@ class QueueController(
                 if (player.playbackState == Player.STATE_IDLE && player.mediaItemCount > 0 && player.playerError == null) player.prepare()
             }
         })
+    }
+
+    /** The profile in use is being left: its queue is written, and nothing is saved again until [enterProfile]. */
+    fun leaveProfile() {
+        saveNow()
+        saveJob?.cancel()
+        held = true
+    }
+
+    /** The next profile is in place: its queue comes back, paused, as on a cold start. */
+    fun enterProfile() {
+        file = queueFile()
+        // Normally already empty; not if leaving ran out of time, and the last profile's queue mustn't become this one's.
+        player.stop()
+        player.clearMediaItems()
+        held = false
+        _context.value = QueueContext()
+        _audioOnly.value = false
+        restore()
     }
 
     fun savedQueue(): Pair<List<MediaItem>, Pair<Int, Long>>? {

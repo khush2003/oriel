@@ -97,6 +97,9 @@ class FeedModel(
     /** When the shown feed came from the network; null until it has. */
     private var loadedAt: Long? = null
 
+    /** The profile this feed is for: a model kept for another one doesn't load as the profile in use. */
+    private val profileId = graph.account.active.value.id
+
     /** Whether the reader is at the top of the list, as the screen last said. */
     private var readerAtTop = true
     /** A copy that landed while they weren't, and when: shown once they're back at the top. */
@@ -124,12 +127,14 @@ class FeedModel(
         // What's watched while the feed is up leaves it then, not at the next refresh.
         if (hideWatched) viewModelScope.launch {
             graph.library.state.map { it.history }.distinctUntilChanged().drop(1).collect {
+                // Another profile's history says nothing about this one's feed.
+                if (graph.account.active.value.id != profileId) return@collect
                 _state.update { s -> s.feed?.let(::tidy)?.takeIf { it !== s.feed }?.let { s.copy(feed = it) } ?: s }
             }
         }
         // A new content country or language: what's shown was for the old one.
         viewModelScope.launch {
-            graph.localeVersion.drop(1).collect { reload(fresh = true, replace = shownLoader, quiet = true, key = shownKey) }
+            graph.localeVersion.drop(1).collect { if (graph.account.active.value.id == profileId) reload(fresh = true, replace = shownLoader, quiet = true, key = shownKey) }
         }
     }
 
@@ -159,10 +164,18 @@ class FeedModel(
         }
         // A cache cleared while this loads (signing out, a new country) mustn't get the old page back.
         val generation = graph.pages.generation
+        // And an account switched or signed in or out meanwhile: the answer may be the next one's.
+        val epoch = graph.account.epoch
         job = viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { (replace ?: load)(fresh) } }
             awaitHistory()
             if (version != requestVersion) return@launch
+            if (graph.account.epoch != epoch) {
+                // Still this profile's feed to show (it was made as the switch finished): asked again, as it is now.
+                if (graph.account.active.value.id == profileId) reload(fresh, replace, quiet = true, key = key, whenAtTop = whenAtTop)
+                else _state.update { it.copy(refreshing = false) }
+                return@launch
+            }
             result.onSuccess { loaded ->
                 val feed = tidy(loaded)
                 // An empty answer (offline, everything failed) never replaces something to show.

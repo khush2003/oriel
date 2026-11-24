@@ -51,10 +51,14 @@ import kotlinx.coroutines.launch
  * Google's own sign-in page in a WebView. When it lands back on YouTube
  * signed in, the session cookie and the account's DATASYNC_ID are kept in
  * app-private storage and the page closes. Oriel never sees the password.
+ *
+ * The WebView starts with no cookies, so each sign-in is one account's alone: one already
+ * signed in here is signed in again, another is added ([AccountManager.signIn]). [reauth] is the
+ * profile whose sign-in expired, when that's what this is for.
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun LoginScreen() {
+fun LoginScreen(reauth: String? = null) {
     val app = LocalAppState.current
     var loading by remember { mutableStateOf(true) }
     var finishing by remember { mutableStateOf(false) }
@@ -161,14 +165,24 @@ fun LoginScreen() {
                                 val dataSyncId = raw?.trim('"')?.takeUnless { it == "null" || it.isBlank() }
                                 // In the app's scope, not this screen's: it must finish (or fail) as a whole, whatever the screen does.
                                 app.graph.scope.launch(Dispatchers.Main.immediate) {
-                                    val ok = try {
-                                        app.graph.account.signIn(cookie, dataSyncId)
+                                    val before = app.graph.account.active.value.id
+                                    val result = try {
+                                        app.graph.account.signIn(cookie, dataSyncId, reauth)
                                     } finally {
                                         CookieManager.getInstance().removeAllCookies(null)
                                     }
-                                    if (ok) {
-                                        app.notice("Signed in")
-                                        if (app.nav.currentBackStackEntry?.destination?.hasRoute(LoginRoute::class) == true) app.back()
+                                    val done = when (result) {
+                                        AccountManager.SignInResult.ADDED, AccountManager.SignInResult.SIGNED_IN_AGAIN -> "Signed in"
+                                        // Signed in to another account than the one that expired: that one's in use now.
+                                        AccountManager.SignInResult.SWITCHED_TO_EXISTING -> "Signed in to another account on this device"
+                                        AccountManager.SignInResult.TOO_MANY -> "Remove an account before adding another"
+                                        AccountManager.SignInResult.FAILED -> null
+                                    }
+                                    if (done != null) {
+                                        app.notice(done)
+                                        // Another profile is in use now: back to the tab's first page, as a switch from Accounts goes.
+                                        if (app.graph.account.active.value.id != before) app.backToTabRoot()
+                                        else if (app.nav.currentBackStackEntry?.destination?.hasRoute(LoginRoute::class) == true) app.back()
                                     } else {
                                         finishing = false
                                         app.notice("Sign-in didn't complete. Try again.")

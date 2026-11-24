@@ -58,6 +58,7 @@ data class SettingsState(
     val audioQuality: AudioQuality = AudioQuality.HIGH,
     val dataSaver: Boolean = false,
     val transport: Transport = Transport.AUTO,
+    /** Read once, into the account signed in when profiles came: Premium is now each account's ([app.oriel.data.Profile.premiumFormats]). Kept so older settings still read. */
     val premium: Boolean = false,
     // Playback
     val backgroundPlay: Boolean = true,

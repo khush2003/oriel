@@ -12,6 +12,12 @@ everything it sends, and to whom.
 - If you sign in: your YouTube session cookie, in the app's private storage, encrypted
   (AES-256-GCM) with a key that stays in the Android Keystore and can't be exported. It's never
   logged, and it never leaves the phone except to YouTube's and Google's own servers.
+- With several accounts (You › Accounts), each account and the Guest keep their own copy of
+  everything above, and each account its own encrypted cookie. Only the account in use sends
+  requests, with its own cookie and its own visitor ID; the others send nothing. Accounts on the
+  same phone still share its network address, so YouTube may be able to tell they're used on one
+  device. Removing an account deletes its library and cookie from the phone; signing out deletes
+  the cookie and keeps the library for when you sign in again. Neither changes anything on YouTube.
 - Problem reports: the last five crashes and the last forty errors (playback errors and failed
   page loads), in the app's private storage, until newer ones replace them or you clear them in
   Settings › About › Report a problem. URL queries, cookies, auth headers, email addresses and

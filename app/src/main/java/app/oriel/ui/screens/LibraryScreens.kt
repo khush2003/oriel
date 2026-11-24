@@ -193,11 +193,11 @@ fun HistoryScreen() {
     val positions by graph.library.state.collectSlice { it.positions }
     val pauseHistory by graph.settings.state.collectSlice { it.pauseHistory }
     val signedIn by graph.account.signedIn.collectAsState()
-    val account by graph.account.account.collectAsState()
+    val profile by graph.account.active.collectAsState()
     // Signed in, YouTube's own history too: what was watched on other devices and in its apps.
     var onYouTube by rememberSaveable { mutableStateOf(false) }
     // One model per account, so another sign-in never shows the last one's history.
-    val remote: FeedModel? = if (signedIn) viewModel(key = "history-remote:${accountOwner(account)?.hashCode()}") {
+    val remote: FeedModel? = if (signedIn) viewModel(key = "history-remote:${profile.id}") {
         FeedModel(graph, "history", load = { fresh -> graph.yt.browse(YouTube.HISTORY, fresh = fresh) }, maxAgeMs = 60_000L)
     } else null
     val remoteState = remote?.state?.collectAsState()?.value
@@ -294,11 +294,11 @@ fun PlaylistsScreen() {
     }
     val saved = remember(savedPlaylists) { savedPlaylists.distinctBy { it.id } }
     val signedIn by graph.account.signedIn.collectAsState()
-    val account by graph.account.account.collectAsState()
+    val profile by graph.account.active.collectAsState()
     var creating by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf<Pair<String, String>?>(null) }
     val haptics = rememberHaptics()
-    val remote: FeedModel? = if (signedIn) viewModel(key = "playlists-remote:${accountOwner(account)?.hashCode()}") { FeedModel(graph, "playlists", load = { fresh -> graph.yt.browse(YouTube.PLAYLISTS, fresh = fresh) }, maxAgeMs = 5 * 60_000L) } else null
+    val remote: FeedModel? = if (signedIn) viewModel(key = "playlists-remote:${profile.id}") { FeedModel(graph, "playlists", load = { fresh -> graph.yt.browse(YouTube.PLAYLISTS, fresh = fresh) }, maxAgeMs = 5 * 60_000L) } else null
     val remoteState = remote?.state?.collectAsState()?.value
     PageScaffold(
         title = "Playlists",
