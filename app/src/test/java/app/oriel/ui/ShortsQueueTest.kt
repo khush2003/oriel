@@ -25,4 +25,18 @@ class ShortsQueueTest {
         assertEquals(listOf("b"), ShortsModel.seed("b", emptyList()))
         assertEquals(emptyList<String>(), ShortsModel.seed(null, emptyList()))
     }
+
+    @Test fun shortsWatchedBeforeAreLeftOutOfABatch() {
+        assertEquals(listOf("c"), ShortsModel.unseen(listed = listOf("a"), batch = listOf("a", "b", "c"), seen = setOf("b"), allowSeen = false))
+    }
+
+    @Test fun aBatchOfNothingButWatchedShortsAddsNothing() {
+        assertEquals(emptyList<String>(), ShortsModel.unseen(listed = emptyList(), batch = listOf("a", "b"), seen = setOf("a", "b"), allowSeen = false))
+    }
+
+    @Test fun pastTheLimitWatchedShortsAreBetterThanNone() {
+        assertEquals(listOf("b"), ShortsModel.unseen(listed = listOf("a"), batch = listOf("a", "b", "b"), seen = setOf("a", "b"), allowSeen = true))
+        // Still only the unseen ones when the batch has any.
+        assertEquals(listOf("c"), ShortsModel.unseen(listed = emptyList(), batch = listOf("b", "c"), seen = setOf("b"), allowSeen = true))
+    }
 }

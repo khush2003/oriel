@@ -37,6 +37,27 @@ class WatchedFilterTest {
         assertEquals(listOf("a"), out.items.map { it.id })
     }
 
+    @Test fun aVideoWatchedToTheEndGoesWhereverItWasWatched() {
+        val finishedHere = Video("a", "A", progress = 1f)
+        val finishedElsewhere = Video("b", "B", progress = 0.95f)
+        val out = HomeComposer.dropWatched(feed(Shelf(items = listOf(finishedHere, finishedElsewhere, Video("c", "C")), kind = ShelfKind.FEED)), setOf("a"))
+        assertEquals(listOf("c"), out.items.map { it.id })
+    }
+
+    @Test fun aVideoListedInTwoShelvesShowsInTheFirst() {
+        val out = HomeComposer.dropRepeats(feed(shelf("a", "b"), shelf("s", kind = ShelfKind.SHORTS), shelf("b", "c", "a")))
+        assertEquals(listOf("a", "b", "s", "c"), out.items.map { it.id })
+    }
+
+    @Test fun aShelfOfNothingButRepeatsGoes() {
+        assertEquals(1, HomeComposer.dropRepeats(feed(shelf("a"), shelf("a"))).shelves.size)
+    }
+
+    @Test fun aFeedWithoutRepeatsIsLeftAsItIs() {
+        val f = feed(shelf("a", "b"), shelf("c"))
+        assertSame(f, HomeComposer.dropRepeats(f))
+    }
+
     @Test fun theContinueWatchingShelfIsNeverFiltered() {
         val f = feed(shelf("a", title = HomeComposer.RESUME_TITLE, kind = ShelfKind.CAROUSEL))
         assertEquals(listOf("a"), HomeComposer.dropWatched(f, setOf("a")).items.map { it.id })

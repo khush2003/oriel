@@ -193,15 +193,21 @@ class ShortsModel(private val graph: AppGraph, startId: String?, queue: List<Str
     }
 
     /**
-     * The next batch. One that's all shorts already listed asks again, and one that fails
-     * with shorts showing waits for the network and tries again: either used to end the
-     * feed for good, with nothing to say so.
+     * The next batch, without the shorts already watched here: the sequence starts over with each
+     * visit, and only remembered what this visit had listed, so the same shorts came round again.
+     * One that's all shorts already listed asks again, and one that fails with shorts showing
+     * waits for the network and tries again: either used to end the feed for good, with nothing
+     * to say so. Batches that are all watched are passed over, [SEEN_BATCHES] of them at most:
+     * past that, shorts seen before are better than none.
      */
     fun loadMore() {
         if (loading || exhausted) return
         loading = true
         viewModelScope.launch {
+            // The history says what's been seen; asked before it's read, it says nothing has.
+            graph.library.awaitLoaded()
             var tries = 0
+            var passed = 0
             while (true) {
                 val batch = withContext(Dispatchers.IO) { runCatching { graph.yt.shorts(continuation) } }
                 val b = batch.getOrNull()
@@ -209,9 +215,13 @@ class ShortsModel(private val graph: AppGraph, startId: String?, queue: List<Str
                     continuation = b.continuation
                     exhausted = b.continuation == null
                     val before = _ids.value.size
-                    _ids.update { old -> old + b.ids.filterNot { it in old } }
+                    val seen = graph.library.watchedIds()
+                    val allowSeen = passed >= SEEN_BATCHES || exhausted
+                    _ids.update { old -> old + unseen(old, b.ids, seen, allowSeen) }
                     _error.value = null
                     if (_ids.value.size > before || exhausted) break
+                    // Watched, every one: the next batch, at once, and not counted as a failure.
+                    if (b.ids.any { it !in _ids.value } && passed++ < SEEN_BATCHES) continue
                 } else if (_ids.value.isEmpty()) {
                     _error.value = friendlyError(batch.exceptionOrNull()!!)
                     break
@@ -235,6 +245,18 @@ class ShortsModel(private val graph: AppGraph, startId: String?, queue: List<Str
     companion object {
         /** The shorts to start with: the tapped one, then the rest of the list it was opened from. */
         internal fun seed(startId: String?, queue: List<String>): List<String> = (listOfNotNull(startId) + queue).distinct()
+
+        /**
+         * What [batch] adds to the shorts [listed]: the ones neither listed nor [seen] before.
+         * With [allowSeen], a batch with nothing unseen gives what it has rather than nothing.
+         */
+        internal fun unseen(listed: List<String>, batch: List<String>, seen: Set<String>, allowSeen: Boolean): List<String> {
+            val new = batch.filterNot { it in listed }.distinct()
+            return new.filterNot { it in seen }.ifEmpty { if (allowSeen) new else emptyList() }
+        }
+
+        /** How many batches of nothing but watched shorts are passed over before one is shown anyway. */
+        private const val SEEN_BATCHES = 6
 
         /** Screenshot tests: overlay info to start with, in place of the network. */
         @androidx.annotation.VisibleForTesting

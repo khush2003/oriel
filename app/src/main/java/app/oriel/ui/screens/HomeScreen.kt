@@ -127,6 +127,7 @@ fun HomeScreen() {
         onRefresh = ::retry,
         onNearEnd = model::loadMore,
         onShown = model::refreshIfStale,
+        onAtTop = model::readerAt,
         titleTrailing = {
             Box(
                 Modifier.size(44.dp).clip(CircleShape)
