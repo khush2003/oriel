@@ -457,6 +457,14 @@ class LibraryStore(
         s.copy(history = history.take(MAX_HISTORY))
     }
 
+    /**
+     * Every video and short in the history, by id: the one answer to "was this watched here",
+     * for feeds, Shorts and autoplay alike. Each used to take its own cut of the history
+     * (the last 30, a copy from when a page loaded, none), and watched videos came back
+     * through whichever looked at less.
+     */
+    fun watchedIds(): Set<String> = _state.value.history.mapTo(HashSet()) { it.video.id }
+
     fun removeHistory(videoId: String) = update { s -> s.copy(history = s.history.filterNot { it.video.id == videoId }, positions = s.positions - videoId) }
     fun clearHistory() = update { it.copy(history = emptyList(), positions = emptyMap()) }
 

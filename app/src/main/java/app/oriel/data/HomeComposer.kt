@@ -43,7 +43,7 @@ class HomeComposer(private val yt: YouTube, private val library: LibraryStore) {
             val uploads = state.subscriptions.take(CHANNELS).map { ch -> async { limited { yt.channel(ch.id, VIDEOS_TAB, fresh).feed.items.filterIsInstance<Video>().take(4) } } }
             val topics = HOME_TOPICS.map { t -> async { limited { yt.topic(t, fresh) } } }
 
-            val watched = state.history.mapTo(HashSet()) { it.video.id }
+            val watched = library.watchedIds()
             val uploadLists = uploads.awaitAll()
             val relatedLists = related.awaitAll()
             val topicResults = topics.awaitAll()
@@ -122,17 +122,36 @@ class HomeComposer(private val yt: YouTube, private val library: LibraryStore) {
             listOf(Chip("All", selected = selected == null)) +
                 Topic.entries.map { Chip(it.title, token = TOPIC_PREFIX + it.name, selected = selected == it.name) }
 
+        /** From here a progress bar means watched, not "continue watching": the last stretch is credits. */
+        const val WATCHED_FRACTION = 0.9f
+
         /**
          * [feed] without the videos in [watched]: what was watched here isn't recommended again, whatever
-         * feed it comes from. A video with a progress bar is kept, as that is YouTube's own "continue
-         * watching"; a shelf left empty goes.
+         * feed it comes from. A video with a progress bar partway is kept, as that is YouTube's own
+         * "continue watching"; one whose bar is at its end was watched, here or on another device, and
+         * goes like the rest (it used to be kept for having a bar at all). A shelf left empty goes.
          */
-        fun dropWatched(feed: Feed, watched: Set<String>): Feed {
-            if (watched.isEmpty()) return feed
+        fun dropWatched(feed: Feed, watched: Set<String>): Feed = filterVideos(feed) { v ->
+            val progress = v.progress
+            if (progress != null) progress < WATCHED_FRACTION else v.id !in watched
+        }
+
+        /**
+         * [feed] with each video listed once, where it first appears: YouTube repeats a video across
+         * shelves and from one page of recommendations to the next, and pages were only ever compared
+         * at the seam between two.
+         */
+        fun dropRepeats(feed: Feed): Feed {
+            val listed = HashSet<String>()
+            return filterVideos(feed) { listed.add(it.id) }
+        }
+
+        /** [feed] with the videos [keep] says to; the same feed when it keeps them all. [RESUME_TITLE]'s shelf is left alone. */
+        private inline fun filterVideos(feed: Feed, keep: (Video) -> Boolean): Feed {
             var changed = false
             val shelves = feed.shelves.mapNotNull { shelf ->
                 if (shelf.title == RESUME_TITLE) return@mapNotNull shelf
-                val kept = shelf.items.filterNot { it is Video && it.id in watched && it.progress == null }
+                val kept = shelf.items.filter { it !is Video || keep(it) }
                 if (kept.size == shelf.items.size) shelf else { changed = true; if (kept.isEmpty()) null else shelf.copy(items = kept) }
             }
             return if (changed) feed.copy(shelves = shelves) else feed

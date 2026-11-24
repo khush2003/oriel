@@ -117,6 +117,64 @@ class FeedModelTest {
         assertEquals(listOf("fresh", "later"), m.state.value.feed!!.items.map { it.id })
     }
 
+    @Test fun whatIsWatchedWhileAFeedIsShownLeavesIt() {
+        val items = listOf(Video("a", "A"), Video("b", "B"))
+        val m = FeedModel(graph, null, hideWatched = true, clock = { now }, load = { Feed(shelves = listOf(Shelf(items = items, kind = ShelfKind.FEED))) })
+        settle { m.state.value.feed != null }
+        assertEquals(listOf("a", "b"), m.state.value.feed!!.items.map { it.id })
+        graph.library.addHistory(Video("a", "A"))
+        settle { m.state.value.feed!!.items.map { it.id } == listOf("b") }
+        assertEquals("nothing was fetched again for it", 0L, m.state.value.refreshVersion)
+    }
+
+    @Test fun aVideoListedAgainOnALaterPageShowsOnce() {
+        val m = FeedModel(
+            graph, null, hideWatched = true, clock = { now },
+            load = {
+                Feed(
+                    shelves = listOf(
+                        Shelf(items = listOf(Video("a", "A"), Video("b", "B")), kind = ShelfKind.FEED),
+                        Shelf(title = "Shorts", items = listOf(Video("s", "S", isShort = true)), kind = ShelfKind.SHORTS),
+                    ),
+                    continuation = "more",
+                )
+            },
+            more = { Feed(shelves = listOf(Shelf(items = listOf(Video("a", "A"), Video("c", "C")), kind = ShelfKind.FEED))) },
+        )
+        settle { m.state.value.feed != null }
+        m.loadMore()
+        settle { !m.state.value.loadingMore && m.state.value.feed!!.continuation == null }
+        assertEquals(listOf("a", "b", "s", "c"), m.state.value.feed!!.items.map { it.id })
+    }
+
+    @Test fun aBackgroundRefreshWaitsForAReaderWhoScrolledIn() {
+        val m = model()
+        settle { m.state.value.feed != null && !m.state.value.loading }
+        m.readerAt(false)
+        now += 11 * MINUTE
+        m.refreshIfStale()
+        // The next page is only asked for once the refresh has landed, so this waits for exactly that.
+        settle { m.loadMore(); m.state.value.feed!!.items.size == 2 }
+        assertEquals(2, loads)
+        assertEquals("the list being read is still the one shown, and still pages", listOf("v1", "next"), m.state.value.feed!!.items.map { it.id })
+        m.readerAt(true)
+        assertEquals("back at the top, the copy that landed takes its place", listOf("v2"), m.state.value.feed!!.items.map { it.id })
+        assertEquals(0L, m.state.value.refreshVersion)
+        now += MINUTE
+        m.refreshIfStale()
+        settle { true }
+        assertEquals("the held copy counted as loaded when it landed", 2, loads)
+    }
+
+    @Test fun aRefreshTheReaderAskedForNeverWaits() {
+        val m = model()
+        settle { m.state.value.feed != null && !m.state.value.loading }
+        m.readerAt(false)
+        m.reload(true)
+        settle { m.state.value.feed?.items?.first()?.id == "v2" }
+        assertEquals(1L, m.state.value.refreshVersion)
+    }
+
     @Test fun aListReadPartwayDownIsNeverChangedUnderTheReader() {
         val m = model()
         settle { m.state.value.feed != null }
