@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import app.oriel.AppGraph
 import app.oriel.core.model.Feed
+import app.oriel.data.HomeComposer
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -49,6 +50,12 @@ data class FeedState(
  * its screen comes back into view, fetches it again once it's [maxAgeMs]
  * old, or a minute old when something was watched since, as what YouTube
  * recommends moves with what you watch.
+ *
+ * A copy nobody asked for (that refresh, or the network copy behind the disk
+ * one) only replaces the list while the reader is at its top ([readerAt]):
+ * landing a few seconds after it was asked for, it used to swap the list
+ * under someone who had scrolled into it meanwhile. It waits for them to
+ * come back up.
  */
 class FeedModel(
     private val graph: AppGraph,
@@ -57,6 +64,12 @@ class FeedModel(
     private val more: suspend (token: String) -> Feed = { graph.yt.more(it) },
     private val maxAgeMs: Long = 10 * MINUTE,
     private val clock: () -> Long = System::currentTimeMillis,
+    /**
+     * Recommendation feeds: videos already watched here are dropped, whatever the server still lists
+     * and whenever they were watched (the list follows the history, not a copy of it from when the
+     * page loaded), and a video YouTube lists twice shows once.
+     */
+    private val hideWatched: Boolean = false,
 ) : ViewModel() {
     private val _state = MutableStateFlow(FeedState())
     val state: StateFlow<FeedState> = _state.asStateFlow()
@@ -87,6 +100,17 @@ class FeedModel(
     /** The profile this feed is for: a model kept for another one doesn't load as the profile in use. */
     private val profileId = graph.account.active.value.id
 
+    /** Whether the reader is at the top of the list, as the screen last said. */
+    private var readerAtTop = true
+    /** A copy that landed while they weren't, and when: shown once they're back at the top. */
+    private var held: Pair<Feed, Long>? = null
+
+    private fun tidy(feed: Feed): Feed =
+        if (!hideWatched) feed else HomeComposer.dropRepeats(HomeComposer.dropWatched(feed, graph.library.watchedIds()))
+
+    /** The history read from disk, before anything is filtered by it: a feed that beat it there kept everything. */
+    private suspend fun awaitHistory() { if (hideWatched) graph.library.awaitLoaded() }
+
     init {
         // The disk copy is read off the main thread (the model is made during composition);
         // if the network wins the race, the older copy is never shown.
@@ -95,10 +119,19 @@ class FeedModel(
             val generation = graph.pages.generation
             viewModelScope.launch {
                 val cached = withContext(Dispatchers.IO) { runCatching { graph.pages.read(key, Feed.serializer())?.let { it to graph.pages.savedAt(key) } }.getOrNull() }
-                if (cached != null && requestVersion == initialVersion && graph.pages.generation == generation) _state.update { if (it.feed == null) it.copy(feed = cached.first, stale = true, updatedAt = cached.second, loading = false) else it }
+                awaitHistory()
+                if (cached != null && requestVersion == initialVersion && graph.pages.generation == generation) _state.update { if (it.feed == null) it.copy(feed = tidy(cached.first), stale = true, updatedAt = cached.second, loading = false) else it }
             }
         }
-        reload(fresh = false)
+        reload(fresh = false, whenAtTop = true)
+        // What's watched while the feed is up leaves it then, not at the next refresh.
+        if (hideWatched) viewModelScope.launch {
+            graph.library.state.map { it.history }.distinctUntilChanged().drop(1).collect {
+                // Another profile's history says nothing about this one's feed.
+                if (graph.account.active.value.id != profileId) return@collect
+                _state.update { s -> s.feed?.let(::tidy)?.takeIf { it !== s.feed }?.let { s.copy(feed = it) } ?: s }
+            }
+        }
         // A new content country or language: what's shown was for the old one.
         viewModelScope.launch {
             graph.localeVersion.drop(1).collect { if (graph.account.active.value.id == profileId) reload(fresh = true, replace = shownLoader, quiet = true, key = shownKey) }
@@ -107,12 +140,14 @@ class FeedModel(
 
     /**
      * Loads the feed, or [replace]'s page in its place (a chip), from the
-     * network. [quiet] shows no spinner: the list changes when the copy lands.
+     * network. [quiet] shows no spinner: the list changes when the copy lands,
+     * or with [whenAtTop], once the reader is at the top of it.
      */
-    fun reload(fresh: Boolean = true, replace: (suspend (Boolean) -> Feed)? = null, quiet: Boolean = false, key: String? = replace?.let { "page" }) {
+    fun reload(fresh: Boolean = true, replace: (suspend (Boolean) -> Feed)? = null, quiet: Boolean = false, key: String? = replace?.let { "page" }, whenAtTop: Boolean = false) {
         val version = ++requestVersion
         job?.cancel()
         moreJob?.cancel()
+        held = null
         // Another page in place of the shown one (a chip, or back to the feed): skeletons, not
         // the old page under the new chip. The same page again is a refresh.
         val switching = key != shownKey
@@ -133,14 +168,16 @@ class FeedModel(
         val epoch = graph.account.epoch
         job = viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { (replace ?: load)(fresh) } }
+            awaitHistory()
             if (version != requestVersion) return@launch
             if (graph.account.epoch != epoch) {
                 // Still this profile's feed to show (it was made as the switch finished): asked again, as it is now.
-                if (graph.account.active.value.id == profileId) reload(fresh, replace, quiet = true, key = key)
+                if (graph.account.active.value.id == profileId) reload(fresh, replace, quiet = true, key = key, whenAtTop = whenAtTop)
                 else _state.update { it.copy(refreshing = false) }
                 return@launch
             }
-            result.onSuccess { feed ->
+            result.onSuccess { loaded ->
+                val feed = tidy(loaded)
                 // An empty answer (offline, everything failed) never replaces something to show.
                 val shown = _state.value.feed
                 if (feed.isEmpty && feed.message == null && shown != null && !shown.isEmpty && !switching) {
@@ -149,8 +186,14 @@ class FeedModel(
                 }
                 val now = clock()
                 loadedAt = now
-                _state.value = FeedState(feed = feed, updatedAt = now, refreshVersion = _state.value.refreshVersion + if (fresh && !quiet) 1 else 0)
-                if (replace == null || feed.chips.isNotEmpty()) baseChips = feed.chips
+                if (whenAtTop && !readerAtTop && shown != null && !shown.isEmpty && !switching) {
+                    // Paging goes on through the list they're reading until then.
+                    held = loaded to now
+                    _state.update { it.copy(loading = false, refreshing = false) }
+                } else {
+                    _state.value = FeedState(feed = feed, updatedAt = now, refreshVersion = _state.value.refreshVersion + if (fresh && !quiet) 1 else 0)
+                    if (replace == null || feed.chips.isNotEmpty()) baseChips = feed.chips
+                }
                 // An empty page with nothing to say (everything failed) isn't worth keeping: the next
                 // launch would paint it over nothing instead of the last good copy.
                 val keep = !feed.isEmpty || feed.message != null
@@ -181,7 +224,23 @@ class FeedModel(
             if (!atTop) return
             if (age < maxAgeMs && !(watchedSince && age >= AFTER_WATCH_MS)) return
         }
-        reload(fresh = true, replace = shownLoader, quiet = true, key = shownKey)
+        reload(fresh = true, replace = shownLoader, quiet = true, key = shownKey, whenAtTop = true)
+    }
+
+    /**
+     * Where the reader is, from the screen: at the top of the list or into it. Back at the
+     * top, a copy that landed meanwhile takes the list's place.
+     */
+    fun readerAt(atTop: Boolean) {
+        readerAtTop = atTop
+        val (loaded, at) = held?.takeIf { atTop } ?: return
+        held = null
+        // A next page of the old list still on its way belongs to that list.
+        requestVersion++
+        moreJob?.cancel()
+        val feed = tidy(loaded)
+        _state.value = FeedState(feed = feed, updatedAt = at, refreshVersion = _state.value.refreshVersion)
+        if (shownLoader == null || feed.chips.isNotEmpty()) baseChips = feed.chips
     }
 
     fun loadMore() {
@@ -201,7 +260,8 @@ class FeedModel(
                 val page = next.getOrNull()
                 // A failed page keeps its token, so "Try again" (or scrolling back down) asks again.
                 if (page == null) st.copy(loadingMore = false, moreFailed = true)
-                else st.copy(loadingMore = false, feed = feed + page)
+                // The whole list again, not the page alone: it can repeat what an earlier page listed.
+                else st.copy(loadingMore = false, feed = tidy(feed + page))
             }
         }
     }

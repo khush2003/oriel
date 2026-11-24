@@ -175,8 +175,8 @@ import androidx.compose.ui.platform.LocalDensity
 import kotlinx.coroutines.withContext
 
 /** The endless Shorts sequence, with each short's overlay info fetched as it comes up. */
-class ShortsModel(private val graph: AppGraph, startId: String?) : ViewModel() {
-    private val _ids = MutableStateFlow(listOfNotNull(startId))
+class ShortsModel(private val graph: AppGraph, startId: String?, queue: List<String> = emptyList()) : ViewModel() {
+    private val _ids = MutableStateFlow(seed(startId, queue))
     val ids: StateFlow<List<String>> = _ids.asStateFlow()
     private val _info = MutableStateFlow<Map<String, ShortInfo>>(emptyMap())
     val info: StateFlow<Map<String, ShortInfo>> = _info.asStateFlow()
@@ -188,19 +188,26 @@ class ShortsModel(private val graph: AppGraph, startId: String?) : ViewModel() {
 
     init {
         _info.value = previewInfo
-        loadMore()
+        // Opened from a list, its shorts play first: the general sequence waits until the pager nears the end of them.
+        if (queue.isEmpty()) loadMore()
     }
 
     /**
-     * The next batch. One that's all shorts already listed asks again, and one that fails
-     * with shorts showing waits for the network and tries again: either used to end the
-     * feed for good, with nothing to say so.
+     * The next batch, without the shorts already watched here: the sequence starts over with each
+     * visit, and only remembered what this visit had listed, so the same shorts came round again.
+     * One that's all shorts already listed asks again, and one that fails with shorts showing
+     * waits for the network and tries again: either used to end the feed for good, with nothing
+     * to say so. Batches that are all watched are passed over, [SEEN_BATCHES] of them at most:
+     * past that, shorts seen before are better than none.
      */
     fun loadMore() {
         if (loading || exhausted) return
         loading = true
         viewModelScope.launch {
+            // The history says what's been seen; asked before it's read, it says nothing has.
+            graph.library.awaitLoaded()
             var tries = 0
+            var passed = 0
             while (true) {
                 val batch = withContext(Dispatchers.IO) { runCatching { graph.yt.shorts(continuation) } }
                 val b = batch.getOrNull()
@@ -208,9 +215,13 @@ class ShortsModel(private val graph: AppGraph, startId: String?) : ViewModel() {
                     continuation = b.continuation
                     exhausted = b.continuation == null
                     val before = _ids.value.size
-                    _ids.update { old -> old + b.ids.filterNot { it in old } }
+                    val seen = graph.library.watchedIds()
+                    val allowSeen = passed >= SEEN_BATCHES || exhausted
+                    _ids.update { old -> old + unseen(old, b.ids, seen, allowSeen) }
                     _error.value = null
                     if (_ids.value.size > before || exhausted) break
+                    // Watched, every one: the next batch, at once, and not counted as a failure.
+                    if (b.ids.any { it !in _ids.value } && passed++ < SEEN_BATCHES) continue
                 } else if (_ids.value.isEmpty()) {
                     _error.value = friendlyError(batch.exceptionOrNull()!!)
                     break
@@ -232,6 +243,21 @@ class ShortsModel(private val graph: AppGraph, startId: String?) : ViewModel() {
     }
 
     companion object {
+        /** The shorts to start with: the tapped one, then the rest of the list it was opened from. */
+        internal fun seed(startId: String?, queue: List<String>): List<String> = (listOfNotNull(startId) + queue).distinct()
+
+        /**
+         * What [batch] adds to the shorts [listed]: the ones neither listed nor [seen] before.
+         * With [allowSeen], a batch with nothing unseen gives what it has rather than nothing.
+         */
+        internal fun unseen(listed: List<String>, batch: List<String>, seen: Set<String>, allowSeen: Boolean): List<String> {
+            val new = batch.filterNot { it in listed }.distinct()
+            return new.filterNot { it in seen }.ifEmpty { if (allowSeen) new else emptyList() }
+        }
+
+        /** How many batches of nothing but watched shorts are passed over before one is shown anyway. */
+        private const val SEEN_BATCHES = 6
+
         /** Screenshot tests: overlay info to start with, in place of the network. */
         @androidx.annotation.VisibleForTesting
         internal var previewInfo: Map<String, ShortInfo> = emptyMap()
@@ -429,10 +455,10 @@ private fun rememberShortsPlayback(graph: AppGraph, maxHeight: Int): ShortsPlayb
 @kotlin.OptIn(ExperimentalFoundationApi::class)
 @OptIn(UnstableApi::class)
 @Composable
-fun ShortsScreen(startId: String?) {
+fun ShortsScreen(startId: String?, queue: List<String> = emptyList()) {
     val app = LocalAppState.current
     val graph = app.graph
-    val model: ShortsModel = viewModel(key = "shorts:$startId:${graph.account.active.collectAsState().value.id}") { ShortsModel(graph, startId) }
+    val model: ShortsModel = viewModel(key = "shorts:$startId:${graph.account.active.collectAsState().value.id}") { ShortsModel(graph, startId, queue) }
     val ids by model.ids.collectAsState()
     val infos by model.info.collectAsState()
     val error by model.error.collectAsState()
@@ -517,12 +543,15 @@ fun ShortsScreen(startId: String?) {
         if (pager.settledPage >= ids.size - 4) model.loadMore()
     }
 
-    // Into history once the short's title is known, which can be after it starts playing.
+    // Into history as soon as it's shown, then again with its title once that's known (which can be
+    // after it starts playing, or never if it's swiped past first): a short skipped through still counts as seen.
     val shownId = ids.getOrNull(pager.settledPage)
     val shownTitle = shownId?.let { infos[it]?.title }
     LaunchedEffect(shownId, shownTitle) {
-        if (shownId == null || shownTitle == null || graph.settings.current.pauseHistory) return@LaunchedEffect
-        graph.library.addHistory(Video(shownId, shownTitle, channel = infos[shownId]?.channel, isShort = true))
+        if (shownId == null || graph.settings.current.pauseHistory) return@LaunchedEffect
+        // Without a title, an entry that already has one is left as it is.
+        if (shownTitle == null && graph.library.state.value.history.any { it.video.id == shownId }) return@LaunchedEffect
+        graph.library.addHistory(Video(shownId, shownTitle.orEmpty(), channel = infos[shownId]?.channel, isShort = true))
     }
 
     // The picture ends above the tab bar, which sits on black here, as YouTube's does:

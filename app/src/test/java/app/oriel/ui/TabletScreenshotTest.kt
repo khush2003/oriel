@@ -308,6 +308,8 @@ class TabletScreenshotTest {
      */
     @Test fun turningTheTabletRelaysTheFeed() {
         seedLibrary()
+        // The seeded history is the feed's own videos, which Home no longer lists again.
+        graph.library.clearHistory()
         // Tall, so the feed's second row of titles is on screen to be measured.
         var window by mutableStateOf(DpSize(1280.dp, 1500.dp))
         val info = object : WindowInfo {

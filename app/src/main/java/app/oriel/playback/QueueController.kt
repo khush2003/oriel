@@ -211,7 +211,7 @@ class QueueController(
                 // Autoplay only ever lines up one video, and only once the current one is the last.
                 remaining == 0 && graph.settings.current.autoplay -> {
                     val page = runCatching { withContext(Dispatchers.IO) { graph.yt.watch(last.id) } }.getOrNull() ?: return@launch
-                    val recent = graph.library.state.value.history.take(30).mapTo(HashSet()) { it.video.id }
+                    val recent = graph.library.watchedIds()
                     val queued = (0 until player.mediaItemCount).mapTo(HashSet()) { player.getMediaItemAt(it).mediaId }
                     val next = page.related.filterIsInstance<Video>().firstOrNull { !it.isShort && !it.isUpcoming && it.id !in recent && it.id !in queued }
                         ?: page.related.filterIsInstance<Video>().firstOrNull { it.id !in queued && !it.isUpcoming }

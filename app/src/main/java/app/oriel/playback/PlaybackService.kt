@@ -1,9 +1,15 @@
 package app.oriel.playback
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.os.Build
 import android.os.Bundle
 import androidx.annotation.OptIn
+import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -166,6 +172,35 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession = session
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // MediaButtonReceiver starts this as a foreground service, which must call startForeground
+        // within seconds. Media3 only does that once it posts a notification, and a button press that
+        // changes nothing (nothing to resume, or already paused) never does: the system kills the app.
+        if (intent?.action == Intent.ACTION_MEDIA_BUTTON) {
+            if (player.mediaItemCount == 0) {
+                startForegroundPlaceholder()
+                ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+                stopSelf(startId)
+                return START_NOT_STICKY
+            }
+            val result = super.onStartCommand(intent, flags, startId)
+            onUpdateNotification(session, true)
+            return result
+        }
+        return super.onStartCommand(intent, flags, startId)
+    }
+
+    private fun startForegroundPlaceholder() {
+        val manager = getSystemService(NotificationManager::class.java)
+        val id = DefaultMediaNotificationProvider.DEFAULT_CHANNEL_ID
+        if (manager.getNotificationChannel(id) == null) {
+            manager.createNotificationChannel(NotificationChannel(id, getString(R.string.playback_channel_name), NotificationManager.IMPORTANCE_LOW))
+        }
+        val notification = NotificationCompat.Builder(this, id).setSmallIcon(R.drawable.ic_notification).setContentTitle(getString(R.string.app_name)).build()
+        val type = if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0
+        ServiceCompat.startForeground(this, DefaultMediaNotificationProvider.DEFAULT_NOTIFICATION_ID, notification, type)
+    }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         if (!player.playWhenReady || player.mediaItemCount == 0) {

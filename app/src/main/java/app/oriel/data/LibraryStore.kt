@@ -376,7 +376,17 @@ class LibraryStore(
      * in, which mustn't lose what was liked here while signed out).
      */
     fun mergeRemoteLikes(remote: List<Video>, complete: Boolean, keepLocal: Boolean = false) = update { s ->
-        s.copy(liked = reconcile(s.liked, remote, replace = complete && !keepLocal, touchedLikes) { it.id })
+        val changed = touchedLikes.toSet()
+        val remoteIds = remote.mapTo(HashSet()) { it.id }
+        // A like made during the fetch is newer than its snapshot, even when re-liking a video
+        // that the snapshot still lists in its old position. An unlike stays out of the result.
+        val newLikes = s.liked.filter { it.id in changed }
+        val accountLikes = remote.filterNot { it.id in changed }
+        // We don't know where local-only entries belong in YouTube's chronology. Keep them in
+        // their local order after the known account prefix rather than mixing them into that prefix.
+        val localTail = if (complete && !keepLocal) emptyList() else
+            s.liked.filter { it.id !in changed && it.id !in remoteIds }
+        s.copy(liked = (newLikes + accountLikes + localTail).distinctBy { it.id })
     }
 
     // ---- watch later ---------------------------------------------------------------------
@@ -467,6 +477,14 @@ class LibraryStore(
         val history = listOf(WatchEntry(video, now)) + s.history.filterNot { it.video.id == video.id }
         s.copy(history = history.take(MAX_HISTORY))
     }
+
+    /**
+     * Every video and short in the history, by id: the one answer to "was this watched here",
+     * for feeds, Shorts and autoplay alike. Each used to take its own cut of the history
+     * (the last 30, a copy from when a page loaded, none), and watched videos came back
+     * through whichever looked at less.
+     */
+    fun watchedIds(): Set<String> = _state.value.history.mapTo(HashSet()) { it.video.id }
 
     fun removeHistory(videoId: String) = update { s -> s.copy(history = s.history.filterNot { it.video.id == videoId }, positions = s.positions - videoId) }
     fun clearHistory() = update { it.copy(history = emptyList(), positions = emptyMap()) }

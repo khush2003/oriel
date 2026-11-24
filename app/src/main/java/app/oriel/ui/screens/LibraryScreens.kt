@@ -391,7 +391,7 @@ fun TopicScreen(topicName: String) {
     val state by model.state.collectAsState()
     val layout = LocalWindowLayout.current
     val columns = layout.columns(PageWidth.Feed)
-    PageScaffold(title = topic.title, onBack = app::back, refreshing = state.refreshing, onRefresh = { model.reload(true) }, onNearEnd = model::loadMore, onShown = model::refreshIfStale) {
+    PageScaffold(title = topic.title, onBack = app::back, refreshing = state.refreshing, onRefresh = { model.reload(true) }, onNearEnd = model::loadMore, onShown = model::refreshIfStale, onAtTop = model::readerAt) {
         val feed = state.feed
         refreshNotice(state, onRetry = { model.reload(true) })
         when {

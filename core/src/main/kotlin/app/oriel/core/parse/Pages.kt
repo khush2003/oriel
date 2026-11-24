@@ -101,6 +101,7 @@ object Pages {
                     addAll(r["contents"].arr)
                 }
                 "itemSectionRenderer" -> addAll(r["contents"].arr)
+                "playlistVideoListRenderer" -> playlistVideos(r)
                 "richSectionRenderer" -> r["content"]?.let(::add)
                 "richShelfRenderer" -> {
                     val items = r["contents"].arr.mapNotNull { Items.item(it) }
@@ -134,6 +135,15 @@ object Pages {
                 "searchPyvRenderer", "promotedSparklesWebRenderer", "statementBannerRenderer", "brandVideoShelfRenderer",
                 "channelAboutFullMetadataRenderer", "shelfHeaderRenderer" -> Unit
                 else -> Items.item(element)?.let(loose::add)
+            }
+        }
+
+        fun playlistVideos(list: JsonElement?) {
+            addAll(list["contents"].arr)
+            if (continuation == null) {
+                continuation = list["continuations"].arr.firstNotNullOfOrNull {
+                    it.at("nextContinuationData", "continuation").string
+                }
             }
         }
 
@@ -223,6 +233,7 @@ object Pages {
             b.addAll(items.arr)
         }
         root.at("continuationContents", "sectionListContinuation")?.let { b.addAll(it["contents"].arr) }
+        root.at("continuationContents", "playlistVideoListContinuation")?.let(b::playlistVideos)
         return b.build()
     }
 

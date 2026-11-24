@@ -261,7 +261,7 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
                     predictivePopExitTransition = { if (reduce) ExitTransition.None else swipeBackOut(app.tabSwitchEntry) },
                 ) {
                     composable<HomeRoute> { LiquidPage(backSwipe) { HomeScreen() } }
-                    composable<ShortsRoute> { LiquidPage(backSwipe) { ShortsScreen(it.toRoute<ShortsRoute>().startId) } }
+                    composable<ShortsRoute> { LiquidPage(backSwipe) { it.toRoute<ShortsRoute>().let { r -> ShortsScreen(r.startId, r.queue) } } }
                     composable<SubscriptionsRoute> { LiquidPage(backSwipe) { SubscriptionsScreen() } }
                     composable<YouRoute> { LiquidPage(backSwipe) { YouScreen() } }
                     composable<SearchRoute> { LiquidPage(backSwipe) { SearchScreen(it.toRoute<SearchRoute>().query) } }

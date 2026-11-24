@@ -112,6 +112,7 @@ class ActiveLibrary(
     fun deleteLocalPlaylist(id: String) = store.deleteLocalPlaylist(id)
 
     fun addHistory(video: Video) = store.addHistory(video)
+    fun watchedIds(): Set<String> = store.watchedIds()
     fun removeHistory(videoId: String) = store.removeHistory(videoId)
     fun clearHistory() = store.clearHistory()
     fun position(videoId: String): Long? = store.position(videoId)

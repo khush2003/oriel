@@ -117,6 +117,7 @@ fun SubscriptionsScreen() {
         onRefresh = { model.reload(true) },
         onNearEnd = model::loadMore,
         onShown = model::refreshIfStale,
+        onAtTop = model::readerAt,
     ) {
         if (channels.isNotEmpty()) item(key = "channels", contentType = "channels") {
             LazyRow(Modifier.fullBleed(), contentPadding = PaddingValues(horizontal = PAGE_GUTTER + LocalPageInset.current, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {

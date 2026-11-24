@@ -139,6 +139,8 @@ fun PageScaffold(
     onNearEnd: (() -> Unit)? = null,
     /** When the app is reopened with this page on screen and scrolled to its top (always true then). */
     onShown: ((atTop: Boolean) -> Unit)? = null,
+    /** Whether the list is at its top, now and each time that changes: a feed holds a background refresh back until it is. */
+    onAtTop: ((Boolean) -> Unit)? = null,
     background: Color = MaterialTheme.colorScheme.background,
     titleTrailing: (@Composable () -> Unit)? = null,
     leading: (@Composable () -> Unit)? = null,
@@ -210,6 +212,10 @@ fun PageScaffold(
         process.addObserver(observer)
         replaying = false
         onDispose { process.removeObserver(observer) }
+    }
+    val atTopAction by rememberUpdatedState(onAtTop)
+    LaunchedEffect(state) {
+        snapshotFlow { state.firstVisibleItemIndex == 0 && state.firstVisibleItemScrollOffset < 8 }.distinctUntilChanged().collect { atTopAction?.invoke(it) }
     }
     LaunchedEffect(state) {
         snapshotFlow {
