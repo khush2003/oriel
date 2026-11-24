@@ -432,7 +432,7 @@ private fun rememberShortsPlayback(graph: AppGraph, maxHeight: Int): ShortsPlayb
 fun ShortsScreen(startId: String?) {
     val app = LocalAppState.current
     val graph = app.graph
-    val model: ShortsModel = viewModel(key = "shorts:$startId") { ShortsModel(graph, startId) }
+    val model: ShortsModel = viewModel(key = "shorts:$startId:${graph.account.active.collectAsState().value.id}") { ShortsModel(graph, startId) }
     val ids by model.ids.collectAsState()
     val infos by model.info.collectAsState()
     val error by model.error.collectAsState()

@@ -3,7 +3,6 @@ package app.oriel
 import app.oriel.data.Telemetry
 import android.content.Context
 import android.util.Log
-import androidx.core.content.edit
 import app.oriel.core.YouTube
 import app.oriel.core.extras.ReturnDislike
 import app.oriel.core.extras.SponsorBlock
@@ -14,8 +13,10 @@ import app.oriel.core.stream.StreamResolver
 import app.oriel.data.AccountManager
 import app.oriel.data.HomeComposer
 import app.oriel.data.LibraryActions
-import app.oriel.data.LibraryStore
+import app.oriel.data.ActiveLibrary
 import app.oriel.data.PageDiskCache
+import app.oriel.data.ProfileStore
+import app.oriel.data.SecretBox
 import app.oriel.data.Settings
 import app.oriel.playback.AdaptiveSources
 import app.oriel.playback.MediaCaches
@@ -39,7 +40,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -134,12 +134,12 @@ class AppGraph(val context: Context) {
         builtYt = client
     }
 
-    private fun restoreSession(client: YouTube) {
-        // The visitor identity YouTube issued last time. Signed out, it's what ties one
-        // session's watching to the next one's suggestions; and a cold start needn't fetch one.
-        if (client.innerTube.visitorData == null) session.getString(KEY_VISITOR, null)?.let { client.innerTube.visitorData = it }
-        account.applySession(client)
-    }
+    /**
+     * The active profile's sign-in, and the visitor identity YouTube issued it last time: signed
+     * out, that's what ties one session's watching to the next one's suggestions, and a cold
+     * start needn't fetch one.
+     */
+    private fun restoreSession(client: YouTube) = account.applySession(client)
 
     val resolver: StreamResolver by lazy {
         StreamResolver(
@@ -148,9 +148,8 @@ class AppGraph(val context: Context) {
             playerCacheDir = File(context.filesDir, "players"),
             logger = logger,
         ).apply {
-            val s = settings.current
-            protocol = s.transport.protocol
-            premium = s.premium
+            protocol = settings.current.transport.protocol
+            premium = account.active.value.premiumFormats
         }
     }
 
@@ -171,11 +170,14 @@ class AppGraph(val context: Context) {
     }
     val sponsorBlock by lazy { SponsorBlock(extrasHttp) }
     val dislikes by lazy { ReturnDislike(extrasHttp) }
-    val library = LibraryStore(File(context.filesDir, "library.json"), scope, report)
+    /** The profiles on this device: the Guest and the accounts signed in here, each with a library of its own. */
+    val profiles = ProfileStore(context, context.filesDir, SecretBox.keystore(KEY_ALIAS), legacyPremium = { settings.current.premium }, report = report)
+    // The files from before profiles move into one as they're first read.
+    val library = ActiveLibrary(scope, profiles::dir, report, prepare = profiles::adoptLegacyFiles, initial = profiles.index.active)
     val homeComposer by lazy { HomeComposer(yt, library) }
-    val account = AccountManager(context, { yt }, { resolver }, library, scope, forgetVisitor = { forgetVisitor() })
-    val actions = LibraryActions(this)
-    val pages = PageDiskCache(File(context.cacheDir, "pages"), scope, report)
+    val pages = PageDiskCache(File(context.cacheDir, "pages"), scope, report, profiles.index.active)
+    val account = AccountManager(profiles, { yt }, { builtYt }, { premium -> resolver.onSessionChanged(); resolver.premium = premium }, library, pages, scope)
+    val actions = LibraryActions(this).also(account::addSwitchListener)
     val caches by lazy { MediaCaches(context, settings) }
     val dataSources by lazy { StreamDataSources(this) }
     val adaptive by lazy { AdaptiveSources(this) }
@@ -220,8 +222,6 @@ class AppGraph(val context: Context) {
             })
         }
         account.restore()
-        // Pages saved under one account aren't shown to the next, or once signed out.
-        scope.launch { account.signedIn.drop(1).collect { pages.clear() } }
         // Visitor data, the player config and the cipher solver are the cold costs of the
         // first play; pay them now, off the main thread, instead of on the first tap.
         scope.launch(Dispatchers.IO) { resolver.prewarm() }
@@ -232,19 +232,10 @@ class AppGraph(val context: Context) {
         // the device; the playback service asks for them on the main thread as it starts.
         scope.launch(Dispatchers.IO) { VideoCaps.hardwareVp9(); VideoCaps.hardwareHeight() }
         scope.launch { settings.state.map { it.transport.protocol }.distinctUntilChanged().collect { resolver.protocol = it } }
-        scope.launch { settings.state.map { it.premium }.distinctUntilChanged().collect { resolver.premium = it } }
     }
 
     /** Keeps what should outlive the process (the visitor identity) for the next launch. */
-    fun saveSession() {
-        builtYt?.innerTube?.visitorData?.let { session.edit().putString(KEY_VISITOR, it).apply() }
-    }
-
-    /** Drops the visitor identity, in memory and on disk, so the next request starts a new one. */
-    fun forgetVisitor() = synchronized(localeLock) {
-        builtYt?.innerTube?.visitorData = null
-        session.edit { remove(KEY_VISITOR) }
-    }
+    fun saveSession() = account.saveVisitor()
 
     private val _localeVersion = MutableStateFlow(0)
 
@@ -293,7 +284,8 @@ class AppGraph(val context: Context) {
 
     companion object {
         private const val TAG = "Oriel"
-        private const val KEY_VISITOR = "visitorData"
+        /** The Android Keystore key the sign-in cookies are sealed with. */
+        private const val KEY_ALIAS = "oriel.account.cookie"
         private const val KEY_LOCALE = "locale"
         private val PREFS = listOf("account", "session", "resolver", "diagnostics", "abr")
 

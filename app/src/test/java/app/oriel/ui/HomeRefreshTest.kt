@@ -63,7 +63,7 @@ class HomeRefreshTest {
         ViewModelProvider(owner, object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T = model as T
-        })["home:false", FeedModel::class.java]
+        })["home:${graph.account.active.value.id}:false", FeedModel::class.java]
         rule.mainClock.autoAdvance = false
         rule.setContent { Frame(theme) }
         settle()

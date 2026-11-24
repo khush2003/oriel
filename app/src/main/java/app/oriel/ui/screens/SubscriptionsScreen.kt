@@ -58,7 +58,6 @@ import app.oriel.ui.fullBleed
 import app.oriel.ui.PageWidth
 import app.oriel.ui.components.longPressMenuClickable
 import app.oriel.ui.navigation.ChannelsRoute
-import app.oriel.ui.navigation.LoginRoute
 import app.oriel.ui.navigation.Tab
 import app.oriel.util.Format
 import kotlinx.coroutines.async
@@ -77,10 +76,10 @@ fun SubscriptionsScreen() {
     val app = LocalAppState.current
     val graph = app.graph
     val signedIn by graph.account.signedIn.collectAsState()
-    val account by graph.account.account.collectAsState()
     val channels by graph.library.state.collectSlice { it.subscriptions }
     // One model per account: signing out and in as someone else never shows the last one's feed.
-    val model: FeedModel = viewModel(key = "subs:$signedIn:${accountOwner(account)?.hashCode()}") {
+    val profile by graph.account.active.collectAsState()
+    val model: FeedModel = viewModel(key = "subs:${profile.id}:$signedIn") {
         FeedModel(graph, cacheKey = "subs-$signedIn", load = { fresh ->
             if (signedIn) graph.yt.browse(YouTube.SUBSCRIPTIONS, fresh = fresh) else localSubscriptionFeed(graph, fresh = fresh)
         }, maxAgeMs = 5 * 60_000L)
@@ -149,7 +148,7 @@ fun SubscriptionsScreen() {
             !signedIn && channels.isEmpty() -> item(key = "none", contentType = "message") {
                 Column {
                     MessageState("Follow channels and their new videos gather here.", icon = OrielIcons.Subscriptions)
-                    SignInCard(onSignIn = { app.navigate(LoginRoute) }, onDismiss = null, text = "Or sign in to bring your YouTube subscriptions with you.")
+                    SignInCard(onSignIn = { app.signIn() }, onDismiss = null, text = "Or sign in to bring your YouTube subscriptions with you.")
                 }
             }
             feed == null && state.loading -> cardSkeletons(4, columns)

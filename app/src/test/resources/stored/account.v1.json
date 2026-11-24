@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "cookie": "SAPISID=fake3; PREF=hl=en",
+  "datasync": "fake-fixture-sync||",
+  "account": "{\"name\":\"Invented Person\",\"handle\":\"@invented\",\"avatar\":\"https://yt3.ggpht.com/fake-avatar\"}",
+  "merged": true,
+  "lastSync": 1760000000000
+}

@@ -80,11 +80,13 @@ fun YouScreen() {
     val syncing by graph.account.syncing.collectAsState()
     val library by graph.library.state.collectSlice(::youSummary)
     val expired by graph.account.sessionExpired.collectAsState()
+    val profile by graph.account.active.collectAsState()
+    val profiles by graph.account.profiles.collectAsState()
     val haptics = rememberHaptics()
     // The bell's count, asked each time You comes into view; opening the inbox clears it on YouTube's side.
     // Up here rather than in the row, which the list recomposes and disposes as it scrolls.
     var unseen by remember { mutableIntStateOf(0) }
-    LaunchedEffect(signedIn) {
+    LaunchedEffect(signedIn, profile.id) {
         unseen = if (!signedIn) 0 else withContext(Dispatchers.IO) { runCatching { graph.yt.unseenNotifications() }.getOrDefault(0) }
     }
 
@@ -107,22 +109,36 @@ fun YouScreen() {
             }
         },
     ) {
-        if (signedIn && expired) item(key = "expired", contentType = "card") { SessionExpiredCard(onSignIn = { app.navigate(LoginRoute) }) }
+        if (signedIn && expired) item(key = "expired", contentType = "card") { SessionExpiredCard(onSignIn = { app.navigate(LoginRoute(reauth = profile.id)) }) }
         item(key = "account", contentType = "account") {
-            if (signedIn) {
+            // With an account on this device, the header is who's in use, and opens Accounts to switch.
+            if (signedIn || profiles.any { !it.isGuest }) {
+                val name = when {
+                    profile.isGuest -> "Guest"
+                    else -> account?.name ?: profile.info?.name ?: if (signedIn) "Signed in" else "Signed out"
+                }
+                val anchor = remember { AnchorHolder() }
                 Row(
-                    Modifier.fillMaxWidth().clickable { haptics.play(Haptic.Tap); app.navigate(SettingsRoute) }.padding(horizontal = PAGE_GUTTER, vertical = 8.dp),
+                    Modifier.fillMaxWidth().clickable(onClickLabel = "Switch account") { haptics.play(Haptic.Expand); app.openAccounts(anchor.bounds) }.padding(horizontal = PAGE_GUTTER, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Avatar(account?.avatar, 64.dp, name = account?.name)
+                    Avatar(if (profile.isGuest) null else account?.avatar ?: profile.info?.avatar, 64.dp, Modifier.accountsAnchor(anchor), name = if (profile.isGuest) null else name)
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(account?.name ?: "Signed in", style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        (account?.handle ?: account?.email)?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1) }
+                        Text(name, style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        val detail = when {
+                            profile.isGuest -> "On this device only"
+                            !signedIn -> "Signed out"
+                            else -> account?.handle ?: account?.email
+                        }
+                        detail?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1) }
                     }
+                    Icon(OrielIcons.Chevron, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                 }
+                // An account signed out here: its library is still this profile's, and signing in picks the account up again.
+                if (!profile.isGuest && !signedIn) SignInCard(onSignIn = { app.navigate(LoginRoute(reauth = profile.id)) }, onDismiss = null, text = "Sign in again to sync this account's likes, subscriptions, Watch later and playlists with YouTube.")
             } else {
-                SignInCard(onSignIn = { app.navigate(LoginRoute) }, onDismiss = null, text = "Your library works on this device without an account. Sign in to sync likes, subscriptions, Watch later and playlists with YouTube.")
+                SignInCard(onSignIn = { app.signIn() }, onDismiss = null, text = "Your library works on this device without an account. Sign in to sync likes, subscriptions, Watch later and playlists with YouTube.")
             }
         }
         if (library.history.isNotEmpty()) item(key = "history", contentType = "shelf") {

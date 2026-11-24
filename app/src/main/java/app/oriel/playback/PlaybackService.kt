@@ -26,6 +26,7 @@ import androidx.media3.session.SessionError
 import androidx.media3.session.SessionResult
 import app.oriel.MainActivity
 import app.oriel.R
+import app.oriel.data.AccountManager
 import app.oriel.core.extras.Segment
 import app.oriel.core.extras.SponsorBlock
 import app.oriel.core.model.Video
@@ -136,7 +137,32 @@ class PlaybackService : MediaLibraryService() {
 
         queue.restore()
         updateButtons()
+        graph.account.addSwitchListener(profileSwitch)
         instance.value = this
+    }
+
+    /**
+     * Another profile is coming into use. What was playing was the last one's (its history, its
+     * viewing reported under its account), so it stops here, saved where it was; the next profile
+     * comes back to its own queue, paused.
+     */
+    private val profileSwitch = object : AccountManager.SwitchListener {
+        override suspend fun leaving() {
+            player.pause()
+            savePosition()
+            queue.leaveProfile()
+            reporter.drain(REPORT_DRAIN_MS)
+            player.stop()
+            player.clearMediaItems()
+        }
+
+        override fun arrived() {
+            queue.enterProfile()
+            updateButtons()
+            // Car and watch browsers show the library: theirs is now another profile's.
+            session.notifyChildrenChanged(LIKED, Int.MAX_VALUE, null)
+            session.notifyChildrenChanged(HISTORY, Int.MAX_VALUE, null)
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession = session
@@ -153,6 +179,7 @@ class PlaybackService : MediaLibraryService() {
 
     override fun onDestroy() {
         instance.value = null
+        applicationContext.graph.account.removeSwitchListener(profileSwitch)
         applicationContext.graph.let { it.abr.save(it.network.metered.value) }
         savePosition()
         applicationContext.graph.library.flush()
@@ -641,6 +668,7 @@ class PlaybackService : MediaLibraryService() {
             if (!VIDEO_ID.matches(video.id)) return null
             return MediaItems.build(video, height)
         }
+        private const val REPORT_DRAIN_MS = 1_500L
         private const val ROOT = "root"
         private const val LIKED = "liked"
         private const val HISTORY = "history"

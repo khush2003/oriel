@@ -29,7 +29,7 @@ import kotlin.coroutines.cancellation.CancellationException
  * YouTube recommends next to recently watched videos, and topic charts. No
  * account involved, nothing leaves the device but ordinary page requests.
  */
-class HomeComposer(private val yt: YouTube, private val library: LibraryStore) {
+class HomeComposer(private val yt: YouTube, private val library: ActiveLibrary) {
     private val gate = Semaphore(12)
 
     /** [fresh] fetches channels and topics again rather than reusing what's in memory. */

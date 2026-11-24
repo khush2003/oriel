@@ -98,6 +98,8 @@ data class LibraryState(
 class LibraryStore(
     private val file: File,
     scope: CoroutineScope,
+    /** Runs on IO before the files are first read: whatever must be in place for them (moving them there). */
+    private val prepare: () -> Unit = {},
     private val report: (String, Throwable) -> Unit = { _, _ -> },
 ) {
     private val dir: File = file.absoluteFile.parentFile!!
@@ -154,6 +156,7 @@ class LibraryStore(
         io.launch {
             var disk = LibraryState()
             try {
+                prepare()
                 disk = load()
             } catch (e: Throwable) {
                 if (e is CancellationException) throw e
@@ -274,11 +277,11 @@ class LibraryStore(
         Schema.POSITIONS.write(JsonObject(p.mapValues { JsonPrimitive(it.value) })).toString()
 
     private fun saveLibrary() {
-        if (!readOnly) AtomicJson.persist(io, "Library save", report, ::writeLibrary)
+        if (!readOnly && !closed) AtomicJson.persist(io, "Library save", report, ::writeLibrary)
     }
 
     private fun savePositions() {
-        if (!readOnly) AtomicJson.persist(io, "Resume points save", report, ::writePositions)
+        if (!readOnly && !closed) AtomicJson.persist(io, "Resume points save", report, ::writePositions)
     }
 
     /** Both write what's current when they get the lock, so a save that waited behind [flush] can't put back an older state. */
@@ -307,7 +310,25 @@ class LibraryStore(
         saveLibrary()
     }
 
+    /** Set by [close]: the profile was left, and nothing more is changed or written here. */
+    @Volatile
+    private var closed = false
+
+    /**
+     * Writes what's left and stops taking changes: the profile this library belongs to is being
+     * left. Work that captured this store and finishes later changes nothing, rather than writing
+     * one profile's data under another's.
+     */
+    fun close() {
+        // Closed first, so a change made meanwhile can't slip in after the last write and be lost.
+        closed = true
+        if (!isLoaded || readOnly) return
+        AtomicJson.persist(io, "Resume points save", report, ::writePositions)
+        AtomicJson.persist(io, "Library save", report, ::writeLibrary)
+    }
+
     fun update(transform: (LibraryState) -> LibraryState) {
+        if (closed) return
         if (!isLoaded) synchronized(lock) {
             if (!isLoaded) {
                 pending += transform

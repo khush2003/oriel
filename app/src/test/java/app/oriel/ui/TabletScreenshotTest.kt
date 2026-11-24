@@ -258,7 +258,7 @@ class TabletScreenshotTest {
     @Test fun channelLoadedLight() { loadedChannel(); shoot("16b_channel_light", ThemeMode.LIGHT, setup = { it.navigate(ChannelRoute("UCfixture0")) }) }
 
     /** The sign-in page is Google's own, in a WebView; what's Oriel's is the bar and the frame around it. */
-    @Test fun login() = shoot("17_login", setup = { it.navigate(LoginRoute) })
+    @Test fun login() = shoot("17_login", setup = { it.navigate(LoginRoute()) })
 
     // ---- the watch page's two panes ----------------------------------------------------------
 

@@ -84,6 +84,9 @@ class FeedModel(
     /** When the shown feed came from the network; null until it has. */
     private var loadedAt: Long? = null
 
+    /** The profile this feed is for: a model kept for another one doesn't load as the profile in use. */
+    private val profileId = graph.account.active.value.id
+
     init {
         // The disk copy is read off the main thread (the model is made during composition);
         // if the network wins the race, the older copy is never shown.
@@ -98,7 +101,7 @@ class FeedModel(
         reload(fresh = false)
         // A new content country or language: what's shown was for the old one.
         viewModelScope.launch {
-            graph.localeVersion.drop(1).collect { reload(fresh = true, replace = shownLoader, quiet = true, key = shownKey) }
+            graph.localeVersion.drop(1).collect { if (graph.account.active.value.id == profileId) reload(fresh = true, replace = shownLoader, quiet = true, key = shownKey) }
         }
     }
 
@@ -126,9 +129,17 @@ class FeedModel(
         }
         // A cache cleared while this loads (signing out, a new country) mustn't get the old page back.
         val generation = graph.pages.generation
+        // And an account switched or signed in or out meanwhile: the answer may be the next one's.
+        val epoch = graph.account.epoch
         job = viewModelScope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { (replace ?: load)(fresh) } }
             if (version != requestVersion) return@launch
+            if (graph.account.epoch != epoch) {
+                // Still this profile's feed to show (it was made as the switch finished): asked again, as it is now.
+                if (graph.account.active.value.id == profileId) reload(fresh, replace, quiet = true, key = key)
+                else _state.update { it.copy(refreshing = false) }
+                return@launch
+            }
             result.onSuccess { feed ->
                 // An empty answer (offline, everything failed) never replaces something to show.
                 val shown = _state.value.feed

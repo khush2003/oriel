@@ -58,6 +58,9 @@ class Schema(val current: Int, private val steps: Map<Int, (JsonObject) -> JsonO
 
         /** positions.json: resume points by video id. */
         val POSITIONS = Schema(1, mapOf(0 to identity))
+
+        /** The profile index in the `account` prefs: which profiles there are and which is in use. */
+        val PROFILES = Schema(1, mapOf(0 to identity))
     }
 }
 

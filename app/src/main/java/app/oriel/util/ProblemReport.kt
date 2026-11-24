@@ -187,13 +187,14 @@ object ProblemReport {
     }
 
     /** The settings that help diagnose a problem; never the account, only whether there is one. */
-    fun settingsSummary(s: SettingsState, signedIn: Boolean, telemetryAvailable: Boolean): List<Pair<String, String>> = listOf(
+    fun settingsSummary(s: SettingsState, signedIn: Boolean, telemetryAvailable: Boolean, premium: Boolean = false): List<Pair<String, String>> = listOf(
         "Video on Wi-Fi" to s.videoWifi.label,
         "Video on mobile data" to s.videoCellular.label,
         "Sound quality" to s.audioQuality.label,
         "Data saver" to onOff(s.dataSaver),
         "Protocol" to s.transport.label,
-        "Premium formats" to onOff(s.premium),
+        // The account in use's, not the old setting: Premium belongs to an account.
+        "Premium formats" to onOff(premium),
         "Liquid glass" to onOff(s.liquidGlass),
         "Reduce motion" to onOff(s.reduceAnimation),
         "Reduce transparency" to onOff(s.reduceBlur),

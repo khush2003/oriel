@@ -83,7 +83,7 @@ fun ReportSheet(app: AppState, request: ReportRequest, onDismiss: () -> Unit) {
         videoLink = link.trim().takeIf { it.isNotEmpty() },
         includeDiagnostics = include,
         header = device,
-        settings = ProblemReport.settingsSummary(settings, signedIn, graph.telemetry.available),
+        settings = ProblemReport.settingsSummary(settings, signedIn, graph.telemetry.available, premium = graph.account.active.value.premiumFormats),
         crashes = stored?.crashes.orEmpty(),
         trail = stored?.trail.orEmpty(),
     )

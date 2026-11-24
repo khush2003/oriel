@@ -83,6 +83,7 @@ import app.oriel.ui.navigation.LikedRoute
 import app.oriel.ui.navigation.LocalPlaylistRoute
 import app.oriel.ui.navigation.LoginRoute
 import app.oriel.ui.navigation.NotificationsRoute
+import app.oriel.ui.screens.AccountSwitcher
 import app.oriel.ui.screens.NotificationsScreen
 import app.oriel.ui.navigation.PlaylistRoute
 import app.oriel.ui.navigation.PlaylistsRoute
@@ -214,7 +215,7 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
         // Over nothing else: no alert, sheet, menu, update offer or watch page, and the app settled a moment.
         val quiet = {
             app.alert == null && app.report == null && app.sheetItem == null && app.saveTarget == null && app.menuItem == null &&
-                app.renameTarget == null && !app.sheet.expanded && !updateGate.showing
+                app.renameTarget == null && !app.accounts && !app.sheet.expanded && !updateGate.showing
         }
         kotlinx.coroutines.delay(3_000)
         snapshotFlow { quiet() }.first { it }
@@ -274,7 +275,7 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
                     composable<ChannelsRoute> { LiquidPage(backSwipe) { ChannelsScreen() } }
                     composable<PlaylistsRoute> { LiquidPage(backSwipe) { PlaylistsScreen() } }
                     composable<SettingsRoute> { LiquidPage(backSwipe) { SettingsScreen() } }
-                    composable<LoginRoute> { LiquidPage(backSwipe) { LoginScreen() } }
+                    composable<LoginRoute> { LiquidPage(backSwipe) { LoginScreen(it.toRoute<LoginRoute>().reauth) } }
                     composable<NotificationsRoute> { LiquidPage(backSwipe) { NotificationsScreen() } }
                 }
             }
@@ -313,6 +314,7 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
                 onDismiss = app::dismissMenu,
                 onPreviewClick = { item -> app.dismissMenu(); app.openItem(item) },
             ) { item -> ItemActions(app, item, app::dismissMenu) }
+            AccountSwitcher(app)
 
             app.sheetItem?.let { item -> ItemActionsSheet(app, item) { app.sheetItem = null } }
             app.saveTarget?.let { video -> SaveToPlaylistSheet(app, video) { app.saveTarget = null } }

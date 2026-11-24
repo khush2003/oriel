@@ -9,13 +9,16 @@ import app.oriel.core.model.Playlist
 import app.oriel.core.model.Video
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.cancellation.CancellationException
@@ -25,8 +28,11 @@ import kotlin.coroutines.cancellation.CancellationException
  * instant and everything works signed out, and is mirrored to the YouTube
  * account in the background when signed in. A failed mirror is reported, not
  * retried silently, and the local state stays; the next sync reconciles it.
+ *
+ * A mirror goes out as the account it was made under or not at all: each captures the
+ * [AccountManager.epoch] it began in, and a switch waits for those in flight ([AccountManager.SwitchListener]).
  */
-class LibraryActions(private val graph: AppGraph) {
+class LibraryActions(private val graph: AppGraph) : AccountManager.SwitchListener {
     private val library get() = graph.library
     private val yt get() = graph.yt
 
@@ -52,18 +58,40 @@ class LibraryActions(private val graph: AppGraph) {
 
     private val lanes = ConcurrentHashMap<String, Lane>()
 
+    /** Account calls queued or running, for a switch to let them finish under the account they were made with. */
+    private val inFlight = MutableStateFlow(0)
+
+    override suspend fun leaving() {
+        withTimeoutOrNull(DRAIN_MS) { inFlight.first { it == 0 } }
+    }
+
+    /** Runs [block] on IO as one of [inFlight]. */
+    private fun account(block: suspend () -> Unit) {
+        inFlight.update { it + 1 }
+        graph.scope.launch(Dispatchers.IO) {
+            try {
+                block()
+            } finally {
+                inFlight.update { it - 1 }
+            }
+        }
+    }
+
     /**
      * Mirrors to the account, one call at a time per [key]. [block] sends the local state as it
      * is when its turn comes, and a call with a newer one queued behind it is skipped, so a quick
      * like then unlike ends unliked on YouTube too, whatever order the requests would have raced in.
      */
     private fun mirror(what: String, key: String, block: suspend () -> Unit) {
-        if (!yt.isSignedIn) return
+        if (!yt.isSignedIn || graph.account.switching.value) return
+        val epoch = graph.account.epoch
         val lane = lanes.getOrPut(key) { Lane() }
         lane.waiting.incrementAndGet()
-        graph.scope.launch(Dispatchers.IO) {
+        account {
             lane.mutex.withLock {
                 if (lane.waiting.decrementAndGet() > 0) return@withLock
+                // Its turn came after a switch: the account it was for is no longer the one signed in.
+                if (graph.account.epoch != epoch) return@withLock
                 try {
                     block()
                 } catch (e: CancellationException) {
@@ -157,7 +185,9 @@ class LibraryActions(private val graph: AppGraph) {
         if (!yt.isSignedIn) emptyList() else withContext(Dispatchers.IO) { runCatching { yt.saveToOptions(videoId) }.getOrDefault(emptyList()) }
 
     fun setInAccountPlaylist(playlistId: String, video: Video, add: Boolean, title: String) {
-        graph.scope.launch(Dispatchers.IO) {
+        val epoch = graph.account.epoch
+        account {
+            if (graph.account.epoch != epoch) return@account
             val ok = runCatching { if (add) yt.addToPlaylist(playlistId, video.id) else yt.removeFromPlaylist(playlistId, video.id) }.isSuccess
             notice(
                 when {
@@ -170,7 +200,9 @@ class LibraryActions(private val graph: AppGraph) {
     }
 
     fun createAccountPlaylist(title: String, private: Boolean, video: Video?) {
-        graph.scope.launch(Dispatchers.IO) {
+        val epoch = graph.account.epoch
+        account {
+            if (graph.account.epoch != epoch) return@account
             val id = runCatching { yt.createPlaylist(title, private, video?.id) }.getOrNull()
             notice(if (id != null) "Created “$title”" else "Couldn't create the playlist")
         }
@@ -179,5 +211,10 @@ class LibraryActions(private val graph: AppGraph) {
     fun addToLocalPlaylist(playlist: LocalPlaylist, videos: List<Video>) {
         library.addToLocalPlaylist(playlist.id, videos)
         notice("Saved to ${playlist.name}")
+    }
+
+    private companion object {
+        /** How long a switch waits for account calls still going out. */
+        const val DRAIN_MS = 1_500L
     }
 }

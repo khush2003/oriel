@@ -19,17 +19,23 @@ import java.util.concurrent.atomic.AtomicLong
  * change shape, [VERSION] goes up and the old pages are deleted rather than
  * migrated, since they're only a cache.
  *
- * [clear] starts a new [generation]; a page loaded before it is dropped when
- * written, so a load that was in flight can't bring back pages of an account
- * or a locale that was just left. Callers capture [generation] when their load
- * starts and pass it to [write].
+ * Each profile has its own pages (`v<N>/<profile>`), so switching to one
+ * shows its last Home at once rather than the account just left's.
+ *
+ * [clear] and [use] start a new [generation]; a page loaded before it is
+ * dropped when written, so a load that was in flight can't bring back pages of
+ * an account or a locale that was just left. Callers capture [generation] when
+ * their load starts and pass it to [write].
  */
 class PageDiskCache(
     private val root: File,
     scope: CoroutineScope,
     private val report: (String, Throwable) -> Unit = { _, _ -> },
+    profileId: String,
 ) {
-    private val dir = File(root, "v$VERSION")
+    private val versioned = File(root, "v$VERSION")
+    @Volatile
+    private var dir = File(versioned, profileId)
     private val io = CoroutineScope(scope.coroutineContext + Dispatchers.IO)
     private val lock = Any()
     private val gen = AtomicLong()
@@ -41,8 +47,8 @@ class PageDiskCache(
         io.launch {
             runCatching {
                 // Other versions' pages, and the unversioned ones from before, aren't readable as these.
-                root.listFiles { f -> f.name != dir.name }?.forEach { it.deleteRecursively() }
-                dir.mkdirs()
+                root.listFiles { f -> f.name != versioned.name }?.forEach { it.deleteRecursively() }
+                versioned.mkdirs()
             }
         }
     }
@@ -69,14 +75,28 @@ class PageDiskCache(
         }
     }
 
+    /** Drops the pages of every profile: they're in a locale that's no longer used. */
     fun clear() = synchronized(lock) {
         gen.incrementAndGet()
-        dir.listFiles()?.forEach { it.delete() }
+        versioned.listFiles()?.forEach { it.deleteRecursively() }
+    }
+
+    /** Reads and writes [profileId]'s pages from here on; a load begun for the profile before is dropped. */
+    fun use(profileId: String) = synchronized(lock) {
+        gen.incrementAndGet()
+        dir = File(versioned, profileId)
+    }
+
+    /** Deletes [profileId]'s pages, as it's removed or signed out. */
+    fun delete(profileId: String) = synchronized(lock) {
+        val gone = File(versioned, profileId)
+        if (gone == dir) gen.incrementAndGet()
+        gone.deleteRecursively()
     }
 
     companion object {
         /** Bump when [app.oriel.core.model.Feed] or another cached page changes in a way old pages can't decode into. */
-        const val VERSION = 1
+        const val VERSION = 2
 
         private val PLAIN = Regex("[A-Za-z0-9_-]{1,100}")
 
