@@ -151,7 +151,7 @@ class WatchModel(private val graph: AppGraph, private val connection: PlayerConn
         }
         // Captions and the scrub storyboard come from one more player request. Unless captions
         // are on, it waits until the video has had a few seconds to start, so it doesn't compete
-        // with the first bytes of the video itself; a scrub or the captions menu asks for it at once.
+        // with the first bytes of the video itself; a scrub or the settings sheet asks for it at once.
         val wanted = CompletableDeferred<Unit>().also { extrasWanted = it }
         if (graph.settings.current.captions) wanted.complete(Unit)
         else scope.launch { delay(EXTRAS_DELAY_MS); wanted.complete(Unit) }
@@ -159,7 +159,7 @@ class WatchModel(private val graph: AppGraph, private val connection: PlayerConn
         loadStoryboard(video, wanted)
     }
 
-    /** A scrub began or the captions menu opened: fetch this video's captions and storyboard now. */
+    /** A scrub began or the settings sheet opened: fetch this video's captions and storyboard now. */
     fun wantExtras() {
         extrasWanted?.complete(Unit)
     }

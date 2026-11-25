@@ -111,14 +111,8 @@ import kotlinx.coroutines.flow.filterNotNull
  */
 val LocalPagePull = androidx.compose.runtime.staticCompositionLocalOf<() -> Float> { { 0f } }
 
-/** Whether the docked player is showing, so pages leave room for it above the tab bar. */
-val LocalMiniPlayerVisible = compositionLocalOf { false }
-
 /** Whether the floating tab bar is showing (every page but sign-in). */
 val LocalTabBarVisible = compositionLocalOf { true }
-
-@Composable
-fun bottomPadding(): PaddingValues = pagePadding(LocalMiniPlayerVisible.current, top = 0.dp, withTabBar = LocalTabBarVisible.current)
 
 /**
  * An iOS page: a large title that scrolls with the content and hands over to
@@ -205,7 +199,7 @@ fun PageScaffold(
     val shownAction by rememberUpdatedState(onShown)
     // Only when the app comes back to the foreground, and only for the page on screen and
     // scrolled to its top: stepping back to a page from another one leaves it exactly as it
-    // was (it used to reload under the reader). Pull to refresh does the rest.
+    // was. Pull to refresh does the rest.
     val pageLifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     DisposableEffect(pageLifecycle) {
         val process = androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle
@@ -230,8 +224,8 @@ fun PageScaffold(
             val last = info.visibleItemsInfo.lastOrNull()?.index ?: -1
             info.totalItemsCount > 0 && last >= info.totalItemsCount - 6
         }.distinctUntilChanged().collectLatest { near ->
-            // Asked again while the end stays in view: a page that added few rows, or arrived
-            // while the model was busy, used to leave the list stalled, as the edge never re-fired.
+            // Asked again while the end stays in view: the edge never re-fires for a page that
+            // added few rows or arrived while the model was busy.
             // (The models ignore a call while loading, after a failure, or at the real end.)
             while (near) { nearEndAction?.invoke(); delay(1_000) }
         }
@@ -245,7 +239,7 @@ fun PageScaffold(
         else -> topBarContentPadding()
     }
     val inset = LocalWindowLayout.current.inset(width)
-    val padding = pagePadding(LocalMiniPlayerVisible.current, top = top, withTabBar = LocalTabBarVisible.current, horizontal = inset)
+    val padding = pagePadding(top = top, withTabBar = LocalTabBarVisible.current, horizontal = inset)
     // Under the bar: content passes beneath it as soon as it scrolls when the page starts below
     // the bar; on a tab root the large title sits there at rest, so not until it's gone.
     val edge: () -> Float = remember(state, barContent, hasLargeTitle, collapse, density) {
@@ -295,8 +289,8 @@ fun PageScaffold(
         }
         TopFadeScrim(Modifier.align(Alignment.TopCenter), pageColor = background)
         TopScrollEdge(edge, Modifier.align(Alignment.TopCenter), pageColor = background)
-        // Back only from a page that's settled in: a second tap while it slides away popped the
-        // page under it too, or sent the app to the background from Home.
+        // Back only from a page that's settled in: a second tap while it slides away pops the
+        // page under it too, or sends the app to the background from Home.
         val back = onBack?.let { androidx.lifecycle.compose.dropUnlessResumed(block = it) }
         CompositionLocalProvider(LocalAppBackdrop provides if (glass) pageBackdrop else null) {
             ScaffoldBar(back, Modifier.align(Alignment.TopCenter), title, showTitle, collapse, leading, actions)
@@ -406,12 +400,10 @@ private fun ClassicPullToRefresh(refreshing: Boolean, onRefresh: () -> Unit, spi
     val loading by rememberUpdatedState(refreshing)
     LaunchedEffect(state) {
         snapshotFlow { state.distanceFraction >= 1f }.distinctUntilChanged().filter { it }.collect {
-            // The pull caught; a refresh started from elsewhere opens without one.
             if (!loading) haptics.play(Haptic.Tap)
         }
     }
     val offset = remember(state, holdPx) { { pullOffset(state.distanceFraction, holdPx) } }
-    // A page that starts under the status bar still shows the indicator below it.
     val top = maxOf(spinnerTop, WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 4.dp)
     Box(Modifier.fillMaxSize().pullToRefresh(refreshing, state, threshold = CLASSIC_REFRESH_HOLD, onRefresh = onRefresh)) {
         content(offset)

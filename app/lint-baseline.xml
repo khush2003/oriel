@@ -30,52 +30,8 @@
         errorLine2="             ~~~~~~~~~~~~~">
         <location
             file="src/main/AndroidManifest.xml"
-            line="44"
+            line="55"
             column="14"/>
-    </issue>
-
-    <issue
-        id="MissingOnRenderProcessGone"
-        message="WebViewClient should implement `onRenderProcessGone` to handle render process crashes or out-of-memory errors. Otherwise, the app will crash when the render process is shut down."
-        errorLine1="                    webViewClient = object : WebViewClient() {"
-        errorLine2="                                    ~~~~~~">
-        <location
-            file="src/main/java/app/oriel/ui/screens/LoginScreen.kt"
-            line="71"
-            column="37"/>
-    </issue>
-
-    <issue
-        id="MissingOnRenderProcessGone"
-        message="WebViewClient should implement `onRenderProcessGone` to handle render process crashes or out-of-memory errors. Otherwise, the app will crash when the render process is shut down."
-        errorLine1="                    webViewClient = object : WebViewClient() {"
-        errorLine2="                                    ~~~~~~">
-        <location
-            file="src/main/java/app/oriel/ui/screens/LoginScreen.kt"
-            line="71"
-            column="37"/>
-    </issue>
-
-    <issue
-        id="MissingOnRenderProcessGone"
-        message="WebViewClient should implement `onRenderProcessGone` to handle render process crashes or out-of-memory errors. Otherwise, the app will crash when the render process is shut down."
-        errorLine1="                    webViewClient = object : WebViewClient() {"
-        errorLine2="                                             ~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/app/oriel/ui/screens/LoginScreen.kt"
-            line="71"
-            column="46"/>
-    </issue>
-
-    <issue
-        id="MissingOnRenderProcessGone"
-        message="WebViewClient should implement `onRenderProcessGone` to handle render process crashes or out-of-memory errors. Otherwise, the app will crash when the render process is shut down."
-        errorLine1="                    webViewClient = object : WebViewClient() {"
-        errorLine2="                                             ~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/app/oriel/ui/screens/LoginScreen.kt"
-            line="71"
-            column="46"/>
     </issue>
 
     <issue
@@ -85,19 +41,8 @@
         errorLine2="     ~~~~~~~~~~~">
         <location
             file="src/main/AndroidManifest.xml"
-            line="19"
+            line="26"
             column="6"/>
-    </issue>
-
-    <issue
-        id="NewerVersionAvailable"
-        message="A newer version of org.jetbrains.kotlinx:kotlinx-serialization-json than 1.11.0 is available: 1.12.0"
-        errorLine1="    implementation(&quot;org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0&quot;)"
-        errorLine2="                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="build.gradle.kts"
-            line="149"
-            column="20"/>
     </issue>
 
     <issue
@@ -107,7 +52,7 @@
         errorLine2="                        ~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/app/oriel/ui/AppState.kt"
-            line="246"
+            line="404"
             column="25"/>
     </issue>
 
@@ -118,7 +63,7 @@
         errorLine2="                         ~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/app/oriel/ui/OrielRoot.kt"
-            line="122"
+            line="155"
             column="26"/>
     </issue>
 
@@ -129,7 +74,7 @@
         errorLine2="                                         ~~~">
         <location
             file="src/main/java/app/oriel/AppGraph.kt"
-            line="110"
+            line="193"
             column="42"/>
     </issue>
 
@@ -140,7 +85,7 @@
         errorLine2="                                                                                                                                 ~~~~~~~~~~">
         <location
             file="src/main/java/app/oriel/ui/screens/SettingsScreen.kt"
-            line="75"
+            line="425"
             column="130"/>
     </issue>
 
@@ -151,7 +96,7 @@
         errorLine2="                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/test/java/app/oriel/ui/ScreenshotTest.kt"
-            line="119"
+            line="130"
             column="28"/>
     </issue>
 
@@ -162,7 +107,7 @@
         errorLine2="                  ~~~~~~~~">
         <location
             file="src/main/java/app/oriel/ui/components/Cards.kt"
-            line="428"
+            line="514"
             column="19"/>
     </issue>
 
@@ -173,19 +118,8 @@
         errorLine2="                                                           ~~~~~~~~">
         <location
             file="src/main/java/app/oriel/ui/components/Controls.kt"
-            line="521"
+            line="959"
             column="60"/>
-    </issue>
-
-    <issue
-        id="StateFlowValueCalledInComposition"
-        message="StateFlow.value should not be called within composition"
-        errorLine1="    val videoId = app.watch.state.value.video?.id.orEmpty()"
-        errorLine2="                                  ~~~~~">
-        <location
-            file="src/main/java/app/oriel/ui/player/ChaptersSheet.kt"
-            line="49"
-            column="35"/>
     </issue>
 
     <issue
@@ -195,19 +129,8 @@
         errorLine2="         ~~~~~~~">
         <location
             file="src/main/AndroidManifest.xml"
-            line="65"
+            line="76"
             column="10"/>
-    </issue>
-
-    <issue
-        id="DataExtractionRules"
-        message="The attribute `android:allowBackup` is deprecated from Android 12 and higher and may be removed in future versions. Consider adding the attribute `android:dataExtractionRules` specifying an `@xml` resource which configures cloud backups and device transfers on Android 12 and higher."
-        errorLine1="        android:allowBackup=&quot;false&quot;"
-        errorLine2="                             ~~~~~">
-        <location
-            file="src/main/AndroidManifest.xml"
-            line="21"
-            column="30"/>
     </issue>
 
     <issue
@@ -219,34 +142,12 @@
 
     <issue
         id="AutoboxingStateCreation"
-        message="Prefer `mutableIntStateOf` instead of `mutableStateOf`"
-        errorLine1="    var crashes by remember { mutableStateOf(CrashLog.crashCount(context)) }"
-        errorLine2="                              ~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/app/oriel/ui/screens/SettingsScreen.kt"
-            line="74"
-            column="31"/>
-    </issue>
-
-    <issue
-        id="AutoboxingStateCreation"
-        message="Prefer `mutableFloatStateOf` instead of `mutableStateOf`"
-        errorLine1="    var progress by remember { mutableStateOf(0f) }"
-        errorLine2="                               ~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/app/oriel/ui/screens/ShortsScreen.kt"
-            line="490"
-            column="32"/>
-    </issue>
-
-    <issue
-        id="AutoboxingStateCreation"
         message="Prefer `mutableFloatStateOf` instead of `mutableStateOf`"
         errorLine1="    var scrubAt by remember { mutableStateOf(0f) }"
         errorLine2="                              ~~~~~~~~~~~~~~">
         <location
             file="src/main/java/app/oriel/ui/screens/ShortsScreen.kt"
-            line="493"
+            line="653"
             column="31"/>
     </issue>
 
@@ -257,7 +158,7 @@
         errorLine2="                              ~~~~~~~~~~~~~~">
         <location
             file="src/main/java/app/oriel/ui/screens/ShortsScreen.kt"
-            line="741"
+            line="979"
             column="31"/>
     </issue>
 
@@ -268,7 +169,7 @@
         errorLine2="                                     ~~~~~~~~~~~~~~">
         <location
             file="src/main/java/app/oriel/ui/screens/ShortsScreen.kt"
-            line="742"
+            line="980"
             column="38"/>
     </issue>
 
@@ -279,7 +180,7 @@
         errorLine2="                              ~~~~~~~~~~~~~~">
         <location
             file="src/main/java/app/oriel/ui/screens/ShortsScreen.kt"
-            line="837"
+            line="1075"
             column="31"/>
     </issue>
 
@@ -290,30 +191,8 @@
         errorLine2="                                  ~~~~~~~~~~~~~~">
         <location
             file="src/main/java/app/oriel/ui/screens/ShortsScreen.kt"
-            line="840"
+            line="1078"
             column="35"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.color.icon_background` appears to be unused"
-        errorLine1="    &lt;color name=&quot;icon_background&quot;>#FF000000&lt;/color>"
-        errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/values/colors.xml"
-            line="4"
-            column="12"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.color.accent` appears to be unused"
-        errorLine1="    &lt;color name=&quot;accent&quot;>#FFFF5A5F&lt;/color>"
-        errorLine2="           ~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/values/colors.xml"
-            line="5"
-            column="12"/>
     </issue>
 
     <issue
@@ -330,77 +209,11 @@
     <issue
         id="UseKtx"
         message="Use the KTX extension function `SharedPreferences.edit` instead?"
-        errorLine1="        prefs.edit().putString(KEY_COOKIE, cookie).putString(KEY_DATASYNC, dataSyncId).remove(KEY_MERGED).remove(KEY_LAST_SYNC).apply()"
-        errorLine2="        ~~~~~~~~~~~~">
-        <location
-            file="src/main/java/app/oriel/data/AccountManager.kt"
-            line="59"
-            column="9"/>
-    </issue>
-
-    <issue
-        id="UseKtx"
-        message="Use the KTX extension function `SharedPreferences.edit` instead?"
-        errorLine1="        prefs.edit().putString(KEY_ACCOUNT, AppJson.encodeToString(AccountInfo.serializer(), info)).apply()"
-        errorLine2="        ~~~~~~~~~~~~">
-        <location
-            file="src/main/java/app/oriel/data/AccountManager.kt"
-            line="71"
-            column="9"/>
-    </issue>
-
-    <issue
-        id="UseKtx"
-        message="Use the KTX extension function `SharedPreferences.edit` instead?"
-        errorLine1="            if (keepLocal &amp;&amp; likes.isSuccess &amp;&amp; watchLater.isSuccess &amp;&amp; subscriptions.isSuccess) prefs.edit().putBoolean(KEY_MERGED, true).apply()"
-        errorLine2="                                                                                                 ~~~~~~~~~~~~">
-        <location
-            file="src/main/java/app/oriel/data/AccountManager.kt"
-            line="109"
-            column="98"/>
-    </issue>
-
-    <issue
-        id="UseKtx"
-        message="Use the KTX extension function `SharedPreferences.edit` instead?"
-        errorLine1="            prefs.edit().putLong(KEY_LAST_SYNC, lastSync).apply()"
-        errorLine2="            ~~~~~~~~~~~~">
-        <location
-            file="src/main/java/app/oriel/data/AccountManager.kt"
-            line="113"
-            column="13"/>
-    </issue>
-
-    <issue
-        id="UseKtx"
-        message="Use the KTX extension function `SharedPreferences.edit` instead?"
-        errorLine1="        prefs.edit().clear().apply()"
-        errorLine2="        ~~~~~~~~~~~~">
-        <location
-            file="src/main/java/app/oriel/data/AccountManager.kt"
-            line="144"
-            column="9"/>
-    </issue>
-
-    <issue
-        id="UseKtx"
-        message="Use the KTX extension function `SharedPreferences.edit` instead?"
-        errorLine1="        yt.innerTube.visitorData?.let { session.edit().putString(KEY_VISITOR, it).apply() }"
-        errorLine2="                                        ~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/app/oriel/AppGraph.kt"
-            line="140"
-            column="41"/>
-    </issue>
-
-    <issue
-        id="UseKtx"
-        message="Use the KTX extension function `SharedPreferences.edit` instead?"
         errorLine1="        session.edit().putString(KEY_LOCALE, applied).apply()"
         errorLine2="        ~~~~~~~~~~~~~~">
         <location
             file="src/main/java/app/oriel/AppGraph.kt"
-            line="161"
+            line="268"
             column="9"/>
     </issue>
 
@@ -411,7 +224,7 @@
         errorLine2="                                                             ~~~~~~~~~~~~">
         <location
             file="src/main/java/app/oriel/AppGraph.kt"
-            line="172"
+            line="279"
             column="62"/>
     </issue>
 
@@ -422,41 +235,30 @@
         errorLine2="                                                         ~~~~~~~~~~~~">
         <location
             file="src/main/java/app/oriel/AppGraph.kt"
-            line="174"
+            line="281"
             column="58"/>
     </issue>
 
     <issue
         id="UseKtx"
         message="Use the KTX extension function `String.toUri` instead?"
-        errorLine1="        runCatching { activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }"
-        errorLine2="                                                                        ~~~~~~~~~~~~~~">
+        errorLine1="        val uri = Uri.parse(url.trim())"
+        errorLine2="                  ~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/java/app/oriel/ui/AppState.kt"
-            line="216"
-            column="73"/>
-    </issue>
-
-    <issue
-        id="UseKtx"
-        message="Use the KTX extension function `String.toUri` instead?"
-        errorLine1="        val uri = Uri.parse(url)"
-        errorLine2="                  ~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/app/oriel/ui/AppState.kt"
-            line="323"
+            line="325"
             column="19"/>
     </issue>
 
     <issue
         id="UseKtx"
-        message="Use the KTX extension function `SharedPreferences.edit` instead?"
-        errorLine1="        prefs.edit().putString(KEY, AppJson.encodeToString(SettingsState.serializer(), _state.value)).apply()"
-        errorLine2="        ~~~~~~~~~~~~">
+        message="Use the KTX extension function `String.toUri` instead?"
+        errorLine1="        val uri = Uri.parse(url.trim())"
+        errorLine2="                  ~~~~~~~~~~~~~~~~~~~~~">
         <location
-            file="src/main/java/app/oriel/data/Settings.kt"
-            line="107"
-            column="9"/>
+            file="src/main/java/app/oriel/ui/AppState.kt"
+            line="491"
+            column="19"/>
     </issue>
 
 </issues>

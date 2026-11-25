@@ -46,16 +46,9 @@ data class FeedState(
  * paints at once, the network copy replaces it when it lands, and the
  * continuation extends it as the list nears its end.
  *
- * A feed doesn't stay as it was first loaded: [refreshIfStale], called when
- * its screen comes back into view, fetches it again once it's [maxAgeMs]
- * old, or a minute old when something was watched since, as what YouTube
- * recommends moves with what you watch.
- *
- * A copy nobody asked for (that refresh, or the network copy behind the disk
- * one) only replaces the list while the reader is at its top ([readerAt]):
- * landing a few seconds after it was asked for, it used to swap the list
- * under someone who had scrolled into it meanwhile. It waits for them to
- * come back up.
+ * [refreshIfStale] refetches past [maxAgeMs], or after a minute if something
+ * was watched since. A copy nobody asked for replaces the list only while
+ * [readerAt] says the reader is at its top.
  */
 class FeedModel(
     private val graph: AppGraph,
@@ -83,8 +76,7 @@ class FeedModel(
 
     /**
      * For a feed with chips: the feed's own chips (a chip's page has none of its own) and the
-     * one picked. Kept here rather than in the screen, which a tab switch disposes: Home used
-     * to come back with a chip still picked and no row of chips to get back to All.
+     * one picked. Kept here rather than in the screen, which a tab switch disposes.
      */
     var baseChips by mutableStateOf<List<app.oriel.core.model.Chip>>(emptyList())
     var selectedChip by mutableStateOf<String?>(null)
@@ -108,7 +100,7 @@ class FeedModel(
     private fun tidy(feed: Feed): Feed =
         if (!hideWatched) feed else HomeComposer.dropRepeats(HomeComposer.dropWatched(feed, graph.library.watchedIds()))
 
-    /** The history read from disk, before anything is filtered by it: a feed that beat it there kept everything. */
+    /** The history read from disk, before anything is filtered by it: a feed that beats it there keeps everything. */
     private suspend fun awaitHistory() { if (hideWatched) graph.library.awaitLoaded() }
 
     init {
@@ -201,8 +193,8 @@ class FeedModel(
             }.onFailure { e ->
                 if (e is CancellationException) throw e
                 graph.notePageFailure("Loading ${cacheKey?.substringBefore('-') ?: "a feed"}", e)
-                // A chip that failed to load leaves no feed under it: the old page under the new
-                // chip read as the chip's results. The full-page error offers Try again.
+                // A chip that failed to load leaves no feed under it: the old page would read
+                // as the chip's results. The full-page error offers Try again.
                 _state.update { it.copy(feed = if (switching) null else it.feed, stale = it.stale && !switching, loading = false, refreshing = false, error = friendlyError(e)) }
             }
         }
@@ -220,7 +212,6 @@ class FeedModel(
         if (loaded != null) {
             val age = clock() - loaded
             val watchedSince = (graph.library.state.value.history.firstOrNull()?.watchedAt ?: 0L) > loaded
-            // Someone partway down a list is reading it: it never changes under them.
             if (!atTop) return
             if (age < maxAgeMs && !(watchedSince && age >= AFTER_WATCH_MS)) return
         }
@@ -279,9 +270,8 @@ class FeedModel(
 }
 
 /**
- * One part of a state flow, recomposing only when that part changes. The library's state moves
- * every few seconds while something plays (resume points); a page showing only its
- * subscriptions or searches used to recompose with every one. [select] is read once.
+ * One part of a state flow, recomposing only when that part changes: the library's state moves
+ * every few seconds while something plays (resume points). [select] is read once.
  */
 @Composable
 fun <T, R> StateFlow<T>.collectSlice(select: (T) -> R): State<R> {

@@ -23,8 +23,6 @@ class MediaCaches(context: Context, settings: Settings) {
         database,
     )
 
-    fun streamCacheBytes(): Long = stream.cacheSpace
-
     fun clearStreamCache() {
         stream.keys.toList().forEach { runCatching { stream.removeResource(it) } }
     }

@@ -50,8 +50,6 @@ class ActiveLibrary(
     /** The active profile's store, for work that must stay with the profile it started in. */
     val store: LibraryStore get() = active.value.store
 
-    val profileId: String get() = active.value.profileId
-
     /**
      * Makes [profileId]'s library the active one; the one left is written out and closed. Returns
      * once the new one has been read, so what's shown next is its library and not an empty one.
@@ -86,11 +84,8 @@ class ActiveLibrary(
 
     val problems: SharedFlow<String> = active.flatMapLatest { it.store.problems }.shareIn(scope, SharingStarted.Eagerly)
 
-    val readOnly: Boolean get() = store.readOnly
-
     suspend fun awaitLoaded() = store.awaitLoaded()
     fun flush() = store.flush()
-    fun update(transform: (LibraryState) -> LibraryState) = store.update(transform)
 
     fun isLiked(id: String) = store.isLiked(id)
     fun isDisliked(id: String) = store.isDisliked(id)

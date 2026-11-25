@@ -11,12 +11,10 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.RenderEffect
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asComposeRenderEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInWindow
@@ -35,7 +33,6 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
-import kotlin.math.tanh
 
 /*
  * The liquid motion's shared pieces, ported from the mock in design/liquid/index.html: its spring
@@ -47,8 +44,7 @@ import kotlin.math.tanh
 
 /**
  * Whether the liquid motion is on: the "Liquid motion" setting (off by default), and never under
- * Reduce motion. Off, every interaction behaves as it did before liquid motion existed. Liquid
- * glass is a separate setting.
+ * Reduce motion. Liquid glass is a separate setting.
  */
 val LocalLiquidMotion = staticCompositionLocalOf { false }
 
@@ -117,23 +113,6 @@ fun rubber(x: Float, dim: Float, c: Float = 0.55f): Float = if (x <= 0f || dim <
 fun project(velocity: Float, rate: Float = 0.998f): Float = velocity / 1000f * rate / (1f - rate)
 
 /**
- * Stretch along the direction of travel for a speed in units per second, limited to ±[max] (a
- * fraction of the length).
- */
-fun liquidStretch(velocity: Float, perUnit: Float = 0.25f, max: Float = 0.11f): Float = max * tanh(velocity * perUnit)
-
-/**
- * Stretches the layer by [s] (a fraction; negative squashes) along y, giving back half of it
- * across so it reads as the same drop rather than a zoom, anchored at its top or bottom edge.
- */
-fun GraphicsLayerScope.stretchY(s: Float, anchorTop: Boolean) {
-    if (s == 0f) return
-    scaleY *= 1f + s
-    scaleX *= 1f - s * 0.5f
-    transformOrigin = TransformOrigin(0.5f, if (anchorTop) 0f else 1f)
-}
-
-/**
  * Finite-difference speed of a value fed as it changes, smoothed over a few samples: cheap
  * enough to run on every move of a drag or every frame of a slide.
  */
@@ -163,7 +142,7 @@ class SmoothedVelocity {
 private const val KAPPA = 0.5523f
 
 /**
- * The mock's `capsule`: a capsule from [l] to [r] about [cy], [h] tall, whose long edges pinch in
+ * The mock's `capsule`: a capsule from [l0] to [r0] about [cy], [h] tall, whose long edges pinch in
  * by [neck] at the middle, so a stretched one reads as liquid rather than a box. Into [path], reset.
  */
 fun capsulePath(path: Path, l0: Float, r0: Float, cy: Float, h: Float, neck: Float = 0f) {
@@ -449,9 +428,6 @@ fun gooEffect(blurPx: Float, gain: Float = 24f, cut: Float = 11f): RenderEffect?
         android.graphics.RenderEffect.createColorFilterEffect(android.graphics.ColorMatrixColorFilter(threshold), blur).asComposeRenderEffect()
     }.getOrNull()
 }
-
-/** Whether [gooEffect] can fuse shapes here, or the shapes have to draw their own necks. */
-val gooSupported: Boolean get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
 /** A layer whose drawing is fused by [effect] (from [gooEffect]); nothing when it's null. Keep such layers small. */
 fun Modifier.goo(effect: RenderEffect?): Modifier = if (effect == null) this else graphicsLayer { renderEffect = effect }

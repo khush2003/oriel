@@ -2,7 +2,6 @@ package app.oriel.playback
 
 import android.os.Looper
 import androidx.annotation.OptIn
-import androidx.core.net.toUri
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi

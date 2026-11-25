@@ -40,7 +40,7 @@ class PlayerCornerTest {
         // Upward dragging displays zero pull, but release still carries the finger's negative speed.
         val animation = TargetBasedAnimation(SheetSpring, Float.VectorConverter, 0f, 0f, -1200f)
         val pull = animation.getValueFromNanos(16_000_000L)
-        // Reproduce the shipping formula's exception with an actual first-frame spring value.
+        // The unclamped formula throws on an actual first-frame spring value.
         assertThrows(IllegalArgumentException::class.java) {
             RoundedCornerShape((pull / 6f).coerceAtMost(maxCorner))
                 .createOutline(Size(1440f, 3120f), LayoutDirection.Ltr, density)

@@ -60,6 +60,6 @@ object VideoCaps {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) isHardwareAccelerated
         else !name.startsWith("OMX.google.") && !name.startsWith("c2.android.")
 
-    /** Auto's height on Wi-Fi: the screen's, as far as the decoders keep up. */
+    /** Auto's height: the screen's, as far as the decoders keep up. */
     fun autoHeight(context: Context): Int = min(screenHeight(context), hardwareHeight())
 }

@@ -56,7 +56,6 @@ import app.oriel.ui.components.feedItem
 import app.oriel.ui.components.rowKeys
 import app.oriel.ui.components.ActionPill
 import app.oriel.ui.components.ExpandableText
-import app.oriel.ui.components.LoadingRow
 import app.oriel.ui.components.OrielIcons
 import app.oriel.ui.components.MessageState
 import app.oriel.ui.components.MoreButton
@@ -250,7 +249,7 @@ fun PlaylistScreen(id: String) {
         refreshing = state.refreshing,
         onRefresh = { model.load(true) },
         onNearEnd = model::loadMore,
-        // None until the playlist is in: an empty pill drew as a sliver at the bar's end.
+        // None until the playlist is in: an empty pill draws as a sliver at the bar's end.
         actions = if (playlist == null) null else ({
             if (id != "WL" && id != "LL") {
                 val isSaved = id in saved
@@ -360,9 +359,7 @@ fun LocalPlaylistScreen(id: String) {
                         if (editing) {
                             // The handle: drag to move. The row lifts, follows the finger, and the
                             // others step aside as it passes their middles.
-                            // The gesture outlives recompositions: it reads the list as saved now,
-                            // not as it was when this row first appeared (a second drag used to
-                            // start from the old order and move the wrong video).
+                            // The gesture outlives recompositions, so it reads the saved list fresh.
                             val currentVideos by rememberUpdatedState(playlist.videos)
                             Icon(
                                 OrielIcons.DragHandle, "Move", tint = palette.onBackgroundVariant,

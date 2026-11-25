@@ -255,7 +255,7 @@ fun <T : Any> HeldContextMenu(
     }
     val reduceMotion = LocalReduceAnimation.current || systemAnimationsOff
     val reduceBlur = LocalReduceBlur.current || !isGlassSupported()
-    // Off, the menu opens as it did before liquid motion: the plate pops, the menu grows from its corner.
+    // Off: the plate pops, the menu grows from its corner.
     val liquid = LocalLiquidMotion.current && !reduceMotion
 
     // The mock's three: the plate's lift, and the menu's width and height.
@@ -403,7 +403,6 @@ fun <T : Any> HeldContextMenu(
                 }
             }
             if (!liquid) {
-                // As before liquid motion: the plate scales up into place, the menu out of its near corner.
                 card.placeWithLayer(cardX, cardY) {
                     val p = progress.value
                     if (reduceMotion) {

@@ -50,7 +50,6 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
@@ -63,7 +62,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
@@ -96,7 +94,7 @@ data class ResolvedUrl(val videoId: String? = null, val browseId: String? = null
  * client's InnerTube dialect directly, since that is the client whose
  * responses carry everything youtube.com shows (comments, chapters, Shorts,
  * channel tabs). Stream extraction stays with InnerTubeX, which owns the
- * player clients, cipher and PO-token tiers.
+ * player clients and cipher.
  *
  * Parsed pages sit in a small LRU with per-page expiry and in-flight
  * de-duplication, so going back never waits on the network twice.
@@ -587,8 +585,7 @@ class YouTube(
                 AdaptiveManifest(url, client.userAgent)
             }
             // Hedged: the first client alone, the next joining if it hasn't answered in a moment
-            // (or answered nothing), and the first manifest from either wins. One after the
-            // other, a slow first answer held the picture back by its whole timeout.
+            // (or answered nothing), and the first manifest from either wins.
             // Boxed, so "every client answered, none with a ladder" isn't mistaken for running out of time.
             val outcome = kotlinx.coroutines.withTimeoutOrNull(HLS_TIMEOUT_MS) {
                 kotlinx.coroutines.coroutineScope {
@@ -856,7 +853,7 @@ class YouTube(
     }
 }
 
-/** YouTube's topic channels, which stand in for the signed-out home and the Explore tabs. */
+/** YouTube's topic channels, which stand in for the signed-out home. */
 enum class Topic(val title: String, val browseId: String) {
     MUSIC("Music", "UC-9-kyTW8ZkZNDHQJ6FgpwQ"),
     GAMING("Gaming", "UCOpNcN46UbXVtpKMrmU4Abg"),

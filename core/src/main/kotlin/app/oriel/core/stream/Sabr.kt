@@ -235,7 +235,6 @@ class SegmentIndex(private val timesMs: LongArray, private val offsets: LongArra
     }
 
     fun offsetAt(i: Int): Long = offsets[i]
-    fun timeAtIndex(i: Int): Long = timesMs[i]
 
     companion object {
         fun parse(init: ByteArray): SegmentIndex? =

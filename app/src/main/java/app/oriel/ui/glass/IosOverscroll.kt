@@ -44,9 +44,6 @@ private const val highVelocityThreshold = 5_000f
 private const val normalBounceStiffness = 247f
 private const val fastBounceStiffness = 130f
 
-/**
- * Converts raw pull distance to UIKit's self-limiting rubber-band curve.
- */
 private fun rubberBand(rawDistance: Float, containerPx: Float): Float {
     val dimension = containerPx.takeIf { it > 0f } ?: fallbackContainerPx
     val distance = abs(rawDistance)

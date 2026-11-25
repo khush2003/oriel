@@ -17,12 +17,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.asPaddingValues
@@ -74,7 +72,6 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -82,7 +79,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import app.oriel.ui.glass.glassContentColor
 import app.oriel.ui.glass.glassSurface
 import app.oriel.ui.haptics.Haptic
@@ -117,8 +113,6 @@ import app.oriel.ui.theme.project
 import app.oriel.ui.theme.rubber
 import app.oriel.ui.theme.smoothstep
 import kotlin.math.roundToInt
-import androidx.compose.ui.layout.onPlaced
-import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.runtime.mutableIntStateOf
 import app.oriel.ui.theme.GLASS_PRESS_SCALE
@@ -143,8 +137,6 @@ private const val BAR_COMPACT_SCALE = 0.9f
 
 /** 6 + 13 + 26 + 13 + 6: the floating tab bar's height, at its full size. */
 val TAB_BAR_HEIGHT = 64.dp
-val MINI_PLAYER_HEIGHT = 56.dp
-val MINI_PLAYER_GAP = 8.dp
 
 /** How far the floating bars stand off the bottom: the navigation inset, never less than a gesture bar's. */
 val floatingBarInsets: WindowInsets
@@ -164,16 +156,16 @@ fun topBarContentPadding(): Dp = topBarHeight() + TopBarContentGap
 @Composable
 fun bareTopPadding(): Dp = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 6.dp
 
-/** Bottom content padding that clears the floating tab bar, and the mini player above it when one shows. */
+/** Bottom content padding that clears the floating tab bar. */
 @Composable
-fun bottomBarsPadding(withMiniPlayer: Boolean, withTabBar: Boolean = true): Dp {
+fun bottomBarsPadding(withTabBar: Boolean = true): Dp {
     val inset = floatingBarInsets.asPaddingValues().calculateBottomPadding()
-    return inset + 2.dp + (if (withTabBar) TAB_BAR_HEIGHT else 0.dp) + (if (withMiniPlayer) MINI_PLAYER_HEIGHT + MINI_PLAYER_GAP else 0.dp) + 24.dp
+    return inset + 2.dp + (if (withTabBar) TAB_BAR_HEIGHT else 0.dp) + 24.dp
 }
 
 @Composable
-fun pagePadding(withMiniPlayer: Boolean, top: Dp = topBarContentPadding(), withTabBar: Boolean = true, horizontal: Dp = 0.dp) =
-    PaddingValues(start = horizontal, top = top, end = horizontal, bottom = bottomBarsPadding(withMiniPlayer, withTabBar))
+fun pagePadding(top: Dp = topBarContentPadding(), withTabBar: Boolean = true, horizontal: Dp = 0.dp) =
+    PaddingValues(start = horizontal, top = top, end = horizontal, bottom = bottomBarsPadding(withTabBar))
 
 // ---- floating tab bar ----------------------------------------------------------------------
 
@@ -187,12 +179,8 @@ private val SEARCH_PRESS_GIVE = 4.dp
 private val FUSE_GAP = 5.dp
 
 /**
- * The iOS 26-style floating tab bar: a glass pill of tabs with the mock's two-edge selection
- * blob (its edges on separate springs, so it stretches toward the target, necks in the middle
- * and snaps in with overshoot), plus Search as a standalone glass circle at the end that reaches
- * into the bar and fuses with it, metaball-like, when tapped or dragged toward it. With liquid
- * glass off it's BitChord's bar instead: one frosted pill the width of the screen with Search as
- * its last tab. Drag along the tabs to drag the blob, rubber-banding past the ends.
+ * Floating glass tab bar with a two-edge selection blob and a separate Search circle. Glass off:
+ * one frosted pill, Search its last tab. Drag along the tabs to move the blob.
  */
 @Composable
 fun FloatingTabBar(
@@ -395,7 +383,6 @@ private fun LiquidFloatingTabBar(
     var rowSize by remember { mutableStateOf(IntSize.Zero) }
     val gapPx = with(density) { 6.dp.toPx() }
     val glass = LocalLiquidGlassEnabled.current
-    // Without glass, Search is a tab like the others rather than a circle of its own.
     val items = if (glass) tabs else tabs + BottomTab("Search", OrielIcons.Search)
     val n = items.size
     val select = { i: Int -> if (i >= tabs.size) onSearch() else onTabSelected(i) }
@@ -432,7 +419,6 @@ private fun LiquidFloatingTabBar(
     val tint = if (glass) glassContentColor() else null
     val dark = LocalIsDark.current
     val pillColor = tint?.copy(alpha = if (dark) 0.17f else 0.08f) ?: MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
-    // The blob's place is kept in reading order; right to left it's drawn, and dragged, mirrored.
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val sign = if (rtl) -1f else 1f
     val pillPath = remember { Path() }
@@ -463,7 +449,7 @@ private fun LiquidFloatingTabBar(
         launch { barM.animateTo(to, (if (expanded) Sp.SlowEdge else Sp.FastEdge).unit) }
         fieldM.animateTo(to, (if (expanded) Sp.FastEdge else Sp.SlowEdge).unit)
     }
-    // Where the layout put the bar's near edge and the droplet's, and the bar's width at rest, in px.
+    // The bar's near edge, the droplet's near edge and width, and the bar's resting width, in px.
     val geo = remember { FloatArray(4) }
     val insets = if (expanded) floatingBarInsets.union(WindowInsets.ime) else floatingBarInsets
 
@@ -656,11 +642,9 @@ private fun LiquidFloatingTabBar(
 private val BAR_SEARCH_GAP = 8.dp
 
 /**
- * The mock's `slotDrag` (tab bar, segmented controls): a press grows the blob a little; past the
- * slop a sideways drag takes the finger and the blob follows it, centred under it and
- * rubber-banding past the first and last slot; let go, it picks the slot where the fling would
- * carry it and springs there at the finger's speed ([throwV] hands that speed to whoever moves
- * it on [select]). Slot i spans [i × step, i × step + width]. A tap is left to what's under it.
+ * The mock's `slotDrag`: past the slop the blob follows the finger, rubber-banding at the ends,
+ * and lands where the fling projects. [throwV] hands [select] the release speed. Slot i spans
+ * [i × step, i × step + width].
  */
 internal suspend fun PointerInputScope.slotDrag(
     pill: LiquidPill,
@@ -735,9 +719,8 @@ internal suspend fun PointerInputScope.slotDrag(
 }
 
 /**
- * The mock's `searchDrag`: a press draws the circle in a little; dragged toward the bar it
- * stretches into it (and resists the other way); let go far or fast enough toward the bar and it
- * opens Search ([onOpen], with the release speed), otherwise it wobbles back. A tap is the clickable's.
+ * The mock's `searchDrag`: dragged far or fast enough toward the bar it opens Search; otherwise
+ * wobbles back. Taps are the clickable's.
  */
 private suspend fun PointerInputScope.searchDrag(
     reachIn: Animatable<Float, *>,
@@ -837,13 +820,13 @@ private const val STOPS = 16
 /**
  * The page colour fading in under the floating bars, so content dissolves
  * rather than cuts behind them. Colour only, no blur: it stays on under
- * "reduce dynamic blur".
+ * Reduce transparency.
  */
 @Composable
-fun BottomFadeScrim(modifier: Modifier = Modifier, withMiniPlayer: Boolean = false, withTabBar: Boolean = true, pageColor: Color = MaterialTheme.colorScheme.background) {
+fun BottomFadeScrim(modifier: Modifier = Modifier, withTabBar: Boolean = true, pageColor: Color = MaterialTheme.colorScheme.background) {
     val inset = floatingBarInsets.asPaddingValues().calculateBottomPadding()
     val base = if (withTabBar) 180.dp else 110.dp
-    val height by animateDpAsState(inset + if (withMiniPlayer) base + 74.dp else base, fade(220), label = "bottomScrim")
+    val height by animateDpAsState(inset + base, fade(220), label = "bottomScrim")
     val brush = remember(pageColor) {
         Brush.verticalGradient(colorStops = Array(STOPS) { i -> val t = i / (STOPS - 1f); t to pageColor.copy(alpha = EaseInCubic.transform(t)) })
     }
@@ -877,7 +860,6 @@ fun TopScrollEdge(progress: () -> Float, modifier: Modifier = Modifier, pageColo
 
 // ---- floating top bar ----------------------------------------------------------------------
 
-/** The 44dp glass back circle. */
 @Composable
 fun GlassCircleButton(icon: ImageVector, contentDescription: String?, onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 44.dp, iconSize: Dp = 22.dp) {
     val haptics = rememberHaptics()

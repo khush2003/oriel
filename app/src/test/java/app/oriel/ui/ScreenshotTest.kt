@@ -3,7 +3,6 @@ package app.oriel.ui
 import app.oriel.ui.navigation.NotificationsRoute
 import app.oriel.core.model.InboxPage
 import app.oriel.core.model.InboxNotification
-import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import android.app.Activity
 import androidx.compose.runtime.Composable
@@ -25,7 +24,6 @@ import androidx.compose.ui.test.performClick
 import androidx.navigation.compose.rememberNavController
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import app.oriel.AppGraph
 import app.oriel.TestApp
 import app.oriel.core.model.Feed
 import app.oriel.data.ThemeMode
@@ -45,7 +43,6 @@ import app.oriel.ui.theme.OrielTheme
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.github.takahirom.roborazzi.captureScreenRoboImage
 import com.github.takahirom.roborazzi.ExperimentalRoborazziApi
-import androidx.compose.ui.test.onNodeWithText
 import app.oriel.util.ReportKind
 import app.oriel.core.model.ShortSound
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -428,8 +425,7 @@ class ScreenshotTest {
 
     /**
      * A short opened from Home is a page on Home's stack: the tab bar still says Home, and
-     * tapping Home goes back to the feed. (It used to navigate to Home, which restored the
-     * very stack it was in, short on top, so the tap did nothing.)
+     * tapping Home goes back to the feed.
      */
     @Test fun homeTabLeavesAShortOpenedFromHome() {
         shoot("23_home_after_short", playing = false, after = {
@@ -443,7 +439,7 @@ class ScreenshotTest {
         assertTrue("back on Home", appState!!.nav.currentBackStackEntry!!.destination.hasRoute(HomeRoute::class))
     }
 
-    /** Home's tab from Search goes Home (it used to restore Search straight back), and Search comes back as it was. */
+    /** Home's tab from Search goes Home, and Search comes back as it was. */
     @Test fun homeTabLeavesSearch() {
         shoot("33_home_after_search", playing = false, after = {
             appState!!.openSearch()
@@ -460,7 +456,7 @@ class ScreenshotTest {
 
     private fun top() = appState!!.nav.currentBackStackEntry!!
 
-    /** Channel B opened from channel A stacks on it, and back goes to A. (It used to replace A.) */
+    /** Channel B opened from channel A stacks on it, and back goes to A. */
     @Test fun channelFromChannelGoesBackToTheFirst() {
         shoot("60_channel_from_channel", playing = false, after = {
             appState!!.openChannel(CHANNEL_A)
@@ -644,7 +640,7 @@ class ScreenshotTest {
         rule.onAllNodes(hasText("views", substring = true)).onFirst().performClick()
     })
 
-    /** A reply thread pushes over the comments, and Back pops it. */
+    /** A reply thread pushes over the comments. */
     @Test fun repliesPush() = shoot("29_replies", setup = { it.sheet.progress.snapTo(1f) }, after = {
         rule.onAllNodes(hasText("Comments")).onFirst().performClick()
         settle(8)

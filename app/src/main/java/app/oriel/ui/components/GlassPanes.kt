@@ -96,8 +96,7 @@ import androidx.compose.ui.unit.Dp
 // it's part of (the page is the backdrop the bars bend), so its glass is drawn: a translucent
 // sheet with a lit rim over the page's wash. Under Reduce transparency it's a solid surface.
 
-// One corner for panes and tiles, and the one that nests in it (22 less the 8 a track sits in),
-// so nothing reads as a pill beside a card.
+// One corner for panes and tiles, and the one that nests in it, so nothing reads as a pill beside a card.
 val PaneShape = RoundedCornerShape(28.dp)
 val TileShape = PaneShape
 private val InnerShape = RoundedCornerShape(18.dp)
@@ -135,8 +134,6 @@ fun Modifier.glassPane(shape: Shape = PaneShape): Modifier {
     val dark = LocalIsDark.current
     val solid = LocalReduceBlur.current
     val surface = MaterialTheme.colorScheme.surfaceVariant
-    // The account card's material: an even veil and the hairline every floating surface has. A
-    // lit rim a pixel wide around each pane drew a page of boxes; the fill alone parts them.
     val top = if (solid) surface else if (dark) Color.White.copy(alpha = 0.085f) else Color.White.copy(alpha = 0.72f)
     val bottom = if (solid) surface else if (dark) Color.White.copy(alpha = 0.065f) else Color.White.copy(alpha = 0.64f)
     // With liquid glass, the bars' rim light and shadow; frosted, a plain veil and hairline, as the bars are then.

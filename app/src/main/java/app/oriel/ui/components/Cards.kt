@@ -113,8 +113,7 @@ val LocalShortsFeed = compositionLocalOf<List<String>> { emptyList() }
 
 /**
  * The feed's card, in the manner of Apple's TV app: the frame inset in the page's gutters
- * with round corners, then the title and one quiet line of who and when. Avatars are left
- * to the channel and watch pages.
+ * with round corners, then the title and one quiet line of who and when.
  */
 @Composable
 fun VideoCard(video: Video, modifier: Modifier = Modifier, showAvatar: Boolean = false, titleColor: Color = MaterialTheme.colorScheme.onSurface, metaColor: Color = MaterialTheme.colorScheme.onSurfaceVariant) {
@@ -441,14 +440,10 @@ fun <T> LazyListScope.gridItems(
 fun LazyListScope.cardSkeletons(count: Int, columns: Int) =
     gridItems(List(maxOf(count, columns * 2)) { it }, columns, key = { "sk$it" }, contentType = { "skeleton" }) { VideoCardSkeleton(it) }
 
-/** The same for pages of rows. */
-fun LazyListScope.rowSkeletons(count: Int, columns: Int, prefix: String = "sk") =
-    gridItems(List(maxOf(count, columns * 2)) { it }, columns, key = { "$prefix$it" }, contentType = { "rowSkeleton" }) { VideoRowSkeleton(it) }
-
 /**
  * Every [Feed] renders through here, one renderer per shelf kind: home,
  * subscriptions, topics, channel tabs, search. [compact] lays plain feeds out
- * as rows rather than full cards (search, channel tabs on narrow layouts).
+ * as rows rather than full cards.
  * On a wide window video cards sit [columns] to a row; channels, playlists and posts keep a row of their own.
  */
 fun LazyListScope.feedShelves(feed: Feed, compact: Boolean = false, keyPrefix: String = "", columns: Int = 1, shortColumns: Int = 2) {

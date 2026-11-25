@@ -162,9 +162,9 @@ class ProfileStore(
     /**
      * Moves the files from before profiles into [ProfileIndex.legacyOwner]'s directory. Renames on
      * one filesystem are atomic, so a launch that died part-way finishes the rest; a file already
-     * at the destination is never overwritten, the old one is kept beside it instead. [ProfileIndex.legacyOwner] is
-     * cleared once nothing is left to move. Cheap once done,
-     * so whatever reads a profile's files first calls it.
+     * at the destination is never overwritten, the old one is kept beside it instead.
+     * [ProfileIndex.legacyOwner] is cleared once nothing is left to move. Cheap once done, so
+     * whatever reads a profile's files first calls it.
      */
     fun adoptLegacyFiles(): Unit = synchronized(prefs) {
         val owner = index.legacyOwner ?: return
@@ -262,7 +262,7 @@ class ProfileStore(
         const val GUEST = "guest"
         /** The account an update from before profiles was signed in to. Fixed, so a migration cut short finds the same place again. */
         const val MIGRATED = "a0"
-        /** How many accounts can be signed in at once: several of one person's, not a shared pool. */
+        /** How many accounts can be kept: several of one person's, not a shared pool. */
         const val MAX_ACCOUNTS = 5
 
         fun guest() = Profile(id = GUEST, kind = ProfileKind.GUEST)

@@ -12,9 +12,6 @@ import java.util.concurrent.atomic.AtomicLong
 /**
  * Last-known pages on disk, for stale-while-revalidate.
  *
- * Home and Explore render from here on a cold start — the first frame has
- * content instead of a spinner — while the network copy loads behind it.
- *
  * Pages are versioned by directory (`v<N>` under [root]): when the page models
  * change shape, [VERSION] goes up and the old pages are deleted rather than
  * migrated, since they're only a cache.
@@ -40,7 +37,6 @@ class PageDiskCache(
     private val lock = Any()
     private val gen = AtomicLong()
 
-    /** Goes up with each [clear]. */
     val generation: Long get() = gen.get()
 
     init {

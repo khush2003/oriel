@@ -50,7 +50,6 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-/** iOS's destructive red, shared by every remove and delete: lighter on dark, deeper on light. */
 val DestructiveRed: Color
     @Composable @ReadOnlyComposable get() = if (LocalIsDark.current) DestructiveRedDark else DestructiveRedLight
 

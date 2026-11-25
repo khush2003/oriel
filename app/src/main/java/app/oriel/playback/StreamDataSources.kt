@@ -78,10 +78,8 @@ class StreamDataSources(private val graph: AppGraph) {
         val host = spec.uri.host ?: return 0
         if (!host.endsWith("googlevideo.com")) return 0
         val stream = graph.resolver.streamForUrl(spec.uri.toString()) ?: return 0
-        // InnerTubeX asks 512 KB (ANDROID_VR) or 1 MB (IOS) pieces for the clients whose URLs need
-        // bounded ranges, without saying why that small. Each piece is a request that waits on the
-        // last, so on a slow link they made stop-start buffering. yt-dlp reads these same clients'
-        // URLs in 10 MiB ranges; 4 MiB keeps a seek's wasted bytes small at a fraction of the requests.
+        // InnerTubeX asks for 512 KB–1 MB pieces; each waits on the last, so slow links stall.
+        // yt-dlp reads these URLs in 10 MiB; 4 MiB wastes little on a seek.
         return if (stream.requireBoundedRange) maxOf(stream.chunkSize, BOUNDED_CHUNK) else DEFAULT_CHUNK
     }
 
@@ -180,11 +178,7 @@ class StreamDataSources(private val graph: AppGraph) {
         private const val PRECACHE_SECONDS = 3L
         private const val PRECACHE_MAX = 8L * 1024 * 1024
 
-        /**
-         * How much of a stream's opening to cache ahead: enough to start on at its bitrate. A fixed
-         * megabyte was most of a second of 1080p VP9 but a third of one at 4K, so the next video
-         * still waited on the network at the qualities that need it most. Never less than [floor].
-         */
+        /** Enough of a stream's opening to start on at its bitrate; never less than [floor]. */
         fun precacheBytes(bitrate: Int?, floor: Long): Long =
             if (bitrate == null || bitrate <= 0) floor else (bitrate / 8L * PRECACHE_SECONDS).coerceIn(floor, maxOf(floor, PRECACHE_MAX))
     }

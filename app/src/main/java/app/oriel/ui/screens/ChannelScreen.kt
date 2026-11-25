@@ -169,11 +169,7 @@ class ChannelModel(private val graph: AppGraph, private val id: String, params: 
     private var failedSearch: String? = null
     private var moreJob: Job? = null
 
-    /**
-     * Stops whatever was loading, and lets go of the flags it owned: a refresh cut short by a
-     * tab used to leave its spinner up for good, and a next page landing after a tab switch
-     * was added to the new tab's list.
-     */
+    /** Stops whatever was loading, and lets go of the flags it owned. */
     private fun cancelLoads() {
         job?.cancel()
         moreJob?.cancel()
@@ -488,12 +484,8 @@ private fun ChannelAboutSheet(channel: Channel, about: ChannelAbout?, failed: Bo
 }
 
 /**
- * The channel's avatar or name flowing into the bar as the page scrolls up, liquid motion on.
- * The avatar shrinks from as soon as it moves, as a drop drawn toward the bar; at the bar's
- * centre ([barCenter], px in the window) it stops there, spreads sideways and flattens as if
- * merging into it, and is gone. The name rises with the page, stops at the bar and shrinks to
- * the bar title's size as it fades, and the bar's own title takes over. Layer only: where it is
- * comes from its placement, read as it's drawn.
+ * The avatar or name flowing into the bar on scroll. [barCenter]: the bar's centre, px in the
+ * window. Layer only, read from placement as it draws.
  */
 @Composable
 private fun Modifier.flowIntoBar(barCenter: Float, avatar: Boolean): Modifier {

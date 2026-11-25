@@ -67,7 +67,6 @@ fun NavBackStackEntry.isRoute(route: Any): Boolean {
         is LocalPlaylistRoute -> toRoute<LocalPlaylistRoute>() == route
         is TopicRoute -> toRoute<TopicRoute>() == route
         is SettingsSectionRoute -> toRoute<SettingsSectionRoute>() == route
-        // The rest are objects: the class is the route.
         else -> true
     }
 }
