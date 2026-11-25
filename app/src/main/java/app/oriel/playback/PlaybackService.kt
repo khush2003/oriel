@@ -33,7 +33,6 @@ import app.oriel.MainActivity
 import app.oriel.R
 import app.oriel.data.AccountManager
 import app.oriel.core.extras.Segment
-import app.oriel.core.extras.SponsorBlock
 import app.oriel.core.model.Video
 import app.oriel.core.stream.StreamRequest
 import app.oriel.graph

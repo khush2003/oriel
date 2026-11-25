@@ -11,7 +11,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import app.oriel.core.model.Video
 import app.oriel.ui.AppState
 
 /** Back to the app's normal orientation with the system bars showing. */
@@ -26,7 +25,7 @@ internal fun showSystemChrome(activity: android.app.Activity) {
  * upright leaves it, as YouTube does, when the system lets the screen rotate.
  */
 @Composable
-internal fun FullscreenEffects(app: AppState, video: Video) {
+internal fun FullscreenEffects(app: AppState) {
     val activity = app.activity
     val sheet = app.sheet
     val fullscreen = sheet.fullscreen

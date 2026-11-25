@@ -5,7 +5,7 @@ cd "$(git rev-parse --show-toplevel)"
 trap './gradlew --stop >/dev/null 2>&1' EXIT
 scripts/check-guardrails.sh
 python3 -B -m unittest discover -s scripts -p 'test_*.py'
-python3 scripts/check-lint-baseline.py
+python3 scripts/check-no-new-debt.py
 ./gradlew '-Dorg.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8' :core:test :app:testDebugUnitTest
-./gradlew '-Dorg.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8' :app:lintDebug
+./gradlew '-Dorg.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8' detekt :app:lintDebug
 ./gradlew '-Dorg.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8' :app:assembleDebug

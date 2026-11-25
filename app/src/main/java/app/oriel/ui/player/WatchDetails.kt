@@ -62,7 +62,7 @@ import app.oriel.util.Format
 import app.oriel.util.Thumbnails
 
 @Composable
-internal fun TitleBlock(video: Video, page: WatchPage?, palette: ArtworkPalette, modifier: Modifier = Modifier, onMore: () -> Unit) {
+internal fun TitleBlock(video: Video, palette: ArtworkPalette, modifier: Modifier = Modifier, onMore: () -> Unit) {
     Column(modifier.fillMaxWidth().clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null, onClick = onMore).padding(horizontal = PAGE_GUTTER).padding(top = 16.dp, bottom = 4.dp)) {
         if (video.title.isNotEmpty()) {
             Text(video.title, style = MaterialTheme.typography.titleLarge, color = palette.onBackground, maxLines = 3, overflow = TextOverflow.Ellipsis)

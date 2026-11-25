@@ -112,7 +112,7 @@ fun WatchContent(app: AppState, palette: ArtworkPalette, modifier: Modifier = Mo
             ),
             contentPadding = PaddingValues(bottom = 32.dp),
         ) {
-            item(key = "title") { TitleBlock(video, page, palette, Modifier.onPlaced { morph.cards["title"] = it }) { open(Panel.Description, "title") } }
+            item(key = "title") { TitleBlock(video, palette, Modifier.onPlaced { morph.cards["title"] = it }) { open(Panel.Description, "title") } }
             item(key = "channel") { ChannelLine(app, video, page?.subscribersText, palette) }
             item(key = "actions") { ActionsRow(app, video, page?.likeCount, state.votes, palette) }
             item(key = "details") { DetailsCard(video, page, palette, Modifier.onPlaced { morph.cards["details"] = it }) { open(Panel.Description, "details") } }

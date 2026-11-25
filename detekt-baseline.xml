@@ -1,0 +1,246 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ComplexCondition:AccountSwitcher.kt$!profile.isGuest &amp;&amp; (!signedIn || expired) &amp;&amp; !managing</ID>
+    <ID>ComplexCondition:AccountSwitcher.kt$anchor != null &amp;&amp; card != null &amp;&amp; card.width &gt; 0f &amp;&amp; !reduceMotion</ID>
+    <ID>ComplexCondition:Extras.kt$SponsorBlock.Companion$!start.isFinite() || !end.isFinite() || start &lt; 0 || end &lt;= start || end &gt; MAX_TIME_SEC</ID>
+    <ID>ComplexCondition:FeedModel.kt$FeedModel$feed.isEmpty &amp;&amp; feed.message == null &amp;&amp; shown != null &amp;&amp; !shown.isEmpty &amp;&amp; !switching</ID>
+    <ID>ComplexCondition:FeedModel.kt$FeedModel$s.loadingMore || s.moreFailed || s.loading || job?.isActive == true || moreJob?.isActive == true</ID>
+    <ID>ComplexCondition:FeedModel.kt$FeedModel$whenAtTop &amp;&amp; !readerAtTop &amp;&amp; shown != null &amp;&amp; !shown.isEmpty &amp;&amp; !switching</ID>
+    <ID>ComplexCondition:Liquid.kt$r1 &lt;= 0f || r2 &lt;= 0f || d &gt; maxDistance || d &lt;= abs(r1 - r2) || d &lt; 0.01f</ID>
+    <ID>ComplexCondition:Models.kt$Feed$last != null &amp;&amp; first != null &amp;&amp; last.kind == first.kind &amp;&amp; first.title == null &amp;&amp; first.kind.continuous</ID>
+    <ID>ComplexCondition:Pages.kt$Pages.FeedBuilder$obj != null &amp;&amp; obj.size &gt; 1 &amp;&amp; obj.keys.all { it.endsWith("Renderer") || it.endsWith("ViewModel") }</ID>
+    <ID>ComplexCondition:PlayerConnection.kt$PlayerConnection$video.isLive || video.isUpcoming || video.isShort || video.id.isBlank()</ID>
+    <ID>ComplexCondition:PlayerHost.kt$before == null || before == video.id || !liquid || sheet.fullscreen</ID>
+    <ID>ComplexCondition:PlayerHost.kt$h != null &amp;&amp; h.videoId == video.id &amp;&amp; System.nanoTime() - h.at &lt; 3_000_000_000L &amp;&amp; h.origin != null</ID>
+    <ID>ComplexCondition:PlayerHost.kt$h != null &amp;&amp; liquid &amp;&amp; !sheet.fullscreen &amp;&amp; System.nanoTime() - h.at &lt; 1_000_000_000L</ID>
+    <ID>ComplexCondition:PlayerHost.kt$liquid &amp;&amp; (pull != 0f || fs != 0f || fullscreen) &amp;&amp; d?.docked != true</ID>
+    <ID>ComplexCondition:PressHighlight.kt$DrawPressNode$g == 0f &amp;&amp; sxv == 1f &amp;&amp; syv == 1f &amp;&amp; txv == 0f &amp;&amp; tyv == 0f &amp;&amp; charge.value == 0f</ID>
+    <ID>ComplexCondition:PressHighlight.kt$DrawPressNode$h.glow == glow &amp;&amp; h.strength == strength &amp;&amp; h.dim == dim &amp;&amp; h.shape == shape &amp;&amp; h.wash == wash &amp;&amp; h.scale == scale</ID>
+    <ID>ComplexCondition:SecretBox.kt$SecretBox$e is IllegalArgumentException || e is BadPaddingException || e is IllegalBlockSizeException || e is KeyPermanentlyInvalidatedException || e is UnrecoverableKeyException</ID>
+    <ID>ComplexCondition:ShortsPlayback.kt$ShortsPlayback$!abr &amp;&amp; ((final &amp;&amp; (refused == null || n &gt; 3)) || n &gt; 6)</ID>
+    <ID>ComplexCondition:SoundSheet.kt$!nearEnd || cont == null || loadingMore || moreFailed</ID>
+    <ID>ComplexCondition:Storyboard.kt$Storyboard.Companion$w &lt;= 0 || h &lt;= 0 || count &lt;= 0 || cols &lt;= 0 || rows &lt;= 0</ID>
+    <ID>ComplexCondition:StreamResolver.kt$StreamResolver$wantVideo &amp;&amp; stream.videoUrl == null &amp;&amp; stream.sabrVideoBootstrap == null &amp;&amp; !hls</ID>
+    <ID>ComplexCondition:Updates.kt$Updates$stored == null || apk == null || SemVer.parse(stored.version)?.let { it &gt; current } != true || (stored.prerelease &amp;&amp; !_state.value.betaUpdates)</ID>
+    <ID>CyclomaticComplexMethod:AccountManager.kt$AccountManager$suspend fun signIn(cookie: String, dataSyncId: String?, reauth: String? = null): SignInResult</ID>
+    <ID>CyclomaticComplexMethod:AccountSwitcher.kt$@Composable fun AccountSwitcher(app: AppState)</ID>
+    <ID>CyclomaticComplexMethod:AppState.kt$AppState$fun openLink(url: String): Boolean</ID>
+    <ID>CyclomaticComplexMethod:ChannelAboutSheet.kt$@Composable internal fun ChannelAboutSheet(channel: Channel, about: ChannelAbout?, failed: Boolean, onRetry: () -&gt; Unit, onDismiss: () -&gt; Unit)</ID>
+    <ID>CyclomaticComplexMethod:ChannelScreen.kt$@Composable fun ChannelScreen(id: String, params: String?)</ID>
+    <ID>CyclomaticComplexMethod:Chips.kt$@Composable private fun ClassicTabStrip(titles: List&lt;String&gt;, selected: Int, onSelect: (Int) -&gt; Unit, modifier: Modifier = Modifier)</ID>
+    <ID>CyclomaticComplexMethod:Comments.kt$@Composable internal fun CommentRow(app: AppState, comment: Comment, palette: ArtworkPalette, onReplies: ((Comment) -&gt; Unit)?, indent: Boolean = false, separator: Boolean = false)</ID>
+    <ID>CyclomaticComplexMethod:Comments.kt$@Composable internal fun CommentsPanel(app: AppState, palette: ArtworkPalette, listState: androidx.compose.foundation.lazy.LazyListState, repliesState: androidx.compose.foundation.lazy.LazyListState)</ID>
+    <ID>CyclomaticComplexMethod:Controls.kt$@Composable fun ActionPill( text: String?, icon: ImageVector?, onClick: () -&gt; Unit, modifier: Modifier = Modifier, filled: Boolean = false, size: PillSize = PillSize.Large, haptic: Haptic = Haptic.Tap, tint: Color? = null, enabled: Boolean = true, )</ID>
+    <ID>CyclomaticComplexMethod:Controls.kt$@Composable private fun LiquidSubscribePill(subscribed: Boolean, onClick: () -&gt; Unit, modifier: Modifier, size: PillSize, haptic: Haptic)</ID>
+    <ID>CyclomaticComplexMethod:FeedModel.kt$FeedModel$fun reload(fresh: Boolean = true, replace: (suspend (Boolean) -&gt; Feed)? = null, quiet: Boolean = false, key: String? = replace?.let { "page" }, whenAtTop: Boolean = false)</ID>
+    <ID>CyclomaticComplexMethod:FeedShelves.kt$fun LazyListScope.feedShelves(feed: Feed, compact: Boolean = false, keyPrefix: String = "", columns: Int = 1, shortColumns: Int = 2)</ID>
+    <ID>CyclomaticComplexMethod:FloatingTabBar.kt$@Composable private fun ClassicFloatingTabBar( tabs: List&lt;BottomTab&gt;, selectedIndex: Int, onTabSelected: (Int) -&gt; Unit, searchSelected: Boolean, onSearch: () -&gt; Unit, modifier: Modifier, )</ID>
+    <ID>CyclomaticComplexMethod:FloatingTabBar.kt$@Composable private fun LiquidFloatingTabBar( tabs: List&lt;BottomTab&gt;, selectedIndex: Int, onTabSelected: (Int) -&gt; Unit, searchSelected: Boolean, onSearch: () -&gt; Unit, modifier: Modifier, searchField: (@Composable (Modifier) -&gt; Unit)?, )</ID>
+    <ID>CyclomaticComplexMethod:Grouped.kt$@Composable private fun LiquidSwitch(checked: Boolean, enabled: Boolean, onChange: ((Boolean) -&gt; Unit)?)</ID>
+    <ID>CyclomaticComplexMethod:HeldContextMenu.kt$@Composable fun &lt;T : Any&gt; HeldContextMenu( item: T?, held: HeldItem?, onDismiss: () -&gt; Unit, onPreviewClick: ((T) -&gt; Unit)?, actions: @Composable ColumnScope.(T) -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:HeldContextMenu.kt$@OptIn(ExperimentalFoundationApi::class) @Composable fun Modifier.longPressMenuClickable(onClick: () -&gt; Unit, onLongClick: (() -&gt; Unit)?, enabled: Boolean = true, onPress: (() -&gt; Unit)? = null): Modifier</ID>
+    <ID>CyclomaticComplexMethod:HomeScreen.kt$@Composable fun HomeScreen()</ID>
+    <ID>CyclomaticComplexMethod:ItemActions.kt$@Composable fun ColumnScope.ItemActions(app: AppState, item: Item, dismiss: () -&gt; Unit)</ID>
+    <ID>CyclomaticComplexMethod:Items.kt$Items$private fun lockup(vm: JsonElement?): Item?</ID>
+    <ID>CyclomaticComplexMethod:Items.kt$Items$private fun video(r: JsonElement?): Video?</ID>
+    <ID>CyclomaticComplexMethod:LibraryScreens.kt$@Composable fun HistoryScreen()</ID>
+    <ID>CyclomaticComplexMethod:LibraryScreens.kt$@Composable fun PlaylistsScreen()</ID>
+    <ID>CyclomaticComplexMethod:LiquidPage.kt$@Composable internal fun LiquidPage(swipe: BackSwipe, content: @Composable () -&gt; Unit)</ID>
+    <ID>CyclomaticComplexMethod:OrielRoot.kt$@Composable fun OrielRoot(app: AppState, inPip: Boolean)</ID>
+    <ID>CyclomaticComplexMethod:Pages.kt$Pages$fun channel(browseId: String, root: JsonElement): ChannelPage</ID>
+    <ID>CyclomaticComplexMethod:Pages.kt$Pages$fun playlist(playlistId: String, root: JsonElement): PlaylistPage</ID>
+    <ID>CyclomaticComplexMethod:Pages.kt$Pages$fun watch(videoId: String, root: JsonElement, origin: Video? = null): WatchPage</ID>
+    <ID>CyclomaticComplexMethod:Pages.kt$Pages.FeedBuilder$fun add(element: JsonElement)</ID>
+    <ID>CyclomaticComplexMethod:PictureGestures.kt$internal suspend fun PointerInputScope.detectPictureDrag( screen: ScreenPosition, pansFreely: () -&gt; Boolean, onStart: (mode: PictureDrag) -&gt; Unit, onEnd: () -&gt; Unit, onCancel: () -&gt; Unit, onDrag: (uptimeMillis: Long, delta: Offset, zoom: Float) -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:PlaybackService.kt$PlaybackService$private fun handleError(error: PlaybackException)</ID>
+    <ID>CyclomaticComplexMethod:PlayerHost.kt$@Composable fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boolean)</ID>
+    <ID>CyclomaticComplexMethod:PlayerSettingsSheet.kt$@Composable fun PlayerSettingsSheet(app: AppState, onDismiss: () -&gt; Unit, onPip: () -&gt; Unit, onChapters: () -&gt; Unit = {})</ID>
+    <ID>CyclomaticComplexMethod:PlaylistScreen.kt$@Composable fun LocalPlaylistScreen(id: String)</ID>
+    <ID>CyclomaticComplexMethod:PlaylistScreen.kt$@Composable fun PlaylistScreen(id: String)</ID>
+    <ID>CyclomaticComplexMethod:PressHighlight.kt$SquishNode$private fun collect()</ID>
+    <ID>CyclomaticComplexMethod:PullToRefresh.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable internal fun IosPullToRefresh(refreshing: Boolean, onRefresh: () -&gt; Unit, spinnerTop: Dp, content: @Composable (offset: () -&gt; Float) -&gt; Unit)</ID>
+    <ID>CyclomaticComplexMethod:QueueController.kt$QueueController$private fun maybeExtend(force: Boolean = false)</ID>
+    <ID>CyclomaticComplexMethod:ReportSheet.kt$@Composable fun ReportSheet(app: AppState, request: ReportRequest, onDismiss: () -&gt; Unit)</ID>
+    <ID>CyclomaticComplexMethod:Sabr.kt$SegmentIndex.Companion$private fun parseWebm(b: ByteArray): SegmentIndex?</ID>
+    <ID>CyclomaticComplexMethod:Scaffold.kt$@OptIn(ExperimentalMaterial3Api::class) @Composable fun PageScaffold( title: String?, onBack: (() -&gt; Unit)? = null, state: LazyListState = rememberLazyListState(), tab: Tab? = null, largeTitle: Boolean = true, /** Pages with their own header (banners, artwork) start under the status bar instead of below the bar. */ edgeToEdge: Boolean = false, /** What the page is made of, which decides how it's centred on a wide window. */ width: PageWidth = PageWidth.Feed, refreshing: Boolean = false, onRefresh: (() -&gt; Unit)? = null, onNearEnd: (() -&gt; Unit)? = null, /** When the app is reopened with this page on screen and scrolled to its top (always true then). */ onShown: ((atTop: Boolean) -&gt; Unit)? = null, /** Whether the list is at its top, now and each time that changes: a feed holds a background refresh back until it is. */ onAtTop: ((Boolean) -&gt; Unit)? = null, background: Color = MaterialTheme.colorScheme.background, /** A soft wash of the accent behind the page, for pages made of glass panes: glass needs colour to bend. */ wash: Boolean = false, titleTrailing: (@Composable () -&gt; Unit)? = null, leading: (@Composable () -&gt; Unit)? = null, actions: (@Composable RowScope.() -&gt; Unit)? = null, overlay: @Composable BoxScope.() -&gt; Unit = {}, content: LazyListScope.() -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:SearchModel.kt$SearchModel$private fun load( query: String, params: String?, picked: List&lt;SearchFilter&gt;, chip: String?, voice: Boolean = false, record: Boolean = true, onFail: (SearchState) -&gt; SearchState = { it }, )</ID>
+    <ID>CyclomaticComplexMethod:SearchScreen.kt$@Composable fun SearchScreen(initial: String?)</ID>
+    <ID>CyclomaticComplexMethod:ShortCommentsSheet.kt$@Composable internal fun ShortCommentsSheet(app: AppState, info: ShortInfo, onDismiss: () -&gt; Unit)</ID>
+    <ID>CyclomaticComplexMethod:ShortPage.kt$@OptIn(UnstableApi::class) @Composable internal fun ShortPage(app: AppState, id: String, info: ShortInfo?, playback: ShortsPlayback, active: Boolean, fit: Boolean, onComments: (ShortInfo) -&gt; Unit, onSound: (ShortSound) -&gt; Unit)</ID>
+    <ID>CyclomaticComplexMethod:ShortsModel.kt$ShortsModel$fun loadMore()</ID>
+    <ID>CyclomaticComplexMethod:ShortsPlayback.kt$ShortsPlayback$private fun recover(error: androidx.media3.common.PlaybackException)</ID>
+    <ID>CyclomaticComplexMethod:ShortsScreen.kt$@kotlin.OptIn(ExperimentalFoundationApi::class) @OptIn(UnstableApi::class) @Composable fun ShortsScreen(startId: String?, queue: List&lt;String&gt; = emptyList())</ID>
+    <ID>CyclomaticComplexMethod:SlotDrag.kt$internal suspend fun PointerInputScope.searchDrag( reachIn: Animatable&lt;Float, *&gt;, reachOut: Animatable&lt;Float, *&gt;, scope: kotlinx.coroutines.CoroutineScope, give: Float, sign: Float, reduce: () -&gt; Boolean, stretch: Dp = 200.dp, onOpen: (velocity: Float) -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:SlotDrag.kt$internal suspend fun PointerInputScope.slotDrag( pill: LiquidPill, scope: kotlinx.coroutines.CoroutineScope, sign: Float, pressGrow: Float, step: () -&gt; Float, width: () -&gt; Float, rest: () -&gt; Int, shown: () -&gt; Int, reduce: () -&gt; Boolean, n: Int, haptics: app.oriel.ui.haptics.Haptics, throwV: FloatArray, select: (Int) -&gt; Unit, )</ID>
+    <ID>CyclomaticComplexMethod:SoundSheet.kt$@Composable internal fun SoundSheet(app: AppState, sound: ShortSound, onDismiss: () -&gt; Unit)</ID>
+    <ID>CyclomaticComplexMethod:StreamResolver.kt$StreamResolver$private suspend fun extract(request: StreamRequest): ResolvedStream</ID>
+    <ID>CyclomaticComplexMethod:SubscriptionsScreen.kt$@Composable fun SubscriptionsScreen()</ID>
+    <ID>CyclomaticComplexMethod:SwipeToRemove.kt$@Composable fun SwipeToRemove(onRemove: (() -&gt; Unit)?, modifier: Modifier = Modifier, label: String = "Remove", content: @Composable () -&gt; Unit)</ID>
+    <ID>CyclomaticComplexMethod:ThinSlider.kt$@Composable fun ThinSlider( value: () -&gt; Float, onValueChange: (Float) -&gt; Unit, modifier: Modifier = Modifier, onDragStateChange: (Boolean) -&gt; Unit = {}, onValueChangeFinished: (() -&gt; Unit)? = null, buffered: () -&gt; Float = { 0f }, loading: Boolean = false, durationMs: Long = 0, chapterStartsMs: List&lt;Long&gt; = emptyList(), segments: List&lt;Segment&gt; = emptyList(), idleHeight: Dp = 5.dp, activeHeight: Dp = 11.dp, activeColor: Color = Color.White.copy(alpha = 0.92f), bufferedColor: Color = Color.White.copy(alpha = 0.40f), inactiveColor: Color = Color.White.copy(alpha = 0.22f), enabled: Boolean = true, )</ID>
+    <ID>CyclomaticComplexMethod:UpdateChecker.kt$UpdateChecker$suspend fun download(asset: ReleaseAsset, into: File, onProgress: (read: Long, total: Long) -&gt; Unit): String</ID>
+    <ID>CyclomaticComplexMethod:Updates.kt$Updates$fun update()</ID>
+    <ID>CyclomaticComplexMethod:Updates.kt$Updates$private suspend fun check(manual: Boolean)</ID>
+    <ID>CyclomaticComplexMethod:VideoPlayer.kt$@Composable fun VideoControls( app: AppState, mode: ControlsMode, onCollapse: () -&gt; Unit, onFullscreen: () -&gt; Unit, onSettings: () -&gt; Unit, modifier: Modifier = Modifier, onChapters: () -&gt; Unit = {}, /** A sheet the controls opened (chapters, settings) is up: they stay while it is, and hide again after. */ sheetOpen: Boolean = false, )</ID>
+    <ID>CyclomaticComplexMethod:WatchContent.kt$@Composable fun WatchContent(app: AppState, palette: ArtworkPalette, modifier: Modifier = Modifier, split: WatchSplit? = null)</ID>
+    <ID>CyclomaticComplexMethod:YouScreen.kt$@Composable fun YouScreen()</ID>
+    <ID>CyclomaticComplexMethod:YouTube.kt$YouTube$private suspend fun post(endpoint: String, body: JsonObjectBuilder.() -&gt; Unit): JsonElement</ID>
+    <ID>CyclomaticComplexMethod:YouTube.kt$YouTube$suspend fun adaptiveManifest(videoId: String): AdaptiveManifest?</ID>
+    <ID>DestructuringDeclarationWithTooManyEntries:Storyboard.kt$Storyboard.Companion$val (w, h, count, cols, rows) = f.take(5).map { it.toIntOrNull() ?: return@mapIndexedNotNull null }</ID>
+    <ID>ExplicitItLambdaParameter:Comments.kt${ _, it -&gt; it.id }</ID>
+    <ID>ExplicitItLambdaParameter:Comments.kt${ i, it -&gt; Box(Modifier.onPlaced { co -&gt; rows[it.id] = co }) { CommentRow(app, it, palette, onReplies = openReplies, separator = i &lt; comments.lastIndex) } }</ID>
+    <ID>LongMethod:ChannelScreen.kt$@Composable fun ChannelScreen(id: String, params: String?)</ID>
+    <ID>LongMethod:FloatingTabBar.kt$@Composable private fun LiquidFloatingTabBar( tabs: List&lt;BottomTab&gt;, selectedIndex: Int, onTabSelected: (Int) -&gt; Unit, searchSelected: Boolean, onSearch: () -&gt; Unit, modifier: Modifier, searchField: (@Composable (Modifier) -&gt; Unit)?, )</ID>
+    <ID>LongMethod:HeldContextMenu.kt$@Composable fun &lt;T : Any&gt; HeldContextMenu( item: T?, held: HeldItem?, onDismiss: () -&gt; Unit, onPreviewClick: ((T) -&gt; Unit)?, actions: @Composable ColumnScope.(T) -&gt; Unit, )</ID>
+    <ID>LongMethod:OrielRoot.kt$@Composable fun OrielRoot(app: AppState, inPip: Boolean)</ID>
+    <ID>LongMethod:PlayerHost.kt$@Composable fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boolean)</ID>
+    <ID>LongMethod:PlayerSettingsSheet.kt$@Composable fun PlayerSettingsSheet(app: AppState, onDismiss: () -&gt; Unit, onPip: () -&gt; Unit, onChapters: () -&gt; Unit = {})</ID>
+    <ID>LongMethod:SearchScreen.kt$@Composable fun SearchScreen(initial: String?)</ID>
+    <ID>LongMethod:ShortPage.kt$@OptIn(UnstableApi::class) @Composable internal fun ShortPage(app: AppState, id: String, info: ShortInfo?, playback: ShortsPlayback, active: Boolean, fit: Boolean, onComments: (ShortInfo) -&gt; Unit, onSound: (ShortSound) -&gt; Unit)</ID>
+    <ID>LongMethod:VideoPlayer.kt$@Composable fun VideoControls( app: AppState, mode: ControlsMode, onCollapse: () -&gt; Unit, onFullscreen: () -&gt; Unit, onSettings: () -&gt; Unit, modifier: Modifier = Modifier, onChapters: () -&gt; Unit = {}, /** A sheet the controls opened (chapters, settings) is up: they stay while it is, and hide again after. */ sheetOpen: Boolean = false, )</ID>
+    <ID>LongParameterList:AccountManager.kt$AccountManager$( private val store: ProfileStore, /** Built off the main thread at launch; [restore] gets by without it. */ private val client: () -&gt; YouTube, /** The client if it's been built, for what shouldn't build it. */ private val builtClient: () -&gt; YouTube?, /** Tells the stream resolver the session changed, and whether this account asks for Premium formats. */ private val onSessionChanged: (premium: Boolean) -&gt; Unit, private val library: ActiveLibrary, private val pages: PageDiskCache, private val scope: CoroutineScope, /** Forgets what a sign-in left in the WebView. Main thread. */ private val clearWebSession: () -&gt; Unit = ::clearWebView, /** Where [SwitchListener]s and [clearWebSession] are called. */ private val main: CoroutineDispatcher = Dispatchers.Main, )</ID>
+    <ID>LongParameterList:Liquid.kt$(path: Path, l: Float, t: Float, r: Float, b: Float, radIn: Float, bs: Float = 0f, bt: Float = 0f, radBottomIn: Float = radIn)</ID>
+    <ID>LongParameterList:Liquid.kt$(path: Path, x1: Float, y1: Float, r1: Float, x2: Float, y2: Float, r2: Float, maxDistance: Float, spread: Float = 0.5f, handleRate: Float = 2.4f)</ID>
+    <ID>LongParameterList:Liquid.kt$(w: Float, h: Float, rxIn: Float, ryIn: Float, side: Float, ends: Float)</ID>
+    <ID>LongParameterList:PictureGestures.kt$( screen: ScreenPosition, pansFreely: () -&gt; Boolean, onStart: (mode: PictureDrag) -&gt; Unit, onEnd: () -&gt; Unit, onCancel: () -&gt; Unit, onDrag: (uptimeMillis: Long, delta: Offset, zoom: Float) -&gt; Unit, )</ID>
+    <ID>LongParameterList:PipRelease.kt$( x: Float, y: Float, w: Float, h: Float, screenW: Float, screenH: Float, bottomEdge: Float, vx: Float, vy: Float, flingPx: Float, pinched: Boolean, )</ID>
+    <ID>LongParameterList:PipRelease.kt$(x: Float, y: Float, w: Float, h: Float, screenW: Float, bottomEdge: Float)</ID>
+    <ID>LongParameterList:PlaylistPanel.kt$( app: AppState, panel: PlaylistPanel, currentId: String?, open: Boolean, onToggle: () -&gt; Unit, palette: ArtworkPalette, )</ID>
+    <ID>LongParameterList:ProblemReport.kt$IssueLink$( kind: ReportKind, description: String, videoLink: String?, version: String, device: String, diagnostics: String?, crashSignature: String? = null, maxLength: Int = MAX_URL, )</ID>
+    <ID>LongParameterList:ResolvedStream.kt$ResolvedStream$( val videoId: String, val url: String, val headers: Map&lt;String, String&gt;, val mimeType: String?, val codecs: String?, val bitrate: Int?, val sampleRate: Int?, val contentLength: Long?, val itag: Int, val loudnessDb: Double?, val clientName: String, val profileId: String, val requireBoundedRange: Boolean, val chunkSize: Long, val expiresAtMs: Long, val video: VideoStream?, val availableHeights: List&lt;Int&gt;, val title: String?, val author: String?, val durationSec: Long?, val isLive: Boolean, val playbackUrl: String?, val watchtimeUrl: String?, val cpn: String, /** Set when the bytes come over SABR; [url] and the video's URL are then `sabr://` names, not addresses. */ val sabrAudio: SabrBootstrap? = null, val sabrVideo: SabrBootstrap? = null, /** When the resolve finished; see [isWarmingUp]. */ val issuedAtMs: Long = System.currentTimeMillis(), )</ID>
+    <ID>LongParameterList:ResolvedStream.kt$VideoStream$( val url: String, val itag: Int?, val width: Int?, val height: Int?, val mimeType: String?, val codecs: String?, val bitrate: Int?, val contentLength: Long?, )</ID>
+    <ID>LongParameterList:SlotDrag.kt$( pill: LiquidPill, scope: kotlinx.coroutines.CoroutineScope, sign: Float, pressGrow: Float, step: () -&gt; Float, width: () -&gt; Float, rest: () -&gt; Int, shown: () -&gt; Int, reduce: () -&gt; Boolean, n: Int, haptics: app.oriel.ui.haptics.Haptics, throwV: FloatArray, select: (Int) -&gt; Unit, )</ID>
+    <ID>LongParameterList:SlotDrag.kt$( reachIn: Animatable&lt;Float, *&gt;, reachOut: Animatable&lt;Float, *&gt;, scope: kotlinx.coroutines.CoroutineScope, give: Float, sign: Float, reduce: () -&gt; Boolean, stretch: Dp = 200.dp, onOpen: (velocity: Float) -&gt; Unit, )</ID>
+    <ID>MatchingDeclarationName:Chips.kt$SelectionBlob</ID>
+    <ID>MatchingDeclarationName:LiquidPage.kt$BackSwipe</ID>
+    <ID>MatchingDeclarationName:PictureGestures.kt$PictureDrag</ID>
+    <ID>MaxLineLength:AccountManager.kt$AccountManager.Companion$const</ID>
+    <ID>MaxLineLength:Alerts.kt$modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(alertFieldFill()).padding(horizontal = 10.dp, vertical = 9.dp).focusRequester(focus)</ID>
+    <ID>MaxLineLength:Alerts.kt$spec.message?.let { Text(it, style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.fillMaxWidth().padding(top = 4.dp, start = 16.dp, end = 16.dp)) }</ID>
+    <ID>MaxLineLength:AppState.kt$AppState$fun</ID>
+    <ID>MaxLineLength:Artwork.kt$Box</ID>
+    <ID>MaxLineLength:Cards.kt$.</ID>
+    <ID>MaxLineLength:Cards.kt$Box(Modifier.padding(horizontal = 14.dp).fillMaxWidth().height(3.dp).clip(RoundedCornerShape(topStart = 6.dp, topEnd = 6.dp)).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)))</ID>
+    <ID>MaxLineLength:Cards.kt$Column</ID>
+    <ID>MaxLineLength:Cards.kt$Text(choice, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 3.dp).fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)).padding(horizontal = 12.dp, vertical = 9.dp))</ID>
+    <ID>MaxLineLength:Cards.kt$Text(listOfNotNull(channel.handle, channel.subscribersText).joinToString(" · "), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)</ID>
+    <ID>MaxLineLength:Cards.kt$Text(listOfNotNull(playlist.owner?.name, playlist.countText).joinToString(" · "), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)</ID>
+    <ID>MaxLineLength:Cards.kt$Text(listOfNotNull(post.likesText?.let { "$it likes" }, post.commentsText?.let { "$it comments" }).joinToString(" · "), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)</ID>
+    <ID>MaxLineLength:Cards.kt$fun</ID>
+    <ID>MaxLineLength:Cards.kt$modifier.padding(horizontal = if (inset) PAGE_GUTTER else 0.dp, vertical = 8.dp).fillMaxWidth().clip(RoundedCornerShape(CARD_CORNER)).background(MaterialTheme.colorScheme.surfaceVariant).padding(16.dp)</ID>
+    <ID>MaxLineLength:ChannelModel.kt$ChannelModel$_state.update { if (f == null) it.copy(loadingTab = false, selectedSort = before, error = "Couldn't sort by ${chip.title.lowercase()}.") else it.copy(feed = f, loadingTab = false, moreFailed = false) }</ID>
+    <ID>MaxLineLength:ChannelModel.kt$ChannelModel$_state.update { if (p == null) it.copy(loadingTab = false, feed = null, error = "Couldn't load ${tab.title}.") else it.copy(feed = p.feed, loadingTab = false, sortChips = p.feed.chips, error = null) }</ID>
+    <ID>MaxLineLength:ChannelModel.kt$ChannelModel$_state.update { it.copy(page = p, tabs = p.tabs.filter { t -&gt; t.params != null || t.title == p.selectedTab }, selectedTab = p.selectedTab, feed = p.feed, loading = false, sortChips = p.feed.chips, selectedSort = null) }</ID>
+    <ID>MaxLineLength:ChannelModel.kt$ChannelModel$_state.update { st -&gt; if (st.feed?.continuation != token) st else if (next == null) st.copy(loadingMore = false, moreFailed = true) else st.copy(loadingMore = false, feed = st.feed?.let { f -&gt; f + next }) }</ID>
+    <ID>MaxLineLength:ChannelScreen.kt$ChipsRow(state.sortChips.mapIndexed { i, c -&gt; c.copy(selected = if (state.selectedSort == null) c.selected || i == 0 &amp;&amp; state.sortChips.none { it.selected } else c.title == state.selectedSort) }, onSelect = model::sort)</ID>
+    <ID>MaxLineLength:ChannelScreen.kt$Text(channel.title, style = MaterialTheme.typography.headlineSmall, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, modifier = Modifier.weight(1f, fill = false))</ID>
+    <ID>MaxLineLength:ChannelScreen.kt$Text(if (preview != null) "more" else "About this channel", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.W600), color = MaterialTheme.colorScheme.onSurface)</ID>
+    <ID>MaxLineLength:ChannelScreen.kt$feed != null &amp;&amp; feed.isEmpty -&gt; item(key = "empty", contentType = "message") { MessageState(feed.message ?: if (state.searchQuery != null) "No results in this channel." else "Nothing here yet.") }</ID>
+    <ID>MaxLineLength:Chips.kt$fun</ID>
+    <ID>MaxLineLength:Chips.kt$if (w &gt; 0f &amp;&amp; shown &gt; 0f) drawRoundRect(ink.copy(alpha = shown), topLeft = Offset(x, target.top), size = androidx.compose.ui.geometry.Size(w, target.height), cornerRadius = androidx.compose.ui.geometry.CornerRadius(target.height / 2))</ID>
+    <ID>MaxLineLength:Comments.kt$modifier = (if (comment.isCreator) Modifier.clip(RoundedCornerShape(7.dp)).background(palette.onBackgroundVariant).padding(horizontal = 6.dp, vertical = 1.dp) else Modifier).weight(1f, fill = false)</ID>
+    <ID>MaxLineLength:ControlParts.kt$Row</ID>
+    <ID>MaxLineLength:ControlParts.kt$Text("· ${ch.title}", style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.85f), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))</ID>
+    <ID>MaxLineLength:Controls.kt$Column</ID>
+    <ID>MaxLineLength:Controls.kt$Text(text, style = style, color = color, maxLines = if (expanded) Int.MAX_VALUE else collapsedLines, overflow = TextOverflow.Ellipsis, onTextLayout = { if (!expanded) overflows = it.hasVisualOverflow })</ID>
+    <ID>MaxLineLength:Controls.kt$drawRoundRect(hairline.copy(alpha = hairline.alpha * (1f - filled.value).coerceIn(0f, 1f)), cornerRadius = CornerRadius(h / 2f), style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))</ID>
+    <ID>MaxLineLength:Controls.kt$fun</ID>
+    <ID>MaxLineLength:DescriptionPanel.kt$Text(value, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.W700), color = palette.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)</ID>
+    <ID>MaxLineLength:DescriptionPanel.kt$val shape = RoundedCornerShape(topStart = if (first) GROUP_CORNER else 0.dp, topEnd = if (first) GROUP_CORNER else 0.dp, bottomStart = if (last) GROUP_CORNER else 0.dp, bottomEnd = if (last) GROUP_CORNER else 0.dp)</ID>
+    <ID>MaxLineLength:FeedModel.kt$FeedModel$if (cached != null &amp;&amp; requestVersion == initialVersion &amp;&amp; graph.pages.generation == generation) _state.update { if (it.feed == null) it.copy(feed = tidy(cached.first), stale = true, updatedAt = cached.second, loading = false) else it }</ID>
+    <ID>MaxLineLength:FeedShelves.kt$item(key = "i$k:${entry.id}", contentType = entry::class.simpleName + compact) { CompositionLocalProvider(LocalShortsFeed provides shortsFeed) { Box(feedItem()) { if (asRows) ItemRow(entry) else ItemCard(entry) } } }</ID>
+    <ID>MaxLineLength:FloatingTabBar.kt$.</ID>
+    <ID>MaxLineLength:GlassPanes.kt$Modifier.fillMaxWidth().heightIn(min = 50.dp).clip(InnerShape).selectable(selected, role = Role.RadioButton) { haptics.play(Haptic.Select); onClick() }.padding(horizontal = PANE_INSET, vertical = 8.dp)</ID>
+    <ID>MaxLineLength:GlassPanes.kt$Row(Modifier.padding(horizontal = PAGE_GUTTER).padding(bottom = PANE_GAP).fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(PANE_GAP), verticalAlignment = Alignment.Top, content = content)</ID>
+    <ID>MaxLineLength:Glyphs.kt$Glyphs$val LineBadge = glyph("badge", "M12 3L14.200 5.200H17.300L17.300 8.300L19.500 10.500L17.300 12.700V15.800H14.200L12 18L9.800 15.800H6.700V12.700L4.500 10.500L6.700 8.300V5.200H9.800Z", "M9.300 10.600L11.200 12.500L14.800 8.900")</ID>
+    <ID>MaxLineLength:Grouped.kt$Text(header.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = GROUP_INSET + 4.dp, top = top, bottom = 8.dp).semantics { heading() })</ID>
+    <ID>MaxLineLength:Grouped.kt$Text(value, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 168.dp), textAlign = TextAlign.End)</ID>
+    <ID>MaxLineLength:Grouped.kt$if (footer != null) Text(footer, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = GROUP_INSET + 4.dp).padding(top = 8.dp))</ID>
+    <ID>MaxLineLength:HomeScreen.kt$if (onDismiss != null) Icon(OrielIcons.Close, "Dismiss", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(44.dp).clip(CircleShape).clickable(onClick = onDismiss).padding(12.dp))</ID>
+    <ID>MaxLineLength:LibraryScreens.kt$PageScaffold</ID>
+    <ID>MaxLineLength:LibraryScreens.kt$Text(Plurals.count(videos.size, "video"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = PAGE_GUTTER, vertical = 6.dp))</ID>
+    <ID>MaxLineLength:LibraryScreens.kt$feed != null &amp;&amp; feed.isEmpty &amp;&amp; !state.loading -&gt; item(key = "empty", contentType = "message") { MessageState(feed.message ?: "Nothing here right now.", action = "Try again", onAction = { model.reload() }) }</ID>
+    <ID>MaxLineLength:LibraryScreens.kt$if (hasHistory &amp;&amp; grouped != null &amp;&amp; groups.isEmpty()) item(key = "no-match", contentType = "message") { MessageState("Nothing in your history matches “${query.trim()}”.", icon = OrielIcons.Search) }</ID>
+    <ID>MaxLineLength:LibraryScreens.kt$localPlaylists.distinctBy { it.id }.map { p -&gt; p.id to Playlist("local:" + p.id, p.name, thumbnail = p.videos.firstOrNull()?.let { Thumbnails.of(it, 480) }, countText = Plurals.count(p.videos.size, "video")) }</ID>
+    <ID>MaxLineLength:LibraryScreens.kt$val remote: FeedModel? = if (signedIn) viewModel(key = "playlists-remote:${profile.id}") { FeedModel(graph, "playlists", load = { fresh -&gt; graph.yt.browse(YouTube.PLAYLISTS, fresh = fresh) }, maxAgeMs = 5 * 60_000L) } else null</ID>
+    <ID>MaxLineLength:MainActivity.kt$MainActivity$OrielTheme</ID>
+    <ID>MaxLineLength:Notice.kt$Text(text, style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp), color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f, fill = false).padding(vertical = 12.dp), maxLines = 2, overflow = TextOverflow.Ellipsis)</ID>
+    <ID>MaxLineLength:OrielRoot.kt$"Share anonymous usage counts: app opens, which features get used, crashes, and the app and Android version. Never what you watch or search, and nothing tied to you or your account. You can change this in Settings."</ID>
+    <ID>MaxLineLength:PageTransitions.kt$PushStyle$internal</ID>
+    <ID>MaxLineLength:Pages.kt$Pages$Chip(o.at("title", "content").string ?: return@mapNotNull null, o.findAll("continuationCommand").firstNotNullOfOrNull { it["token"].string }, selected = o["isSelected"].bool == true)</ID>
+    <ID>MaxLineLength:PlaybackService.kt$PlaybackService$.</ID>
+    <ID>MaxLineLength:PlayerSettingsSheet.kt$Page.Audio</ID>
+    <ID>MaxLineLength:PlayerSettingsSheet.kt$SettingsRow("Captions", OrielIcons.Captions, value = captions.selected?.let { it.name + (captions.translateTo?.let { t -&gt; " → ${Locale.forLanguageTag(t).displayLanguage}" } ?: "") } ?: if (captions.tracks.isEmpty()) "None" else "Off", chevron = true, enabled = captions.tracks.isNotEmpty(), onClick = { page = Page.Captions })</ID>
+    <ID>MaxLineLength:PlaylistPanel.kt$Text(listOfNotNull(if (panel.isMix) "Mix" else panel.owner, "${index + 1} / ${panel.videos.size}").joinToString(" · "), style = MaterialTheme.typography.bodyMedium, color = palette.onBackgroundVariant)</ID>
+    <ID>MaxLineLength:PlaylistScreen.kt$Text(title, style = MaterialTheme.typography.headlineMedium, color = palette.onBackground, textAlign = TextAlign.Center, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 24.dp))</ID>
+    <ID>MaxLineLength:PlaylistScreen.kt$meta?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = palette.onBackgroundVariant, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp, start = 24.dp, end = 24.dp)) }</ID>
+    <ID>MaxLineLength:ReportSheet.kt$if (kind == ReportKind.PLAYBACK) "The video that won't play. It's the only thing about what you watch that goes in the report." else "Optional: a video where it happens. It's the only thing about what you watch that goes in the report."</ID>
+    <ID>MaxLineLength:ScrubPreview.kt$Text(title, style = MaterialTheme.typography.labelMedium.copy(shadow = shadow), color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = width))</ID>
+    <ID>MaxLineLength:Scrubber.kt$Scrubber$"""(?&lt;![0-9A-Za-z:])(?:(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}|(?:[0-9A-Fa-f]{1,4}:){1,7}:(?:[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){0,6})?|::[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){0,6})(?![0-9A-Za-z])"""</ID>
+    <ID>MaxLineLength:Scrubber.kt$Scrubber$"""\b(__Secure-[A-Za-z0-9_-]+|__Host-[A-Za-z0-9_-]+|SAPISID|APISID|SSID|HSID|SID|SIDCC|LOGIN_INFO|VISITOR_INFO1_LIVE|VISITOR_PRIVACY_METADATA|YSC|NID|OSID|LSID|SMSV|ACCOUNT_CHOOSER|AEC)=[^;\s"',}]*"""</ID>
+    <ID>MaxLineLength:SearchFields.kt$if (onFill != null) Icon(OrielIcons.Fill, "Use", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(44.dp).clip(RoundedCornerShape(50)).clickable { haptics.play(Haptic.Tap); onFill() }.padding(12.dp))</ID>
+    <ID>MaxLineLength:SearchFields.kt$if (onRemove != null) Icon(OrielIcons.Close, "Remove", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(44.dp).clip(RoundedCornerShape(50)).clickable { haptics.play(Haptic.Tap); onRemove() }.padding(13.dp))</ID>
+    <ID>MaxLineLength:SearchModel.kt$SearchModel$.</ID>
+    <ID>MaxLineLength:SearchModel.kt$SearchModel$_state.update { it.copy(query = q, submitted = q, params = params, picked = picked, selectedChip = chip, chips = if (it.submitted == q) it.chips else emptyList(), allFilters = if (it.submitted == q) it.allFilters else emptyList(), loading = true, error = null, moreFailed = false, loadingMore = false, suggestions = emptyList(), page = if (it.submitted == q) it.page else null) }</ID>
+    <ID>MaxLineLength:SearchScreen.kt$LazyColumn</ID>
+    <ID>MaxLineLength:SearchScreen.kt$if (state.suggestions.isEmpty()) item(key = "typed", contentType = "suggestion") { SuggestionRow(AnnotatedString(typed), OrielIcons.Search, onClick = { submit(typed) }, onFill = null) }</ID>
+    <ID>MaxLineLength:SearchScreen.kt$items(state.suggestions.distinct(), key = { "s:$it" }, contentType = { "suggestion" }) { s -&gt; SuggestionRow(completion(typed, s), OrielIcons.Search, onClick = { submit(s) }, onFill = { model.type("$s ") }) }</ID>
+    <ID>MaxLineLength:SearchScreen.kt$page != null &amp;&amp; page.feed.isEmpty -&gt; item(key = "none", contentType = "message") { MessageState(page.feed.message ?: "No results for “${state.submitted}”.", icon = OrielIcons.Search) }</ID>
+    <ID>MaxLineLength:SegmentedControl.kt$Text(label(option), style = MaterialTheme.typography.labelLarge.copy(fontWeight = if (on) FontWeight.W600 else FontWeight.W500), color = ink, maxLines = 1, modifier = Modifier.padding(vertical = 4.dp))</ID>
+    <ID>MaxLineLength:SettingsPanes.kt$PaneHeader("Community services", info = "SponsorBlock: skips sponsor segments. sponsor.ajay.app is asked by the first 4 characters of a hash of the video id.\nReturn YouTube Dislike: estimated dislike counts. returnyoutubedislikeapi.com receives the video id.")</ID>
+    <ID>MaxLineLength:SettingsPanes.kt$PaneHeader("History", info = if (graph.telemetry.available) "Anonymous usage: counts like app opens, features used and crashes, with app and Android version. Never what you watch or search." else null)</ID>
+    <ID>MaxLineLength:SettingsPanes.kt$PaneHeader("Releases", info = "Checking: once a day, on Oriel's GitHub page (api.github.com). Only the app's version is sent.\nInstalling: only an update that matches the release's checksums and is signed with this copy's key.\nBeta updates: test versions before they're released.")</ID>
+    <ID>MaxLineLength:SettingsPanes.kt$PaneHeader("Video quality", info = "Auto: follows your connection, up to what this screen and device can show.\nData saver: holds video to 480p and stops prefetching.\nEvery quality a video has, up to 4K, is always on the player.")</ID>
+    <ID>MaxLineLength:SettingsPanes.kt$PaneHeader("While you watch", info = "Background play: sound carries on with the screen off or in another app.\nAutoplay: plays a related video when the queue ends.\nResume: picks a video up where you left it.\nPrefetch next: readies the next video so it starts at once.\nPrefer original audio: the language a video was made in, not an auto-dub.")</ID>
+    <ID>MaxLineLength:SettingsPanes.kt$PickerRow("Language", OrielIcons.Comments, langs, s.language, { it?.let { l -&gt; Locale.forLanguageTag(l).displayName } ?: "Automatic" }) { v -&gt; p.set { it.copy(language = v) }; p.graph.applyLocale() }</ID>
+    <ID>MaxLineLength:SettingsPanes.kt$SegmentTile("Video cache size", listOf(256, 512, 1024, 2048, 4096), s.streamCacheMb, { if (it &gt;= 1024) "${it / 1024} GB" else "$it MB" }, info = (cacheBytes?.let { "In use: ${Format.bytes(it)} of ${s.streamCacheMb} MB.\n" } ?: "") + "Played videos are kept so replays and seeking back cost nothing. A new size takes effect the next time Oriel starts.") { v -&gt; p.set { it.copy(streamCacheMb = v) } }</ID>
+    <ID>MaxLineLength:SettingsPanes.kt$private const</ID>
+    <ID>MaxLineLength:SettingsPanes.kt$subtitle = if (update.lastChecked &gt; 0) "Last checked ${android.text.format.DateUtils.getRelativeTimeSpanString(update.lastChecked, System.currentTimeMillis(), android.text.format.DateUtils.MINUTE_IN_MILLIS)}" else null</ID>
+    <ID>MaxLineLength:SettingsScreen.kt$Picker$internal</ID>
+    <ID>MaxLineLength:SettingsScreen.kt$SearchField(query, { query = it }, { }, Modifier.padding(horizontal = PAGE_GUTTER, vertical = 6.dp), placeholder = "Search", shape = RoundedCornerShape(50), fill = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f))</ID>
+    <ID>MaxLineLength:SettingsScreen.kt$androidx.compose.foundation.lazy</ID>
+    <ID>MaxLineLength:SettingsScreen.kt$app.alert</ID>
+    <ID>MaxLineLength:ShortCommentsSheet.kt$Row</ID>
+    <ID>MaxLineLength:ShortCommentsSheet.kt$if (sort.size &gt; 1) item(key = "sort") { CommentSortRow(sort, palette) { option -&gt; sortToken = option.token; page = page?.copy(sort = sort.map { it.copy(selected = it.token == option.token) }) } }</ID>
+    <ID>MaxLineLength:ShortPage.kt$AnimatedVisibility</ID>
+    <ID>MaxLineLength:ShortPage.kt$Row</ID>
+    <ID>MaxLineLength:ShortPage.kt$ShortAction</ID>
+    <ID>MaxLineLength:ShortsPlayback.kt$ShortsPlayback$private val sources = OrielMediaSourceFactory(graph.dataSources.playback, graph.dataSources.live, graph.adaptive.dataSource, graph::audioPreference) { graph.settings.lowAudio(graph.network.metered.value) }</ID>
+    <ID>MaxLineLength:SoundSheet.kt$Box(Modifier.fillMaxWidth().fillMaxHeight(0.35f).align(Alignment.BottomCenter).background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.55f)))))</ID>
+    <ID>MaxLineLength:SoundSheet.kt$v.viewsText?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = Color.White, maxLines = 1, modifier = Modifier.align(Alignment.BottomStart).padding(6.dp)) }</ID>
+    <ID>MaxLineLength:SubscriptionsScreen.kt$Column</ID>
+    <ID>MaxLineLength:SubscriptionsScreen.kt$feed != null &amp;&amp; feed.isEmpty -&gt; item(key = "empty", contentType = "message") { MessageState(feed.message ?: if (filter == SubsFilter.All) "No new videos from your channels." else "Nothing ${filter.empty} from your channels.") }</ID>
+    <ID>MaxLineLength:VideoPlayer.kt$AnimatedVisibility</ID>
+    <ID>MaxLineLength:VideoPlayer.kt$OverlayButton(OrielIcons.Collapse, if (mode == ControlsMode.Fullscreen) "Exit full screen" else "Minimise", onClick = { if (mode == ControlsMode.Fullscreen) onFullscreen() else onCollapse() })</ID>
+    <ID>MaxLineLength:VideoPlayer.kt$Text(watch.video?.title ?: "", style = MaterialTheme.typography.titleMedium, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))</ID>
+    <ID>MaxLineLength:WatchDetails.kt$.</ID>
+    <ID>MaxLineLength:WatchDetails.kt$Column</ID>
+    <ID>MaxLineLength:WatchDetails.kt$Text("LIVE", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.W700), color = Color.White, modifier = Modifier.clip(RoundedCornerShape(5.dp)).background(LiveRed).padding(horizontal = 6.dp, vertical = 1.dp))</ID>
+    <ID>MaxLineLength:WatchDetails.kt$Text(channel.name, style = MaterialTheme.typography.titleMedium, color = palette.onBackground, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))</ID>
+    <ID>MaxLineLength:WatchPanel.kt$&lt;no name provided&gt;.&lt;no name provided&gt;$override</ID>
+    <ID>MaxLineLength:WatchPanel.kt$Column</ID>
+    <ID>MaxLineLength:WatchPanel.kt$androidx.compose.animation</ID>
+    <ID>MaxLineLength:WatchPanel.kt$internal</ID>
+    <ID>MaxLineLength:WatchPanel.kt$transitionSpec = { androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(160)) togetherWith androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(120)) }</ID>
+    <ID>MaxLineLength:YouScreen.kt$SignInCard(onSignIn = { app.signIn() }, onDismiss = null, text = "Your library works on this device without an account. Sign in to sync likes, subscriptions, Watch later and playlists with YouTube.", glass = true)</ID>
+    <ID>MaxLineLength:YouScreen.kt$Text("Sign in again to bring back your recommendations, subscriptions and playlists. Your library on this device is still here.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)</ID>
+    <ID>MaxLineLength:YouScreen.kt$if (!profile.isGuest &amp;&amp; !signedIn) SignInCard(onSignIn = { app.navigate(LoginRoute(reauth = profile.id)) }, onDismiss = null, text = "Sign in again to sync this account's likes, subscriptions, Watch later and playlists with YouTube.", glass = true)</ID>
+    <ID>NestedBlockDepth:PlayerHost.kt$@Composable fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boolean)</ID>
+    <ID>NestedBlockDepth:Sabr.kt$SabrReader$private fun next(): SabrChunk?</ID>
+    <ID>NestedBlockDepth:Sabr.kt$SegmentIndex.Companion$private fun parseWebm(b: ByteArray): SegmentIndex?</ID>
+    <ID>NestedBlockDepth:UpdateInstaller.kt$UpdateInstaller$fun install(context: Context, apk: File, sha256: String)</ID>
+    <ID>SwallowedException:LibraryStore.kt$LibraryStore$e: IOException</ID>
+    <ID>SwallowedException:Updates.kt$Updates$e: Exception</ID>
+    <ID>SwallowedException:YouTube.kt$YouTube$e: YTException</ID>
+    <ID>TopLevelPropertyNaming:IosOverscroll.kt$private const val fallbackContainerPx = 2_000f</ID>
+    <ID>TopLevelPropertyNaming:IosOverscroll.kt$private const val fastBounceStiffness = 130f</ID>
+    <ID>TopLevelPropertyNaming:IosOverscroll.kt$private const val highVelocityThreshold = 5_000f</ID>
+    <ID>TopLevelPropertyNaming:IosOverscroll.kt$private const val maxBounceVelocity = 10_000f</ID>
+    <ID>TopLevelPropertyNaming:IosOverscroll.kt$private const val normalBounceStiffness = 247f</ID>
+    <ID>TopLevelPropertyNaming:IosOverscroll.kt$private const val rubberBandConstant = 0.55f</ID>
+    <ID>UseCheckOrError:ProfileStore.kt$ProfileStore$throw IllegalStateException("profile index without a guest or with repeated ids")</ID>
+    <ID>VariableNaming:PlayerHost.kt$val H = constraints.maxHeight.toFloat()</ID>
+    <ID>VariableNaming:PlayerHost.kt$val W = constraints.maxWidth.toFloat()</ID>
+  </CurrentIssues>
+</SmellBaseline>
