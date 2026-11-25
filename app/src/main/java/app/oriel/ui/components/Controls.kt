@@ -92,6 +92,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -640,10 +641,12 @@ fun SearchField(
     onFocus: ((Boolean) -> Unit)? = null,
     /** Shown at the end while the field is empty, where Clear goes once there's text: a microphone. */
     idleTrailing: (@Composable () -> Unit)? = null,
+    shape: Shape = RoundedCornerShape(11.dp),
+    fill: Color = MaterialTheme.colorScheme.surfaceVariant,
 ) {
     val haptics = rememberHaptics()
     Row(
-        modifier.heightIn(min = 46.dp).fillMaxWidth().clip(RoundedCornerShape(11.dp)).background(MaterialTheme.colorScheme.surfaceVariant).padding(start = 8.dp, end = 8.dp),
+        modifier.heightIn(min = 46.dp).fillMaxWidth().clip(shape).background(fill).padding(start = 8.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(32.dp).padding(6.dp)) { Icon(OrielIcons.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -655,7 +658,7 @@ fun SearchField(
                 onValueChange = onValueChange,
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                cursorBrush = SolidColor(app.oriel.ui.theme.accent()),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { onSearch(value) }),
                 modifier = Modifier.fillMaxWidth()
@@ -812,13 +815,15 @@ private val SegmentPress = app.oriel.ui.theme.PressHighlight(Color.Transparent, 
 
 // ---- states --------------------------------------------------------------------------------
 
-/** Empty and error states: centred bodyLarge, with an optional button. */
+/** Empty and error states: centred bodyLarge under its icon in a soft disc, with an optional button. */
 @Composable
 fun MessageState(text: String, modifier: Modifier = Modifier, icon: ImageVector? = null, action: String? = null, onAction: (() -> Unit)? = null, secondary: String? = null, onSecondary: (() -> Unit)? = null) {
     Column(modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 48.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         if (icon != null) {
-            Icon(icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(40.dp))
-            Spacer(Modifier.height(14.dp))
+            Box(Modifier.size(72.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+                Icon(icon, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(32.dp))
+            }
+            Spacer(Modifier.height(18.dp))
         }
         Text(text, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
         if (action != null && onAction != null) {

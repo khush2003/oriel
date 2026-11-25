@@ -47,8 +47,24 @@ enum class Transport(val label: String, val detail: String, val protocol: Stream
     @SerialName("SABR") SABR("SABR", "YouTube's newer server-driven streaming", StreamProtocol.SABR),
 }
 
+/** How much colour lies behind the glass on pages that have a wash: glass needs something to bend. */
+@Serializable
+enum class Wash(val label: String, val strength: Float) { @SerialName("NONE") NONE("None", 0f), @SerialName("SOFT") SOFT("Soft", 1f), @SerialName("VIVID") VIVID("Vivid", 1.7f) }
+
 @Serializable
 enum class ThemeMode(val label: String) { @SerialName("SYSTEM") SYSTEM("System"), @SerialName("DARK") DARK("Dark"), @SerialName("LIGHT") LIGHT("Light") }
+
+/**
+ * The one colour in an otherwise black-and-white app: what's on, what's picked. [GRAPHITE] is
+ * none at all (white on dark, black on light), as Oriel was before it had the choice.
+ */
+@Serializable
+enum class Accent(val label: String) {
+    /** The warm end of the app icon's arcs. */
+    @SerialName("ORIEL") ORIEL("Oriel"),
+    @SerialName("AMBER") AMBER("Amber"), @SerialName("GREEN") GREEN("Green"), @SerialName("BLUE") BLUE("Blue"),
+    @SerialName("INDIGO") INDIGO("Indigo"), @SerialName("PINK") PINK("Pink"), @SerialName("GRAPHITE") GRAPHITE("Graphite"),
+}
 
 @Serializable
 data class SettingsState(
@@ -82,6 +98,10 @@ data class SettingsState(
     val streamCacheMb: Int = 1024,
     // Appearance
     val theme: ThemeMode = ThemeMode.SYSTEM,
+    val accent: Accent = Accent.ORIEL,
+    val wash: Wash = Wash.SOFT,
+    // Dark pages in pure black; off, a near-black that glass and panes lift off more gently.
+    val trueBlack: Boolean = true,
     val liquidGlass: Boolean = true,
     // Interactions that stretch and morph like liquid: off until the person turns it on.
     val liquidMotion: Boolean = false,

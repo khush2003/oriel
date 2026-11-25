@@ -193,7 +193,7 @@ fun AccountSwitcher(app: AppState) {
                     translationY = if (d < 0f) d else d / (1f + d / 120f)
                 }
                 .then(if (reduceMotion) Modifier else Modifier.shadow(24.dp, shape, clip = false, ambientColor = Color.Black.copy(alpha = 0.3f), spotColor = Color.Black.copy(alpha = 0.3f)))
-                .glassSurface(shape)
+                .glassSurface(shape, panel = true)
                 .draggable(
                     rememberDraggableState { delta -> scope.launch { drag.snapTo(drag.value + delta) } },
                     Orientation.Vertical,

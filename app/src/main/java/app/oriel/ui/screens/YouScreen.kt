@@ -1,9 +1,6 @@
 package app.oriel.ui.screens
 
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.ui.graphics.Color
-import app.oriel.ui.components.DestructiveRed
 import app.oriel.ui.components.GroupShape
 import app.oriel.ui.components.PillSize
 import app.oriel.ui.navigation.NotificationsRoute
@@ -49,11 +46,17 @@ import app.oriel.ui.components.ActionPill
 import app.oriel.ui.components.Avatar
 import app.oriel.ui.components.OrielIcons
 import app.oriel.ui.components.PAGE_GUTTER
+import app.oriel.ui.components.CategoryTile
+import app.oriel.ui.components.Glyphs
+import app.oriel.ui.components.TileRow
+import app.oriel.ui.components.glassPane
+import app.oriel.ui.components.paneType
+import app.oriel.ui.components.washPageColor
+import app.oriel.ui.theme.TilePress
+import app.oriel.ui.theme.pressHighlight
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import app.oriel.ui.components.PlaylistShelfCard
-import app.oriel.ui.components.RowDivider
 import app.oriel.ui.components.SectionHeader
-import app.oriel.ui.components.SettingsGroup
-import app.oriel.ui.components.SettingsRow
 import app.oriel.ui.components.ShelfRow
 import app.oriel.ui.components.VideoShelfCard
 import app.oriel.ui.navigation.ChannelsRoute
@@ -94,6 +97,8 @@ fun YouScreen() {
         title = "You",
         tab = Tab.YOU,
         width = PageWidth.Form,
+        background = washPageColor(),
+        wash = true,
         refreshing = syncing,
         onRefresh = if (signedIn) ({ syncLibrary(app) }) else null,
         // In the title row, as Home's avatar is, so the page needs no bar row above its title.
@@ -103,7 +108,7 @@ fun YouScreen() {
                 Modifier.size(44.dp).clip(CircleShape).clickable(onClickLabel = "Open Settings") { haptics.play(Haptic.Tap); app.navigate(SettingsRoute) },
                 contentAlignment = Alignment.Center,
             ) {
-                Box(Modifier.size(36.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(38.dp).glassPane(CircleShape), contentAlignment = Alignment.Center) {
                     Icon(OrielIcons.Settings, "Settings", tint = MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(20.dp))
                 }
             }
@@ -118,27 +123,31 @@ fun YouScreen() {
                     else -> account?.name ?: profile.info?.name ?: if (signedIn) "Signed in" else "Signed out"
                 }
                 val anchor = remember { AnchorHolder() }
+                val source = remember { MutableInteractionSource() }
                 Row(
-                    Modifier.fillMaxWidth().clickable(onClickLabel = "Switch account") { haptics.play(Haptic.Expand); app.openAccounts(anchor.bounds) }.padding(horizontal = PAGE_GUTTER, vertical = 8.dp),
+                    Modifier.padding(horizontal = PAGE_GUTTER).padding(top = 4.dp, bottom = 10.dp).fillMaxWidth().pressHighlight(source, TilePress).glassPane()
+                        .clickable(source, indication = null, onClickLabel = "Switch account") { haptics.play(Haptic.Expand); app.openAccounts(anchor.bounds) }
+                        .padding(start = 14.dp, end = 16.dp, top = 14.dp, bottom = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Avatar(if (profile.isGuest) null else account?.avatar ?: profile.info?.avatar, 64.dp, Modifier.accountsAnchor(anchor), name = if (profile.isGuest) null else name)
+                    Avatar(if (profile.isGuest) null else account?.avatar ?: profile.info?.avatar, 56.dp, Modifier.accountsAnchor(anchor), name = if (profile.isGuest) null else name)
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(name, style = MaterialTheme.typography.headlineSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(name, style = paneType(19f, 600), color = MaterialTheme.colorScheme.onSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         val detail = when {
                             profile.isGuest -> "On this device only"
                             !signedIn -> "Signed out"
                             else -> account?.handle ?: account?.email
                         }
-                        detail?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1) }
+                        detail?.let { Text(it, style = paneType(13.5f, 400), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.56f), maxLines = 1, overflow = TextOverflow.Ellipsis) }
                     }
-                    Icon(OrielIcons.Chevron, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                    // The pair of chevrons a choice wears: this opens the accounts to pick from, not a page.
+                    Icon(Glyphs.LineUpDown, null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f), modifier = Modifier.size(18.dp))
                 }
                 // An account signed out here: its library is still this profile's, and signing in picks the account up again.
-                if (!profile.isGuest && !signedIn) SignInCard(onSignIn = { app.navigate(LoginRoute(reauth = profile.id)) }, onDismiss = null, text = "Sign in again to sync this account's likes, subscriptions, Watch later and playlists with YouTube.")
+                if (!profile.isGuest && !signedIn) SignInCard(onSignIn = { app.navigate(LoginRoute(reauth = profile.id)) }, onDismiss = null, text = "Sign in again to sync this account's likes, subscriptions, Watch later and playlists with YouTube.", glass = true)
             } else {
-                SignInCard(onSignIn = { app.signIn() }, onDismiss = null, text = "Your library works on this device without an account. Sign in to sync likes, subscriptions, Watch later and playlists with YouTube.")
+                SignInCard(onSignIn = { app.signIn() }, onDismiss = null, text = "Your library works on this device without an account. Sign in to sync likes, subscriptions, Watch later and playlists with YouTube.", glass = true)
             }
         }
         if (library.history.isNotEmpty()) item(key = "history", contentType = "shelf") {
@@ -147,25 +156,21 @@ fun YouScreen() {
                 ShelfRow(library.history) { v -> VideoShelfCard(v as Video, width = 200.dp) }
             }
         }
-        if (signedIn) item(key = "inbox", contentType = "group") {
-            SettingsGroup(top = 14.dp) {
-                SettingsRow("Notifications", OrielIcons.Bell, chevron = true, onClick = { unseen = 0; app.navigate(NotificationsRoute) }, trailing = if (unseen > 0) ({ CountBadge(unseen) }) else null)
-            }
-        }
-        item(key = "library", contentType = "group") {
-            SettingsGroup {
-                SettingsRow("Watch later", OrielIcons.WatchLater, value = library.watchLater.takeIf { it > 0 }?.toString(), chevron = true, onClick = { app.navigate(WatchLaterRoute) })
-                RowDivider()
-                SettingsRow("Liked videos", OrielIcons.Like, value = library.liked.takeIf { it > 0 }?.toString(), chevron = true, onClick = { app.navigate(LikedRoute) })
-                RowDivider()
-                SettingsRow("History", OrielIcons.History, chevron = true, onClick = { app.navigate(HistoryRoute) })
-            }
-        }
-        item(key = "library2", contentType = "group") {
-            SettingsGroup {
-                SettingsRow("Playlists", OrielIcons.Playlist, value = library.playlistCount.takeIf { it > 0 }?.toString(), chevron = true, onClick = { app.navigate(PlaylistsRoute) })
-                RowDivider()
-                SettingsRow("Channels", OrielIcons.Subscriptions, value = library.channels.takeIf { it > 0 }?.toString(), chevron = true, onClick = { app.navigate(ChannelsRoute) })
+        // Everything kept, as tiles: each says how much is in it, so the page reads at a glance.
+        item(key = "library", contentType = "tiles") {
+            Column(Modifier.padding(top = 14.dp)) {
+                TileRow {
+                    CategoryTile("Watch later", held(library.watchLater, "video"), Glyphs.LineClock, Modifier.weight(1f)) { app.navigate(WatchLaterRoute) }
+                    CategoryTile("Liked videos", held(library.liked, "video"), Glyphs.LineThumb, Modifier.weight(1f)) { app.navigate(LikedRoute) }
+                }
+                TileRow {
+                    CategoryTile("History", held(library.historyCount, "video"), Glyphs.LineHistory, Modifier.weight(1f)) { app.navigate(HistoryRoute) }
+                    CategoryTile("Playlists", held(library.playlistCount, "playlist"), Glyphs.LineQueue, Modifier.weight(1f)) { app.navigate(PlaylistsRoute) }
+                }
+                TileRow {
+                    CategoryTile("Channels", held(library.channels, "channel"), Glyphs.LinePeople, Modifier.weight(1f)) { app.navigate(ChannelsRoute) }
+                    if (signedIn) CategoryTile("Notifications", if (unseen > 0) "$unseen new" else "Nothing new", Glyphs.LineBell, Modifier.weight(1f)) { unseen = 0; app.navigate(NotificationsRoute) }
+                }
             }
         }
         if (library.playlists.isNotEmpty()) item(key = "playlists", contentType = "shelf") {
@@ -185,6 +190,7 @@ fun YouScreen() {
 /** What You shows of the library: recomposes only when one of these changes, not with every resume point saved. */
 private data class YouSummary(
     val history: List<Video>,
+    val historyCount: Int,
     val watchLater: Int,
     val liked: Int,
     val channels: Int,
@@ -200,6 +206,7 @@ private fun youSummary(s: LibraryState) = YouSummary(
         val dur = v.durationSec ?: 0
         if (pos != null && dur > 0) v.copy(progress = ((pos / 10f / dur).toInt() / 100f).coerceIn(0f, 1f)) else v
     },
+    historyCount = s.history.size,
     watchLater = s.watchLater.size,
     liked = s.liked.size,
     channels = s.subscriptions.size,
@@ -224,7 +231,7 @@ fun syncLibrary(app: AppState) {
 @Composable
 fun SessionExpiredCard(onSignIn: () -> Unit) {
     Column(
-        Modifier.padding(horizontal = PAGE_GUTTER, vertical = 8.dp).widthIn(max = 640.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.surfaceVariant).padding(16.dp),
+        Modifier.padding(horizontal = PAGE_GUTTER, vertical = 8.dp).widthIn(max = 640.dp).fillMaxWidth().glassPane().padding(16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(OrielIcons.SignIn, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
@@ -238,12 +245,8 @@ fun SessionExpiredCard(onSignIn: () -> Unit) {
     }
 }
 
-@Composable
-private fun CountBadge(count: Int) {
-    Box(Modifier.heightIn(min = 22.dp).widthIn(min = 22.dp).clip(CircleShape).background(DestructiveRed).padding(horizontal = 6.dp), contentAlignment = Alignment.Center) {
-        Text(if (count > 99) "99+" else "$count", style = MaterialTheme.typography.labelMedium, color = Color.White)
-    }
-}
+/** What a tile holds: "12 videos", or that there's nothing in it yet. */
+private fun held(n: Int, noun: String) = if (n == 0) "Nothing yet" else Plurals.count(n, noun)
 
 /** A playlist card that doesn't open YouTube's page (local playlists open their own). */
 @Composable

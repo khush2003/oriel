@@ -57,7 +57,7 @@ class MainActivity : ComponentActivity() {
                 enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
             }
             LaunchedEffect(settings.highRefreshRate) { applyRefreshRate(settings.highRefreshRate) }
-            OrielTheme(settings.theme, settings.reduceAnimation, settings.reduceBlur, settings.liquidGlass, settings.liquidMotion) {
+            OrielTheme(settings.theme, settings.reduceAnimation, settings.reduceBlur, settings.liquidGlass, settings.liquidMotion, accent = settings.accent, wash = settings.wash.strength, trueBlack = settings.trueBlack) {
                 val nav = rememberNavController()
                 val scope = rememberCoroutineScope()
                 val state = remember { AppState(graph, nav, connection, scope, this) }

@@ -31,6 +31,11 @@ import app.oriel.ui.navigation.PlaylistRoute
 import app.oriel.ui.navigation.PlaylistsRoute
 import app.oriel.ui.navigation.SearchRoute
 import app.oriel.ui.navigation.SettingsRoute
+import app.oriel.data.Accent
+import app.oriel.ui.navigation.SettingsSectionRoute
+import app.oriel.ui.screens.SettingsSection
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import app.oriel.ui.navigation.Tab
 import app.oriel.ui.navigation.WatchLaterRoute
 import app.oriel.ui.theme.OrielTheme
@@ -99,9 +104,16 @@ class PagesScreenshotTest {
         try { shoot(name, theme, setup = setup) } finally { TestApp.hang = false }
     }
 
+    /** The accent the next frame is drawn in. */
+    private var accent = Accent.ORIEL
+
+    /** The glass the next frame is drawn in: liquid, frosted (liquid off), or solid (reduce transparency). */
+    private var liquidGlass = true
+    private var reduceBlur = false
+
     @Composable
     private fun Frame(theme: ThemeMode, setup: suspend (AppState) -> Unit) {
-        OrielTheme(theme, reduceAnimation = true, liquidGlass = true) {
+        OrielTheme(theme, reduceAnimation = true, reduceBlur = reduceBlur, liquidGlass = liquidGlass, accent = accent) {
             val nav = rememberNavController()
             val scope = rememberCoroutineScope()
             val activity = androidx.activity.compose.LocalActivity.current!!
@@ -147,6 +159,40 @@ class PagesScreenshotTest {
     }
     @Test fun searchLight() { seedLibrary(); shoot("60_search_light", ThemeMode.LIGHT, setup = { it.navigate(SearchRoute()) }) }
     @Test fun settingsLight() = shoot("61_settings_light", ThemeMode.LIGHT, setup = { it.navigate(SettingsRoute) })
+    @Test fun settingsAppearance() = shoot("63_settings_appearance", setup = { it.navigate(SettingsSectionRoute(SettingsSection.APPEARANCE.name)) })
+    @Test fun settingsAppearanceLight() = shoot("63b_settings_appearance_light", ThemeMode.LIGHT, setup = { it.navigate(SettingsSectionRoute(SettingsSection.APPEARANCE.name)) })
+    @Test fun settingsPlayback() = shoot("64_settings_playback", setup = { it.navigate(SettingsSectionRoute(SettingsSection.PLAYBACK.name)) })
+    @Test fun settingsPlaybackLight() = shoot("64b_settings_playback_light", ThemeMode.LIGHT, setup = { it.navigate(SettingsSectionRoute(SettingsSection.PLAYBACK.name)) })
+    // Graphite has no colour: an on switch is white with a dark knob on dark, black on light.
+    @Test fun settingsPlaybackGraphite() { accent = Accent.GRAPHITE; graph.settings.update { it.copy(accent = accent) }; shoot("64c_settings_playback_graphite", setup = { it.navigate(SettingsSectionRoute(SettingsSection.PLAYBACK.name)) }) }
+    @Test fun settingsAppearanceGraphiteLight() { accent = Accent.GRAPHITE; graph.settings.update { it.copy(accent = accent) }; shoot("63c_settings_appearance_graphite_light", ThemeMode.LIGHT, setup = { it.navigate(SettingsSectionRoute(SettingsSection.APPEARANCE.name)) }) }
+    @Test fun settingsAppearanceBlue() { accent = Accent.BLUE; graph.settings.update { it.copy(accent = accent) }; shoot("63d_settings_appearance_blue", setup = { it.navigate(SettingsSectionRoute(SettingsSection.APPEARANCE.name)) }) }
+    @Test fun settingsQuality() = shoot("66b_settings_quality", setup = { it.navigate(SettingsSectionRoute(SettingsSection.QUALITY.name)) })
+    @Test fun settingsCommunity() = shoot("67_settings_community", setup = { it.navigate(SettingsSectionRoute(SettingsSection.COMMUNITY.name)) })
+    @Test fun settingsCommunityLight() = shoot("67b_settings_community_light", ThemeMode.LIGHT, setup = { it.navigate(SettingsSectionRoute(SettingsSection.COMMUNITY.name)) })
+    @Test fun settingsPrivacy() = shoot("68_settings_privacy", setup = { it.navigate(SettingsSectionRoute(SettingsSection.PRIVACY.name)) })
+    @Test fun settingsPrivacyLight() = shoot("68b_settings_privacy_light", ThemeMode.LIGHT, setup = { it.navigate(SettingsSectionRoute(SettingsSection.PRIVACY.name)) })
+    @Test fun settingsRegion() = shoot("69_settings_region", setup = { it.navigate(SettingsSectionRoute(SettingsSection.REGION.name)) })
+    @Test fun settingsUpdates() = shoot("69b_settings_updates", setup = { it.navigate(SettingsSectionRoute(SettingsSection.UPDATES.name)) })
+    // A handful of choices open as a menu from the row's pill, in its own window: shot off the screen.
+    @Test fun settingsPickerMenu() = shoot("66c_settings_picker_menu", screen = true, setup = { it.navigate(SettingsSectionRoute(SettingsSection.QUALITY.name)) }, after = { rule.onNodeWithText("On Wi-Fi").performClick() })
+    // What a group does is behind its "i", not written under it.
+    @Test fun settingsInfoTip() = shoot("66d_settings_info_tip", screen = true, setup = { it.navigate(SettingsSectionRoute(SettingsSection.PLAYBACK.name)) }, after = {
+        rule.onAllNodes(androidx.compose.ui.test.hasContentDescription("More information"), useUnmergedTree = true).onFirst().performClick()
+    })
+    @Test fun settingsKindsSheet() = shoot("67c_settings_kinds_sheet", screen = true, setup = { it.navigate(SettingsSectionRoute(SettingsSection.COMMUNITY.name)) }, after = { rule.onNodeWithText("Skip").performClick() })
+    @Test fun settingsCountrySheet() = shoot("69c_settings_country_sheet", ThemeMode.LIGHT, screen = true, setup = { it.navigate(SettingsSectionRoute(SettingsSection.REGION.name)) }, after = { rule.onNodeWithText("Content country").performClick() })
+    // Every glass mode: the same page and the same sheet, frosted and solid.
+    @Test fun settingsPlaybackFrosted() { liquidGlass = false; shoot("64d_settings_playback_frosted", setup = { it.navigate(SettingsSectionRoute(SettingsSection.PLAYBACK.name)) }) }
+    @Test fun settingsPlaybackSolid() { reduceBlur = true; shoot("64e_settings_playback_solid", setup = { it.navigate(SettingsSectionRoute(SettingsSection.PLAYBACK.name)) }) }
+    @Test fun settingsPlaybackSolidLight() { reduceBlur = true; shoot("64f_settings_playback_solid_light", ThemeMode.LIGHT, setup = { it.navigate(SettingsSectionRoute(SettingsSection.PLAYBACK.name)) }) }
+    @Test fun settingsKindsSheetFrosted() { liquidGlass = false; shoot("67d_settings_kinds_sheet_frosted", screen = true, setup = { it.navigate(SettingsSectionRoute(SettingsSection.COMMUNITY.name)) }, after = { rule.onNodeWithText("Skip").performClick() }) }
+    @Test fun settingsKindsSheetSolid() { reduceBlur = true; shoot("67e_settings_kinds_sheet_solid", screen = true, setup = { it.navigate(SettingsSectionRoute(SettingsSection.COMMUNITY.name)) }, after = { rule.onNodeWithText("Skip").performClick() }) }
+    @Test fun settingsAbout() = shoot("65_settings_about", setup = { it.navigate(SettingsSectionRoute(SettingsSection.ABOUT.name)) })
+    @Test fun settingsLicences() = shoot("65b_settings_licences", screen = true, setup = { it.navigate(SettingsSectionRoute(SettingsSection.ABOUT.name)) }, after = { rule.onNodeWithText("Licences").performClick() })
+    @Test fun settingsLicencesLight() = shoot("65c_settings_licences_light", ThemeMode.LIGHT, screen = true, setup = { it.navigate(SettingsSectionRoute(SettingsSection.ABOUT.name)) }, after = { rule.onNodeWithText("Licences").performClick() })
+    @Test fun youDark() { seedLibrary(); shoot("58b_you_dark", setup = { it.selectTab(Tab.YOU) }) }
+    @Test fun settingsQualityLight() = shoot("66_settings_quality_light", ThemeMode.LIGHT, setup = { it.navigate(SettingsSectionRoute(SettingsSection.QUALITY.name)) })
 
     // Loading: placeholders in the shape of what replaces them.
     @Test fun playlistLoading() = loading("55_playlist_loading") { it.navigate(PlaylistRoute("PLfixture1")) }
@@ -169,12 +215,13 @@ class PagesScreenshotTest {
     }
     private fun originalAudioSetting(theme: ThemeMode, name: String) {
         graph.sessionAudio = AudioPreference(language = "es")
-        shoot(name, theme, setup = { it.navigate(SettingsRoute) }, after = {
-            rule.onAllNodes(hasScrollToIndexAction()).onFirst().performScrollToIndex(4)
+        shoot(name, theme, setup = { it.navigate(SettingsSectionRoute(SettingsSection.PLAYBACK.name)) }, after = {
+            rule.onNodeWithText("Prefer original audio").performScrollTo()
             rule.onNodeWithText("Prefer original audio").assertIsDisplayed()
         })
         org.junit.Assert.assertTrue(graph.settings.current.preferOriginalAudio)
-        rule.onNodeWithText("Prefer original audio").performClick()
+        // Scrolled just into view, the row sits under the floating tab bar: toggled through its own action.
+        rule.onNodeWithText("Prefer original audio").performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick)
         settle(8)
         org.junit.Assert.assertFalse(graph.settings.current.preferOriginalAudio)
         org.junit.Assert.assertNull(graph.sessionAudio)

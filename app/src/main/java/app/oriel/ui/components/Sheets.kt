@@ -1,6 +1,23 @@
 package app.oriel.ui.components
 
 import app.oriel.ui.AlertAction
+import app.oriel.ui.glass.backdrop.effects.blur
+import app.oriel.ui.glass.backdrop.drawPlainBackdrop
+import app.oriel.ui.glass.isGlassSupported
+import app.oriel.ui.glass.LocalAppBackdrop
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.DisposableEffect
+import app.oriel.ui.glass.glassSurface
+import android.os.Build
+import android.view.WindowManager
+import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.DialogWindowProvider
+import app.oriel.ui.theme.LocalReduceBlur
+import kotlin.math.roundToInt
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -200,7 +217,7 @@ private class SheetMorph(val origin: SheetOrigin?) {
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-private fun Modifier.sheetMorph(m: SheetMorph, state: androidx.compose.material3.SheetState, page: Color, scrimAlpha: Float): Modifier = this
+private fun Modifier.sheetMorph(m: SheetMorph, state: androidx.compose.material3.SheetState, scrimAlpha: Float): Modifier = this
     .onPlaced { c ->
         m.placedY = c.positionInParent().y
         m.sheetH = c.size.height.toFloat()
@@ -252,11 +269,13 @@ private fun Modifier.sheetMorph(m: SheetMorph, state: androidx.compose.material3
         } else {
             Rect(0f, top + h, w, top + h)
         }
-        val srcR = o?.corner ?: 28.dp.toPx()
-        var l = lerp(src.left, 0f, pw)
-        var r = lerp(src.right, w, pw)
+        val srcR = o?.corner ?: SHEET_CORNER.toPx()
+        // It lands as a card clear of the screen's edges, not docked to them.
+        val inset = SHEET_INSET.toPx()
+        var l = lerp(src.left, inset, pw)
+        var r = lerp(src.right, w - inset, pw)
         var t = lerp(src.top, top, ph)
-        var b = lerp(src.bottom, top + h, ph)
+        var b = lerp(src.bottom, top + h - inset, ph)
         if (p < 0f) {
             // Plops back into the button with a squash.
             val q = minOf(0.35f, -p)
@@ -267,16 +286,14 @@ private fun Modifier.sheetMorph(m: SheetMorph, state: androidx.compose.material3
             l = cx - hw; r = cx + hw; t = cy - hh; b = cy + hh
         }
         val ease = smoothstep(0f, 1f, pc)
-        val radTop = minOf(lerp(srcR, 28.dp.toPx(), ease), (r - l) / 2f, (b - t) / 2f).coerceAtLeast(0f)
-        val radBottom = minOf(lerp(srcR, 0f, ease), (r - l) / 2f, (b - t) / 2f).coerceAtLeast(0f)
+        val radTop = minOf(lerp(srcR, SHEET_CORNER.toPx(), ease), (r - l) / 2f, (b - t) / 2f).coerceAtLeast(0f)
+        val radBottom = radTop
         val sw = kotlin.math.sin(pc * kotlin.math.PI.toFloat())
         val vel = kotlin.math.abs(m.ph.velocity + m.pw.velocity) * 0.5f
         val bs = sw * (8f + (vel * 2f).coerceIn(0f, 10f)) * density
         val bt = sw * 18f * density
         blobRectPath(m.path, l, t, r, b, radTop, bs, bt, radBottom)
         clipPath(m.path) {
-            // The sheet's colour past its top too, for the swell and the overshoot to fill.
-            drawRect(page, topLeft = Offset(-bs * 2f, top - h), size = Size(w + bs * 4f, h + 2f))
             this@drawWithContent.drawContent()
             // It starts in the button's fill and turns into the sheet's.
             val tint = o?.tint
@@ -285,8 +302,79 @@ private fun Modifier.sheetMorph(m: SheetMorph, state: androidx.compose.material3
         }
     }
 
+private val SHEET_INSET = 8.dp
+private val SHEET_CORNER = 30.dp
+private val ALERT_CORNER = 24.dp
+
+/** A sheet's material with the page blurred behind it, and the solid one for when it can't be. */
+@Composable
+private fun sheetFill(blurred: Boolean): Color = when {
+    !blurred -> if (LocalIsDark.current) Color(0xFF232127) else Color(0xFFF7F7FA)
+    LocalIsDark.current -> Color(0xFF201E24).copy(alpha = 0.78f)
+    else -> Color(0xFFF7F7FA).copy(alpha = 0.84f)
+}
+
+
 /**
- * BitChord's sheet: the page colour, a 28dp top radius and iOS's grabber, a 36 x 5 capsule.
+ * Blurs what's behind the sheet's window as the sheet comes in ([progress], 0 to 1), as the
+ * account card blurs the page under it. Reports through [onBlurred] once the window took it:
+ * only then is the sheet drawn see-through.
+ */
+@Composable
+private fun SheetBlurBehind(progress: () -> Float, onBlurred: () -> Unit) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || LocalReduceBlur.current) return
+    val view = LocalView.current
+    val radius = with(LocalDensity.current) { 26.dp.toPx() }
+    val blurred by rememberUpdatedState(onBlurred)
+    LaunchedEffect(view) {
+        val window = (view as? DialogWindowProvider)?.window ?: (view.parent as? DialogWindowProvider)?.window ?: return@LaunchedEffect
+        // Off in battery saver, and on devices that can't blur across windows.
+        if (view.context.getSystemService(WindowManager::class.java)?.isCrossWindowBlurEnabled != true) return@LaunchedEffect
+        window.addFlags(WindowManager.LayoutParams.FLAG_BLUR_BEHIND)
+        blurred()
+        // In a few steps: each is a window relayout, and the eye can't tell them from a ramp.
+        snapshotFlow { (progress().coerceIn(0f, 1f) * 6f).roundToInt() }.collect { step ->
+            window.attributes = window.attributes.also { it.blurBehindRadius = (radius * step / 6f).roundToInt() }
+        }
+    }
+}
+
+/** How far in each open sheet is, 0 to 1: what [SheetScrimHost] dims and blurs the page by. */
+private val SheetScrims = androidx.compose.runtime.mutableStateListOf<() -> Float>()
+
+/**
+ * The page under an open sheet, blurred and dimmed as it is under the account card. In the app's
+ * window, over the pages and outside what the glass samples: a sheet's own window has nothing
+ * behind it to blur.
+ */
+@Composable
+fun SheetScrimHost() {
+    if (SheetScrims.isEmpty()) return
+    val dark = LocalIsDark.current
+    val backdrop = LocalAppBackdrop.current
+    val reduceBlur = LocalReduceBlur.current || !isGlassSupported()
+    val scrim = when {
+        reduceBlur && dark -> Color.Black.copy(alpha = 0.62f)
+        reduceBlur -> Color.Black.copy(alpha = 0.36f)
+        dark -> Color.Black.copy(alpha = 0.38f)
+        else -> Color.Black.copy(alpha = 0.16f)
+    }
+    val blurPx = with(LocalDensity.current) { 24.dp.toPx() } * 0.33f
+    val shown = { SheetScrims.maxOfOrNull { it() } ?: 0f }
+    Spacer(
+        Modifier.fillMaxSize()
+            .graphicsLayer { alpha = shown() }
+            .then(
+                if (!reduceBlur && backdrop != null) Modifier.drawPlainBackdrop(backdrop = backdrop, shape = { RectangleShape }, effects = { blur(blurPx * shown().coerceIn(0.05f, 1f)) })
+                else Modifier,
+            )
+            .background(scrim),
+    )
+}
+
+/**
+ * BitChord's sheet, floating: the account card's glass ([glassSurface], sampling the page from
+ * this window) with a 30dp radius clear of the screen's edges, the page blurred and dimmed behind it, and iOS's grabber, a 36 x 5 capsule.
  * Every sheet in the app is one of these, and each grows out of the button that opened it, as
  * the mock's do ([SheetMorph]; the button marks itself with [sheetOrigin], or a caller passes
  * [origin]). [scrollable] wraps the content in a scroll; sheets that bring their own list
@@ -347,22 +435,31 @@ fun OrielSheet(
         morph.opening = false
     }
     val scroll = rememberScrollState()
-    val page = MaterialTheme.colorScheme.background
     val overdrag = rememberSheetOverdrag(state) { !scroll.canScrollForward }
-    val scrim = 0.36f
+    // The page behind is blurred and dimmed in the app's own window ([SheetScrimHost]), exactly
+    // as it is behind the account card, so the two read as the same glass.
+    DisposableEffect(morph) {
+        val shown = { minOf(morph.pw.value, morph.ph.value).coerceIn(0f, 1f) }
+        SheetScrims += shown
+        onDispose { SheetScrims -= shown }
+    }
+    val card = RoundedCornerShape(SHEET_CORNER)
+    // The sheet M3 draws is clear and edge to edge; the card is drawn inside it, by the morph or below.
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        modifier = (if (reduce) Modifier else Modifier.sheetMorph(morph, state, page, scrim)).then(if (scrollable) Modifier.sheetOverdrag(overdrag, page) else Modifier),
+        modifier = (if (reduce) Modifier else Modifier.sheetMorph(morph, state, 0f)).then(if (scrollable) Modifier.sheetOverdrag(overdrag) else Modifier),
         sheetState = state,
-        containerColor = page,
-        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+        containerColor = Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape = RectangleShape,
         tonalElevation = 0.dp,
-        scrimColor = if (reduce) Color.Black.copy(alpha = scrim) else Color.Transparent,
-        dragHandle = { Grabber { close {} } },
+        scrimColor = Color.Transparent,
+        dragHandle = null,
     ) {
         // A scrolling sheet stretches as a whole past its top, rather than its content inside it.
         CompositionLocalProvider(
             LocalSheetClose provides close,
+            LocalOnGlass provides true,
             androidx.compose.foundation.LocalOverscrollFactory provides if (scrollable) null else androidx.compose.foundation.LocalOverscrollFactory.current,
         ) {
             val body = Modifier.fillMaxWidth().heightIn(max = maxHeight)
@@ -378,9 +475,17 @@ fun OrielSheet(
                     },
                 )
             Column(
-                (if (scrollable) body.verticalScroll(scroll) else body).navigationBarsPadding().padding(bottom = 12.dp),
-                content = content,
-            )
+                Modifier.padding(start = SHEET_INSET, end = SHEET_INSET, bottom = SHEET_INSET).fillMaxWidth()
+                    // The account card's glass, sampling the page from this window: the morph only shapes it.
+                    .glassSurface(card, panel = true),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Grabber { close {} }
+                Column(
+                    (if (scrollable) body.verticalScroll(scroll) else body).navigationBarsPadding().padding(bottom = 12.dp),
+                    content = content,
+                )
+            }
         }
     }
 }
@@ -406,7 +511,7 @@ private class SheetOverdrag(private val state: androidx.compose.material3.SheetS
         return kotlin.math.abs(now - rest) < 1.5f
     }
 
-    fun Modifier.stretched(fill: Color): Modifier = this
+    fun Modifier.stretched(): Modifier = this
         .pointerInput(Unit) {
             val limit = size.height * 0.5f
             awaitEachGesture {
@@ -429,15 +534,11 @@ private class SheetOverdrag(private val state: androidx.compose.material3.SheetS
                 scope.launch { stretch.animateTo(0f, spring(dampingRatio = 1f, stiffness = 400f)) }
             }
         }
+        // A floating card: it rises whole, its gap from the screen's edge with it.
         .graphicsLayer { translationY = -stretch.value }
-        // The sheet's foot comes up with it; this keeps the gap under it filled with the sheet.
-        .drawBehind {
-            val s = stretch.value
-            if (s > 0f) drawRect(fill, topLeft = androidx.compose.ui.geometry.Offset(0f, size.height - 1f), size = androidx.compose.ui.geometry.Size(size.width, s + 1f))
-        }
 }
 
-private fun Modifier.sheetOverdrag(overdrag: SheetOverdrag, fill: Color): Modifier = with(overdrag) { this@sheetOverdrag.stretched(fill) }
+private fun Modifier.sheetOverdrag(overdrag: SheetOverdrag): Modifier = with(overdrag) { this@sheetOverdrag.stretched() }
 
 /** UIScrollView's rubber band: the further past, the less it gives, never beyond [limit]. */
 private fun rubber(x: Float, limit: Float): Float = if (x <= 0f || limit <= 0f) 0f else limit * (1f - 1f / (x * 0.55f / limit + 1f))
@@ -597,7 +698,7 @@ fun ItemActionsSheet(app: AppState, item: Item, onDismiss: () -> Unit) {
         val close = LocalSheetClose.current
         ItemHeader(item)
         Spacer(Modifier.height(10.dp))
-        Column(Modifier.padding(horizontal = PAGE_GUTTER).clip(GroupShape).background(MaterialTheme.colorScheme.surfaceVariant)) {
+        Column(Modifier.padding(horizontal = PAGE_GUTTER).glassPane(RoundedCornerShape(22.dp))) {
             ItemActions(app, item) { close {} }
         }
     }
@@ -675,7 +776,7 @@ fun TextPromptDialog(title: String, initial: String, confirm: String, onDismiss:
             text, { text = it },
             singleLine = true,
             textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            cursorBrush = SolidColor(app.oriel.ui.theme.accent()),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { done() }),
             modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(alertFieldFill()).padding(horizontal = 10.dp, vertical = 9.dp).focusRequester(focus),
@@ -701,7 +802,7 @@ fun NewPlaylistDialog(signedIn: Boolean, onDismiss: () -> Unit, onCreate: (name:
             name, { name = it },
             singleLine = true,
             textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            cursorBrush = SolidColor(app.oriel.ui.theme.accent()),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { if (name.isNotBlank()) onCreate(name.trim(), onAccount, private) }),
             modifier = Modifier.padding(horizontal = 16.dp).fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(alertFieldFill()).padding(horizontal = 10.dp, vertical = 9.dp).focusRequester(focus),
@@ -749,12 +850,18 @@ internal fun AlertCard(visible: MutableTransitionState<Boolean>, onDismiss: () -
             enter = if (liquid) fadeIn(Sp.Fade.unit) else fadeIn(motion(spring(stiffness = 900f))) + scaleIn(motion(spring(dampingRatio = 0.78f, stiffness = 520f)), initialScale = 1.14f),
             exit = if (liquid) fadeOut(Sp.FadeOut.unit) else fadeOut(fade(140)) + scaleOut(fade(160), targetScale = 0.94f),
         ) {
-            val fill = MaterialTheme.colorScheme.surfaceContainerHigh
-            Column(
-                Modifier.widthIn(max = 290.dp).fillMaxWidth(0.76f)
-                    .then(if (liquid) Modifier.alertBloom(this, fill) else Modifier.clip(RoundedCornerShape(16.dp)).background(fill)),
-                content = content,
-            )
+            // The sheets' material: glass over the blurred page, where the window can blur.
+            var blurred by remember { mutableStateOf(false) }
+            SheetBlurBehind(progress = { 1f }, onBlurred = { blurred = true })
+            val fill = sheetFill(blurred)
+            val shape = RoundedCornerShape(ALERT_CORNER)
+            CompositionLocalProvider(LocalOnGlass provides true) {
+                Column(
+                    Modifier.widthIn(max = 290.dp).fillMaxWidth(0.76f)
+                        .then(if (liquid) Modifier.alertBloom(this, fill) else Modifier.clip(shape).background(fill).gloss(shape)),
+                    content = content,
+                )
+            }
         }
     }
 }
@@ -783,7 +890,7 @@ private fun Modifier.alertBloom(scope: androidx.compose.animation.AnimatedVisibi
             val cy = size.height / 2f
             val hw = lerp(drop / 2f, size.width / 2f, w.coerceAtLeast(0f))
             val hh = lerp(drop / 2f, size.height / 2f, h.coerceAtLeast(0f))
-            val radius = lerp(drop / 2f, 16.dp.toPx(), smoothstep(0f, 1f, p))
+            val radius = lerp(drop / 2f, ALERT_CORNER.toPx(), smoothstep(0f, 1f, p))
             val swell = kotlin.math.sin(p * kotlin.math.PI.toFloat())
             val bs = swell * 10.dp.toPx()
             val bt = swell * 8.dp.toPx()

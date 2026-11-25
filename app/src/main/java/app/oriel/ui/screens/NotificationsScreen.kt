@@ -171,8 +171,8 @@ private fun InboxRow(n: InboxNotification, modifier: Modifier, onClick: () -> Un
             .padding(horizontal = PAGE_GUTTER, vertical = 10.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        // The unread dot, as Mail's: a blue point in the gutter, gone once seen.
-        Box(Modifier.padding(top = 18.dp).size(8.dp).graphicsLayer { alpha = if (n.read) 0f else 1f }.clip(CircleShape).background(MaterialTheme.colorScheme.primary))
+        // The unread dot, as Mail's: a point of the accent in the gutter, gone once seen.
+        Box(Modifier.padding(top = 18.dp).size(8.dp).graphicsLayer { alpha = if (n.read) 0f else 1f }.clip(CircleShape).background(app.oriel.ui.theme.accent()))
         Spacer(Modifier.width(8.dp))
         Avatar(n.avatar, 44.dp)
         Spacer(Modifier.width(12.dp))

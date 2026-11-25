@@ -30,6 +30,8 @@ fun shortsAfter(tappedId: String, feed: List<String>, limit: Int = 60): List<Str
 @Serializable data object ChannelsRoute
 @Serializable data object PlaylistsRoute
 @Serializable data object SettingsRoute
+/** One of Settings' pages, by its [app.oriel.ui.screens.SettingsSection] name. */
+@Serializable data class SettingsSectionRoute(val section: String)
 /** Google's sign-in; [reauth] is the profile whose sign-in expired, when it's signing in again. */
 @Serializable data class LoginRoute(val reauth: String? = null)
 @Serializable data object NotificationsRoute
@@ -64,6 +66,7 @@ fun NavBackStackEntry.isRoute(route: Any): Boolean {
         is PlaylistRoute -> toRoute<PlaylistRoute>() == route
         is LocalPlaylistRoute -> toRoute<LocalPlaylistRoute>() == route
         is TopicRoute -> toRoute<TopicRoute>() == route
+        is SettingsSectionRoute -> toRoute<SettingsSectionRoute>() == route
         // The rest are objects: the class is the route.
         else -> true
     }

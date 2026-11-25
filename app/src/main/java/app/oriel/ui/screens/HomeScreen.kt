@@ -45,12 +45,18 @@ import app.oriel.ui.LocalAppState
 import app.oriel.ui.haptics.Haptic
 import app.oriel.ui.haptics.rememberHaptics
 import app.oriel.ui.components.ActionPill
+import app.oriel.ui.theme.accent
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import app.oriel.ui.components.PillSize
 import app.oriel.ui.components.Avatar
 import app.oriel.ui.components.ChipsRow
 import app.oriel.ui.components.OrielIcons
 import app.oriel.ui.components.MessageState
 import app.oriel.ui.components.PAGE_GUTTER
+import app.oriel.ui.components.glassPane
 import app.oriel.ui.components.cardSkeletons
 import app.oriel.ui.LocalWindowLayout
 import app.oriel.ui.PageWidth
@@ -170,19 +176,30 @@ fun HomeScreen() {
 }
 
 @Composable
-fun SignInCard(onSignIn: () -> Unit, onDismiss: (() -> Unit)?, text: String = "Sign in to get your recommendations, subscriptions feed, playlists and history from YouTube. Everything else works without an account.") {
+fun SignInCard(
+    onSignIn: () -> Unit,
+    onDismiss: (() -> Unit)?,
+    text: String = "Sign in to get your recommendations, subscriptions feed, playlists and history from YouTube. Everything else works without an account.",
+    /** On a page of glass panes, it's one of them. */
+    glass: Boolean = false,
+) {
+    val glow = accent()
     Column(
-        Modifier.padding(horizontal = PAGE_GUTTER, vertical = 8.dp).widthIn(max = 640.dp).fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(MaterialTheme.colorScheme.surfaceVariant).padding(16.dp),
+        Modifier.padding(horizontal = PAGE_GUTTER, vertical = 8.dp).widthIn(max = 640.dp).fillMaxWidth()
+            .then(if (glass) Modifier.glassPane() else Modifier.clip(RoundedCornerShape(22.dp)).background(MaterialTheme.colorScheme.surfaceVariant))
+            // The accent, faintly, from the corner the icon sits in: the one card on the page that asks for something.
+            .drawBehind { drawRect(Brush.radialGradient(listOf(glow.copy(alpha = 0.22f), Color.Transparent), center = Offset.Zero, radius = size.width * 0.8f)) }
+            .padding(16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(OrielIcons.Person, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+            Icon(OrielIcons.Person, null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(10.dp))
             Text("Make it yours", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
             if (onDismiss != null) Icon(OrielIcons.Close, "Dismiss", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(44.dp).clip(CircleShape).clickable(onClick = onDismiss).padding(12.dp))
         }
-        Spacer(Modifier.height(6.dp))
+        Spacer(Modifier.height(10.dp))
         Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(14.dp))
         ActionPill("Sign in with Google", OrielIcons.SignIn, onSignIn, filled = true, size = PillSize.Medium)
     }
 }
