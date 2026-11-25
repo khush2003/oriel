@@ -4,7 +4,6 @@ import app.oriel.ui.LocalWindowLayout
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import app.oriel.ui.theme.animatedBackground
-import app.oriel.ui.components.ActivityIndicator
 import app.oriel.ui.theme.PlayerSpring
 import app.oriel.ui.theme.SheetSpring
 import app.oriel.ui.theme.DropletShape
@@ -23,24 +22,10 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.graphics.TransformOrigin
-import app.oriel.ui.components.RemoteImage
-import android.content.pm.ActivityInfo
-import android.provider.Settings
-import android.view.OrientationEventListener
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.animation.core.VectorConverter
-import androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation
-import androidx.compose.foundation.gestures.drag
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.calculateZoom
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
@@ -48,19 +33,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -70,12 +51,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.onClick
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.semantics
 import app.oriel.ui.theme.LocalReduceAnimation
 import app.oriel.ui.theme.LocalLiquidMotion
 import androidx.compose.runtime.SideEffect
@@ -85,22 +60,15 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
-import app.oriel.core.model.Video
 import app.oriel.ui.AppState
 import app.oriel.ui.VideoHandoff
 import app.oriel.ui.components.OrielIcons
@@ -118,26 +86,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-/** A rectangle in pixels. */
-private data class Box4(val x: Float, val y: Float, val w: Float, val h: Float) {
-    fun lerpTo(o: Box4, t: Float) = Box4(lerp(x, o.x, t), lerp(y, o.y, t), lerp(w, o.w, t), lerp(h, o.h, t))
-    /** Scaled by [k] about its centre. */
-    fun scaled(k: Float) = Box4(x + w * (1f - k) / 2f, y + h * (1f - k) / 2f, w * k, h * k)
-}
-
-/**
- * A thumbnail on its way into the player. [from] is where it was tapped, in the host's
- * coordinates (null: it blooms in place, for a video that changed without a tap); [docked]
- * means the whole player is growing out of it with the sheet; [ghost] that there was a window
- * playing at the dock to be absorbed as it goes.
- */
-private class Drop(val from: Box4?, val corner: Float, val art: String?, val docked: Boolean, val ghost: Boolean) {
-    /** Its own flight into a page already open, 0 to 1 (a docked drop rides the sheet's progress instead). */
-    val flight = androidx.compose.animation.core.Animatable(0f)
-    /** Shown, then faded as the picture takes over under it. */
-    val shown = androidx.compose.animation.core.Animatable(1f)
-}
-
 private val PIP_MAX_WIDTH = 232.dp
 private val PIP_MARGIN = 12.dp
 private val PIP_CORNER = 14.dp
@@ -148,67 +96,8 @@ private const val PIP_MIN_SCALE = 0.7f
 internal fun fullscreenPullCorner(pull: Float, maxCorner: Float): Float =
     (pull / 6f).coerceIn(0f, maxCorner)
 
-/**
- * A throw this fast (per second), mostly sideways and toward the side the window is already on,
- * or mostly down from the bottom half onto the tab bar, puts it away. Slower, or toward the far
- * side, it's a move: it lands in a corner.
- */
-internal val PIP_FLING_AWAY = 1400.dp
-
-/** The share of the window that has to be past a side edge (or down over the tab bar) for letting go there to put it away. */
-internal const val PIP_AWAY_OVER = 0.5f
-
 /** The deceleration a throw is projected with to pick the corner it lands in (about 0.2 s of its speed). */
 private const val PIP_THROW_RATE = 0.995f
-
-internal enum class PipRelease { Land, AwayLeft, AwayRight, AwayDown }
-
-/** Down: the put-away zone over the tab bar, as [pipZoneAt] reports it. */
-internal const val PIP_ZONE_DOWN = 2
-
-/**
- * Which put-away zone a window at ([x], [y]), [w] by [h], is in on a screen [screenW] wide whose
- * tab bar starts at [bottomEdge]: -1 left, 1 right, [PIP_ZONE_DOWN] down, 0 none. Past two at
- * once, the one it's further into.
- */
-internal fun pipZoneAt(x: Float, y: Float, w: Float, h: Float, screenW: Float, bottomEdge: Float): Int {
-    val left = -x / w
-    val right = (x + w - screenW) / w
-    val down = (y + h - bottomEdge) / h
-    val most = maxOf(left, right, down)
-    return when {
-        most <= PIP_AWAY_OVER -> 0
-        most == down -> PIP_ZONE_DOWN
-        most == left -> -1
-        else -> 1
-    }
-}
-
-/**
- * Put away only on clear intent: released past a zone (unless thrown back in), or thrown at
- * [flingPx] toward the side it's on, or down from the bottom half. Otherwise it lands in the
- * corner the throw carries it to. A pinch never puts it away.
- */
-internal fun pipRelease(
-    x: Float, y: Float, w: Float, h: Float, screenW: Float, screenH: Float, bottomEdge: Float,
-    vx: Float, vy: Float, flingPx: Float, pinched: Boolean,
-): PipRelease {
-    if (pinched) return PipRelease.Land
-    when (pipZoneAt(x, y, w, h, screenW, bottomEdge)) {
-        -1 -> if (vx < flingPx) return PipRelease.AwayLeft
-        1 -> if (vx > -flingPx) return PipRelease.AwayRight
-        PIP_ZONE_DOWN -> if (vy > -flingPx) return PipRelease.AwayDown
-    }
-    val sideways = abs(vx) > abs(vy) * 1.5f
-    val downward = vy > abs(vx) * 1.5f
-    val centre = x + w / 2f
-    return when {
-        sideways && vx <= -flingPx && centre < screenW / 2f -> PipRelease.AwayLeft
-        sideways && vx >= flingPx && centre > screenW / 2f -> PipRelease.AwayRight
-        downward && vy >= flingPx && y + h / 2f > screenH / 2f -> PipRelease.AwayDown
-        else -> PipRelease.Land
-    }
-}
 
 /**
  * The player as one surface that flies: collapsed, a picture-in-picture window floating over
@@ -987,267 +876,6 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
     }
 }
 
-/**
- * The tapped thumbnail flying into the picture's frame. Laid out once at its page size so it
- * reuses the loaded image; all motion and shape are in the layer.
- */
-@Composable
-private fun HandoffDrop(
-    d: Drop,
-    target: () -> Box4,
-    targetCorner: () -> Float,
-    t: () -> Float,
-    speed: () -> Float,
-    land: () -> Float,
-    overTop: () -> Float,
-    alpha: () -> Float,
-    fallback: Box4,
-) {
-    val density = LocalDensity.current
-    val base = d.from ?: fallback
-    val w = base.w.roundToInt().coerceAtLeast(1)
-    val h = base.h.roundToInt().coerceAtLeast(1)
-    val swellCorner = with(density) { 22.dp.toPx() }
-    val swellSide = with(density) { 8.dp.toPx() }
-    val dp1 = density.density
-    val swellEnds = with(density) { 18.dp.toPx() }
-    val shadow = with(density) { 14.dp.toPx() }
-    Box(
-        Modifier
-            .layout { m, c ->
-                val p = m.measure(Constraints.fixed(w, h))
-                layout(c.maxWidth, c.maxHeight) { p.place(0, 0) }
-            }
-            .graphicsLayer {
-                val to = target()
-                val f = t()
-                val fc = f.coerceIn(0f, 1f)
-                val from = d.from ?: to.scaled(0.82f)
-                val v = speed()
-                val st = abs((v * 0.045f).coerceIn(-0.18f, 0.3f)) * (1f - fc * 0.75f)
-                val l = land()
-                val kx = 1f - st * 0.45f + l * 0.7f
-                val ky = 1f + st - l + overTop()
-                // Past 1 the spring's overshoot: the drop over-fills the frame a touch, then settles.
-                val at = from.lerpTo(to, f)
-                val nw = at.w * kx
-                val nh = at.h * ky
-                val rx = at.x + (at.w - nw) / 2f
-                val ry = at.y + (at.h - nh) * (if (l > 0.001f) 0.9f else 0.5f)
-                transformOrigin = TransformOrigin(0f, 0f)
-                translationX = rx
-                translationY = ry
-                scaleX = nw / w
-                scaleY = nh / h
-                val swell = midFlight(fc)
-                val corner = (lerp(d.corner, targetCorner(), smoothstep(0.55f, 1f, fc)) + swell * swellCorner).coerceAtMost(minOf(nw, nh) / 2f)
-                shape = DropletShape(
-                    rx = corner / scaleX,
-                    ry = corner / scaleY,
-                    side = swell * (swellSide + (v * 2f).coerceIn(0f, 10f) * dp1) / scaleX,
-                    ends = swell * swellEnds / scaleY,
-                )
-                clip = true
-                shadowElevation = shadow * swell
-                // Blooming in place it fades in as it grows; from a thumbnail it's there from the start.
-                this.alpha = alpha() * (if (d.from == null) smoothstep(0f, 0.35f, f) else 1f)
-            },
-    ) {
-        RemoteImage(d.art, Modifier.fillMaxSize(), androidx.compose.ui.graphics.RectangleShape, border = false)
-    }
-}
-
-/** What a drag on the picture does, decided as it starts. */
-internal enum class PictureDrag {
-    /** The floating window, moved anywhere under the finger (and pinched). */
-    Pan,
-    /** A swipe up on the floating window: the sheet rises under the finger toward the watch page. */
-    Rise,
-    /** The expanded or fullscreen picture's vertical drag. */
-    Sheet,
-}
-
-/**
- * Whether a floating window's first movement, past the slop, is the swipe up that opens the
- * watch page rather than a move: one finger, going up, and steeper than about 63° from the
- * horizontal (twice as far up as across). A diagonal throw toward a top corner stays a move.
- */
-internal fun isRise(moved: Offset, fingers: Int): Boolean = fingers == 1 && moved.y < 0f && abs(moved.y) > abs(moved.x) * 2f
-
-/**
- * The picture's drag: in [pansFreely] mode (the floating window) any direction past the touch
- * slop, with a second finger pinching (the zoom passed is that frame's, 1 for one finger), unless
- * it starts as a swipe up ([isRise]), which then reports only its vertical movement; otherwise
- * only vertical ones, so a sideways swipe on the expanded picture is left to the controls. The
- * mode is fixed for the whole drag when it starts.
- */
-private suspend fun PointerInputScope.detectPictureDrag(
-    screen: ScreenPosition,
-    pansFreely: () -> Boolean,
-    onStart: (mode: PictureDrag) -> Unit,
-    onEnd: () -> Unit,
-    onCancel: () -> Unit,
-    onDrag: (uptimeMillis: Long, delta: Offset, zoom: Float) -> Unit,
-) = awaitEachGesture {
-    val down = awaitFirstDown(requireUnconsumed = false)
-    if (pansFreely()) {
-        // The fingers' centroid moves the window and their spread sizes it. Nothing is consumed
-        // until past the slop, so a tap still reaches the window's buttons.
-        var started = false
-        var rise = false
-        var moved = Offset.Zero
-        var spread = 1f
-        // Each finger's last place on the screen: the window moves under them as they drag it.
-        val last = HashMap<androidx.compose.ui.input.pointer.PointerId, Offset>()
-        last[down.id] = screen.of(down.position)
-        while (true) {
-            val event = awaitPointerEvent()
-            val pressed = event.changes.count { it.pressed }
-            if (pressed == 0) break
-            if (!started && event.changes.any { it.isConsumed }) return@awaitEachGesture
-            var sum = Offset.Zero
-            var n = 0
-            event.changes.forEach { c ->
-                val at = screen.of(c.position)
-                val before = last[c.id]
-                if (c.pressed) {
-                    if (before != null) { sum += at - before; n++ }
-                    last[c.id] = at
-                } else last.remove(c.id)
-            }
-            val pan = if (n > 0) sum / n.toFloat() else Offset.Zero
-            val zoom = if (pressed >= 2) event.calculateZoom() else 1f
-            if (!started) {
-                moved += pan
-                spread *= zoom
-                if (moved.getDistance() < viewConfiguration.touchSlop && kotlin.math.abs(1f - spread) < 0.04f) continue
-                started = true
-                rise = isRise(moved, pressed)
-                onStart(if (rise) PictureDrag.Rise else PictureDrag.Pan)
-                if (rise) onDrag(event.changes.first().uptimeMillis, Offset(0f, moved.y), 1f)
-                else onDrag(event.changes.first().uptimeMillis, moved, spread)
-            } else if (rise) {
-                onDrag(event.changes.first().uptimeMillis, Offset(0f, pan.y), 1f)
-            } else {
-                onDrag(event.changes.first().uptimeMillis, pan, zoom)
-            }
-            event.changes.forEach { if (it.positionChanged()) it.consume() }
-        }
-        if (started) onEnd()
-        return@awaitEachGesture
-    }
-    var slop = 0f
-    val start = awaitVerticalTouchSlopOrCancellation(down.id) { change, over -> change.consume(); slop = over } ?: return@awaitEachGesture
-    onStart(PictureDrag.Sheet)
-    onDrag(start.uptimeMillis, Offset(0f, slop), 1f)
-    var lastY = screen.of(start.position).y
-    while (true) {
-        val event = awaitPointerEvent()
-        // A second finger makes it a pinch (fill or fit in fullscreen), not this drag: it lets go
-        // as a cancel, which springs back rather than committing.
-        if (event.changes.any { it.id != start.id && it.pressed }) { onCancel(); return@awaitEachGesture }
-        val change = event.changes.firstOrNull { it.id == start.id }
-        if (change == null || change.isConsumed) { onCancel(); return@awaitEachGesture }
-        if (!change.pressed) { change.consume(); break }
-        val y = screen.of(change.position).y
-        change.consume()
-        if (y != lastY) onDrag(change.uptimeMillis, Offset(0f, y - lastY), 1f)
-        lastY = y
-    }
-    onEnd()
-}
-
-/**
- * The floating window's controls, as YouTube's: play/pause and close always there in the top
- * corner on small dark discs, over a picture left undimmed, and a thin line of progress along
- * the bottom. A tap anywhere else opens the watch page.
- */
-@Composable
-private fun PipControls(app: AppState, onExpand: () -> Unit) {
-    val connection = app.connection
-    val playing by connection.playWhenReady.collectAsState()
-    val buffering by connection.buffering.collectAsState()
-    val duration by connection.duration.collectAsState()
-    val position = rememberPosition(connection, intervalMs = 500)
-    val haptics = rememberHaptics()
-    Box(
-        Modifier.fillMaxSize()
-            .semantics { contentDescription = "Video window" }
-            .clickable(remember { MutableInteractionSource() }, indication = null, onClickLabel = "Open the watch page") { onExpand() },
-    ) {
-        // 44dp targets, the play one tucked 4dp under the close one so the discs sit
-        // 22dp in from the corner, 40dp apart.
-        Row(Modifier.align(Alignment.TopEnd)) {
-            val nudge = Modifier.offset(x = 4.dp)
-            if (buffering && playing) {
-                // Still a 44dp target that pauses.
-                Box(
-                    nudge
-                        .size(44.dp)
-                        .clearAndSetSemantics {
-                            contentDescription = "Loading. Pause"
-                            role = Role.Button
-                            onClick { connection.togglePlay(); true }
-                        }
-                        .pressClickable(haptic = Haptic.Pause) { connection.togglePlay() },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Box(Modifier.size(30.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.45f)), contentAlignment = Alignment.Center) {
-                        ActivityIndicator(size = 14.dp, color = Color.White)
-                    }
-                }
-            } else {
-                PipButton(if (playing) OrielIcons.Pause else OrielIcons.Play, if (playing) "Pause" else "Play", 15.dp, nudge) {
-                    haptics.play(if (playing) Haptic.Pause else Haptic.Resume); connection.togglePlay()
-                }
-            }
-            PipButton(OrielIcons.Xmark, "Close", 11.dp) { haptics.play(Haptic.Tap); connection.stop() }
-        }
-        if (duration > 0) {
-            Box(
-                Modifier.align(Alignment.BottomStart).fillMaxWidth().height(2.5.dp).background(Color.White.copy(alpha = 0.28f)).drawWithContent {
-                    val f = (position.longValue.toFloat() / duration).coerceIn(0f, 1f)
-                    drawRect(Color.White, size = size.copy(width = size.width * f))
-                },
-            )
-        }
-    }
-}
-
-/** A small dark disc with a white glyph, a 44dp touch target around a 30dp disc that sinks and darkens while pressed. */
-@Composable
-private fun PipButton(icon: androidx.compose.ui.graphics.vector.ImageVector, description: String, iconSize: Dp, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-    val press by androidx.compose.animation.core.animateFloatAsState(if (pressed) 1f else 0f, motion(androidx.compose.animation.core.spring(stiffness = 900f)), label = "pipPress")
-    Box(modifier.size(44.dp).clickable(interaction, indication = null, onClickLabel = description, onClick = onClick), contentAlignment = Alignment.Center) {
-        Box(
-            Modifier
-                .size(30.dp)
-                .graphicsLayer { val k = 1f - 0.12f * press; scaleX = k; scaleY = k }
-                .clip(CircleShape)
-                .drawWithContent { drawRect(Color.Black.copy(alpha = 0.45f + 0.2f * press)); drawContent() },
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(icon, description, tint = Color.White, modifier = Modifier.size(iconSize))
-        }
-    }
-}
-
-/** Reports the running zoom of a two-finger pinch, consuming only while two or more fingers are down. */
-private suspend fun PointerInputScope.detectPinch(onZoom: (Float) -> Unit) = awaitEachGesture {
-    awaitFirstDown(requireUnconsumed = false)
-    var zoom = 1f
-    do {
-        val event = awaitPointerEvent()
-        if (event.changes.count { it.pressed } >= 2) {
-            zoom *= event.calculateZoom()
-            onZoom(zoom)
-            event.changes.forEach { if (it.positionChanged()) it.consume() }
-        }
-    } while (event.changes.any { it.pressed })
-}
-
 @Composable
 private fun AudioOnlyBadge(modifier: Modifier) {
     Row(modifier.clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.55f)).padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1256,78 +884,6 @@ private fun AudioOnlyBadge(modifier: Modifier) {
         Text("Audio only", style = MaterialTheme.typography.labelMedium, color = Color.White)
     }
 }
-
-/** Back to the app's normal orientation with the system bars showing. */
-private fun showSystemChrome(activity: android.app.Activity) {
-    activity.requestedOrientation = defaultOrientation(activity)
-    WindowCompat.getInsetsController(activity.window, activity.window.decorView).show(WindowInsetsCompat.Type.systemBars())
-}
-
-/**
- * Fullscreen means landscape (portrait for tall videos) with the system bars
- * hidden. Turning the phone sideways on the watch page enters it, and back
- * upright leaves it, as YouTube does, when the system lets the screen rotate.
- */
-@Composable
-private fun FullscreenEffects(app: AppState, video: Video) {
-    val activity = app.activity
-    val sheet = app.sheet
-    val fullscreen = sheet.fullscreen
-    val videoSize by app.connection.videoSize.collectAsState()
-    val tall = videoSize.height > videoSize.width && videoSize.width > 0
-    val context = LocalContext.current
-
-    DisposableEffect(fullscreen, tall) {
-        val window = activity.window
-        val controller = WindowCompat.getInsetsController(window, window.decorView)
-        if (fullscreen) {
-            activity.requestedOrientation = if (tall) ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT else ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            controller.hide(WindowInsetsCompat.Type.systemBars())
-        } else {
-            showSystemChrome(activity)
-        }
-        onDispose { }
-    }
-
-    // Rotate-to-fullscreen, debounced so a tilt while walking doesn't flip it. Only a turn of
-    // the phone counts, not how it's held: the hold is taken afresh at every change of mode, so
-    // Back while holding it sideways stays out, and the button's fullscreen stays in while upright,
-    // until the phone is actually turned.
-    val expanded = sheet.expanded
-    DisposableEffect(expanded, tall, fullscreen) {
-        if (!expanded || tall) return@DisposableEffect onDispose { }
-        var lastDevice: Boolean? = null
-        var since = 0L
-        var pending: Boolean? = null
-        val listener = object : OrientationEventListener(context) {
-            override fun onOrientationChanged(angle: Int) {
-                if (angle == ORIENTATION_UNKNOWN) return
-                val autoRotate = Settings.System.getInt(context.contentResolver, Settings.System.ACCELEROMETER_ROTATION, 0) == 1
-                if (!autoRotate) return
-                val landscape = angle in 60..120 || angle in 240..300
-                val portrait = angle < 25 || angle > 335
-                // Somewhere between the two is no change either way.
-                val device = when { landscape -> true; portrait -> false; else -> return }
-                val held = lastDevice ?: run { lastDevice = device; return }
-                if (device == held) { pending = null; return }
-                val now = System.currentTimeMillis()
-                if (pending != device) { pending = device; since = now; return }
-                if (now - since > 350) {
-                    pending = null
-                    lastDevice = device
-                    if (sheet.fullscreen != device) sheet.fullscreen = device
-                }
-            }
-        }
-        if (listener.canDetectOrientation()) listener.enable()
-        onDispose { listener.disable() }
-    }
-}
-
-/** Phones keep the app upright outside fullscreen, as YouTube does; tablets turn freely. */
-fun defaultOrientation(activity: android.app.Activity): Int =
-    if (activity.resources.configuration.smallestScreenWidthDp >= 600) ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED else ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT
 
 /** How much of a wide screen the video takes on the split watch page; the rest is what to watch next. */
 private const val SPLIT_VIDEO_FRACTION = 0.64f

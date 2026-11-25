@@ -196,7 +196,7 @@ private fun InboxSkeleton() {
         Spacer(Modifier.width(16.dp))
         Box(Modifier.size(44.dp).clip(CircleShape).shimmer())
         Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f).padding(top = 3.dp)) { SkeletonLine(0.9f); Spacer(Modifier.height(6.dp)); SkeletonLine(0.7f); Spacer(Modifier.height(8.dp)); SkeletonLine(0.3f, 11.dp) }
+        Column(Modifier.weight(1f).padding(top = 3.dp)) { SkeletonLine(0.9f); Spacer(Modifier.height(6.dp)); SkeletonLine(0.7f); Spacer(Modifier.height(8.dp)); SkeletonLine(0.3f, height = 11.dp) }
         Spacer(Modifier.width(12.dp))
         Box(Modifier.width(112.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(8.dp)).shimmer())
     }
