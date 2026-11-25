@@ -54,6 +54,9 @@ import app.oriel.ui.components.TabStrip
 import app.oriel.ui.components.TextAction
 import app.oriel.ui.components.TextPromptDialog
 import app.oriel.ui.theme.OrielTheme
+import com.github.takahirom.roborazzi.ExperimentalRoborazziApi
+import com.github.takahirom.roborazzi.RoborazziOptions
+import com.github.takahirom.roborazzi.RoborazziTaskType
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.github.takahirom.roborazzi.captureScreenRoboImage
 import org.junit.Assert.assertEquals
@@ -143,12 +146,18 @@ class ComponentsScreenshotTest {
         FloatingTabBar(tabs, tab, { tab = it }, searchSelected = false, onSearch = {})
     }
 
+    /** Compares with the tracked image; -Precord=true replaces it. */
+    @OptIn(ExperimentalRoborazziApi::class)
+    private val reference = RoborazziOptions(
+        taskType = if (System.getProperty("oriel.record") == "true") RoborazziTaskType.Record else RoborazziTaskType.Verify,
+    )
+
     private fun shoot(name: String, theme: ThemeMode, rtl: Boolean = false, fontScale: Float = 1f) {
         rule.mainClock.autoAdvance = false
         rule.setContent { Frame(theme, rtl, fontScale) { Gallery() } }
         rule.mainClock.advanceTimeBy(1_000)
         rule.waitForIdle()
-        rule.onRoot().captureRoboImage("build/screenshots/c_$name.png")
+        rule.onRoot().captureRoboImage("src/test/screenshots/$name.png", reference)
     }
 
     @Test fun componentsDark() = shoot("components_dark", ThemeMode.DARK)

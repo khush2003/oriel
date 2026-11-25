@@ -38,7 +38,9 @@ changing anything, and follow it over any conflicting habit.
   `'-Dorg.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8'`, and stop the daemon afterwards
   (`./gradlew --stop`). This stops all daemons of that version, so coordinate across worktrees.
 - **UI work** follows [`docs/DESIGN.md`](docs/DESIGN.md). Record screenshots with
-  `-Proborazzi.test.record=true`, look at them, and attach them to the PR.
+  `-Proborazzi.test.record=true`, look at them, and attach them to the PR. A changed shared
+  component fails `ComponentsScreenshotTest` against its reference images; if the change is
+  meant, rerun that test with `-Precord=true` and commit the images.
 - **Live tests** (`-Plive=true`) hit YouTube. Use them sparingly; some networks are bot-flagged by
   YouTube, and a "sign in to confirm you're not a bot" answer is the network, not the code.
 - **Add no text that isn't required.** A comment states a constraint the code can't show, in a

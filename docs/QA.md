@@ -68,6 +68,7 @@ Live tests and probes are opt-in Gradle properties:
 | `-Pids=a,b` | The video IDs those tests play. |
 | `-Plink=URL` | The link `LiveAppTest.sharedLink` opens. |
 | `-Pframes=true` | Runs the frame-strip captures (`LiquidMotionStripTest`, `LiquidAppStripTest`). |
+| `-Precord=true` | Replaces the reference images in `app/src/test/screenshots/`, which `ComponentsScreenshotTest` otherwise compares its renders with. |
 
 ## Device smoke test
 

@@ -112,6 +112,8 @@ android {
                 // Which videos the live playback tests play; also an input, so a new list reruns them.
                 project.findProperty("ids")?.let { ids -> it.systemProperty("oriel.ids", ids.toString()) }
                 it.systemProperty("oriel.frames", project.findProperty("frames")?.toString() ?: "false")
+                it.systemProperty("oriel.record", project.findProperty("record")?.toString() ?: "false")
+                it.inputs.dir("src/test/screenshots").withPathSensitivity(PathSensitivity.RELATIVE)
                 it.maxHeapSize = "2g"
                 // QuickJS (cipher solving) is Android-native in the app; its desktop build has the
                 // same JNI exports, so the host tests load that one and play the fixed-quality streams too.
