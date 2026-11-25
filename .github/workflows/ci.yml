@@ -71,6 +71,7 @@ jobs:
           name: reports
           path: |
             app/build/screenshots/
+            app/build/outputs/roborazzi/
             app/build/reports/
             core/build/reports/
           retention-days: 14
