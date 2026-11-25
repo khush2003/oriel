@@ -54,6 +54,7 @@ import app.oriel.ui.components.TabStrip
 import app.oriel.ui.components.TextAction
 import app.oriel.ui.components.TextPromptDialog
 import app.oriel.ui.theme.OrielTheme
+import com.github.takahirom.roborazzi.ExperimentalRoborazziApi
 import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.RoborazziTaskType
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -146,6 +147,7 @@ class ComponentsScreenshotTest {
     }
 
     /** Compares with the tracked image; -Precord=true replaces it. */
+    @OptIn(ExperimentalRoborazziApi::class)
     private val reference = RoborazziOptions(
         taskType = if (System.getProperty("oriel.record") == "true") RoborazziTaskType.Record else RoborazziTaskType.Verify,
     )
