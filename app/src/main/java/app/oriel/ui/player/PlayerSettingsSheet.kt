@@ -17,17 +17,12 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -35,7 +30,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
@@ -47,7 +41,6 @@ import app.oriel.ui.components.RowDivider
 import app.oriel.ui.components.SettingsGroup
 import app.oriel.ui.components.SettingsRow
 import app.oriel.ui.components.SwitchRow
-import app.oriel.ui.components.TextAction
 import java.util.Locale
 
 private enum class Page { Main, Quality, Speed, Audio, Captions, Translate, Sleep }
@@ -57,7 +50,7 @@ private val TRANSLATE_TO = listOf("en", "es", "fr", "de", "pt", "it", "hi", "ja"
 
 fun speedLabel(speed: Float): String = if (speed == 1f) "Normal" else (if (speed % 1f == 0f) "${speed.toInt()}×" else "${speed}×")
 
-/** Quality, speed, audio track, captions, audio only, loop and sleep, as an iOS grouped sheet with drill-down pages. */
+/** The player's settings, as an iOS grouped sheet with drill-down pages. */
 @Composable
 fun PlayerSettingsSheet(app: AppState, onDismiss: () -> Unit, onPip: () -> Unit, onChapters: () -> Unit = {}) {
     val connection = app.connection

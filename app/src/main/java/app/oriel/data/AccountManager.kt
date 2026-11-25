@@ -173,7 +173,6 @@ class AccountManager(
         }
     }
 
-    /** Whether another account may be added: a few of one person's, not a shared pool. */
     val canAddAccount: Boolean get() = _profiles.value.count { !it.isGuest } < ProfileStore.MAX_ACCOUNTS
 
     /**

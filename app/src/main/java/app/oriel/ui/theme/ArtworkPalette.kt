@@ -46,11 +46,7 @@ data class ArtworkPalette(
     val divider: Color,
 )
 
-/**
- * The page colours for [imageUrl]: read once per URL off the main thread,
- * then animated in over 260ms (or snapped when already known, or under
- * "reduce animation"). Until then it's the plain scheme.
- */
+/** The page colours for [imageUrl], read once per URL off the main thread; the plain scheme until then. */
 @Composable
 fun rememberArtworkPalette(imageUrl: String?, dark: Boolean = LocalIsDark.current): ArtworkPalette {
     val scheme = MaterialTheme.colorScheme
@@ -59,17 +55,12 @@ fun rememberArtworkPalette(imageUrl: String?, dark: Boolean = LocalIsDark.curren
         background = scheme.background, wash = scheme.background, elevated = scheme.surfaceVariant, accent = scheme.primary,
         onBackground = scheme.onBackground, onBackgroundVariant = scheme.onSurfaceVariant, divider = scheme.outline,
     )
-    // Returned as is, not animated colour by colour: seven animated colours read in composition
-    // recomposed the whole watch page every frame of the change. The page's own background
-    // eases across instead, in the draw phase ([animatedBackground]); text and tints take their
-    // new values at once, which against the moving background doesn't read as a jump.
+    // Not animated here: seven animated colours read in composition recompose the whole watch
+    // page every frame. The background eases in the draw phase instead ([animatedBackground]).
     return target
 }
 
-/**
- * The page colour, eased to each new value in 260ms (snapped under reduce animation) and
- * painted in the draw phase, so a palette arriving never recomposes what's on top of it.
- */
+/** The page colour, eased to each new value and painted in the draw phase, so a palette arriving never recomposes what's on top of it. */
 fun Modifier.animatedBackground(color: Color): Modifier = composed {
     val spec: AnimationSpec<Color> = if (LocalReduceAnimation.current) snap() else tween(260)
     val shown = animateColorAsState(color, spec, label = "pageBackground")

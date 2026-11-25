@@ -32,7 +32,6 @@ import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.automirrored.rounded.Login
-import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.NotificationsNone
@@ -118,7 +117,6 @@ object OrielIcons {
     val Bell = Icons.Rounded.Notifications
     val BellOutline = Icons.Rounded.NotificationsNone
     val Chevron = Glyphs.Chevron
-    // The one close glyph: Close and Xmark are the same drawing.
     val Xmark = Glyphs.Xmark
     val Autoplay = Icons.Rounded.PlayCircleOutline
     val Offline = Icons.Rounded.CloudOff
@@ -137,7 +135,6 @@ object OrielIcons {
     val Link = Icons.Rounded.Link
     val OpenExternal = Icons.AutoMirrored.Rounded.OpenInNew
     val SignIn = Icons.AutoMirrored.Rounded.Login
-    val SignOut = Icons.AutoMirrored.Rounded.Logout
     val Language = Icons.Rounded.Language
     val Heart = Icons.Rounded.Favorite
     val Mic = Icons.Rounded.Mic

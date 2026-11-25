@@ -28,7 +28,6 @@ import java.security.MessageDigest
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 
-/** Small persistent key-value store the resolver keeps its remote cipher config in. */
 interface KeyValueStore {
     fun getString(key: String): String?
     fun putString(key: String, value: String)
@@ -80,7 +79,6 @@ class ResolvedStream(
     val author: String?,
     val durationSec: Long?,
     val isLive: Boolean,
-    /** Where to report this playback so it counts towards the signed-in user's history. */
     val playbackUrl: String?,
     val watchtimeUrl: String?,
     val cpn: String,
@@ -93,15 +91,9 @@ class ResolvedStream(
     val isSabr: Boolean get() = sabrAudio != null
 
     /**
-     * googlevideo refuses a freshly minted URL with 403 for its first few
-     * seconds, then serves the very same URL normally. Measured: live 3.2 to
-     * 4.3 s after the player response, and asking early doesn't push that
-     * back. yt-dlp calls it the web clients' "mandatory wait period before
-     * download", tied to preroll ads. A cold resolve spends that long in the
-     * cipher and never notices; a warm one finishes in half a second and
-     * does. A 403 while this is true means "not yet", not "never": ask again
-     * shortly. The window is about twice the slowest measured warm-up: past
-     * it, a 403 is a real refusal, and waiting longer only delays recovery.
+     * googlevideo answers a freshly minted URL with 403 for its first seconds (measured 3.2–4.3 s;
+     * yt-dlp sees the same), then serves it. While true, a 403 means "not yet"; the window is
+     * about twice the slowest measured.
      */
     fun isWarmingUp(now: Long = System.currentTimeMillis()): Boolean = now - issuedAtMs < WARM_UP_MS
 

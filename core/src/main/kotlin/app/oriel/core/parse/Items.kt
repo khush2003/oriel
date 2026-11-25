@@ -2,7 +2,6 @@ package app.oriel.core.parse
 
 import app.oriel.core.json.arr
 import app.oriel.core.json.at
-import app.oriel.core.json.bool
 import app.oriel.core.json.findFirst
 import app.oriel.core.json.get
 import app.oriel.core.json.int
@@ -288,7 +287,3 @@ object Text {
     /** Protocol-relative URLs ("//yt3…") made absolute. */
     fun absolute(url: String): String = if (url.startsWith("//")) "https:$url" else url
 }
-
-/** True when a lockup or renderer node marks its video as already watched to the end. */
-internal fun JsonElement?.watched(): Boolean = this?.findFirst("thumbnailOverlayResumePlaybackRenderer")?.get("percentDurationWatched").int == 100 ||
-    this?.findFirst("thumbnailOverlayProgressBarViewModel")?.get("startPercent").int == 100 || this["isWatched"].bool == true

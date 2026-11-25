@@ -87,7 +87,6 @@ fun VideoThumbnail(
         origin.corner = with(LocalDensity.current) { corner.toPx() }
     }
     Box(modifier.aspectRatio(16f / 9f).then(origin?.modifier ?: Modifier)) {
-        // A square frame runs to the screen's edges: no hairline to draw against them.
         RemoteImage(url, Modifier.fillMaxSize(), shape, border = corner > 0.dp)
         val watched = progress != null && progress > 0f
         if (badge) DurationBadge(video, Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = if (watched) 16.dp else 8.dp))

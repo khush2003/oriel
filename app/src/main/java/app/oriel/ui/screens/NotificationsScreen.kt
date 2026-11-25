@@ -67,7 +67,6 @@ data class InboxState(
 class InboxModel(private val graph: AppGraph) : ViewModel() {
     private val _state = MutableStateFlow(InboxState())
     val state = _state.asStateFlow()
-    /** Per account, so a different sign-in never opens on someone else's last inbox. */
     // The page cache is the active profile's own.
     private val cacheKey = "inbox"
 

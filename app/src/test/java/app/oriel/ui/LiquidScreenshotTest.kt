@@ -41,8 +41,7 @@ import org.robolectric.shadows.ShadowLooper
 /**
  * The liquid transitions, caught mid-flight with the clock held: the picture stretching as it's
  * dragged and flown, a tapped thumbnail on its way into the player, a page's soft edge as it's
- * pushed and as a back swipe holds it. Motion is on here (the other screenshot tests reduce it),
- * and each test ends by letting the motion finish and checking where it came to rest.
+ * pushed and as a back swipe holds it. Motion is on here (the other screenshot tests reduce it).
  */
 @OptIn(ExperimentalRoborazziApi::class)
 @RunWith(AndroidJUnit4::class)

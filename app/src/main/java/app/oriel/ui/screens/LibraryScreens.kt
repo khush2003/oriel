@@ -20,14 +20,12 @@ import app.oriel.ui.components.VideoRowSkeleton
 import app.oriel.ui.haptics.Haptic
 import app.oriel.ui.haptics.rememberHaptics
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -142,9 +140,8 @@ fun LikedScreen() {
 }
 
 /**
- * History's groups, worked out off the main thread and kept for the page: coming back to
- * History used to start from nothing for a frame, and the list, too short to hold the saved
- * position, lost its place. The search text outlives the process, as the page's other state does.
+ * History's groups, worked out off the main thread and kept for the page. The search text
+ * outlives the process, as the page's other state does.
  */
 class HistoryModel(graph: AppGraph, private val saved: SavedStateHandle) : ViewModel() {
     val query: StateFlow<String> = saved.getStateFlow(KEY_QUERY, "")

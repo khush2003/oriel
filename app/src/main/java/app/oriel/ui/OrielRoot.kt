@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -109,7 +108,6 @@ import app.oriel.ui.screens.ChannelsScreen
 import app.oriel.ui.screens.HistoryScreen
 import app.oriel.ui.screens.HomeScreen
 import app.oriel.ui.screens.LikedScreen
-import app.oriel.ui.screens.LocalMiniPlayerVisible
 import app.oriel.ui.screens.LocalPlaylistScreen
 import app.oriel.ui.screens.LocalTabBarVisible
 import app.oriel.ui.screens.LoginScreen
@@ -260,9 +258,6 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
     CompositionLocalProvider(
         LocalAppState provides app,
         LocalAppBackdrop provides if (record) backdrop else null,
-        // The collapsed player floats over the page as a picture-in-picture window, so pages
-        // no longer keep a strip clear for it at the bottom.
-        LocalMiniPlayerVisible provides false,
         LocalTabBarVisible provides showTabBar,
         LocalWindowLayout provides rememberWindowLayout(),
     ) {
@@ -371,7 +366,7 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
 
 /**
  * How pages push: the new page slides in whole from the right over the old one, which drifts
- * [drift] of the way left and dims toward the black behind it rather than fading away. Push and
+ * left and dims toward the black behind it rather than fading away. Push and
  * pop share one spring, as UIKit's do; the dim rides the same one so the two finish together.
  */
 private class PushStyle(val spring: androidx.compose.animation.core.FiniteAnimationSpec<IntOffset>, val dimSpring: androidx.compose.animation.core.FiniteAnimationSpec<Float>, val drift: Float, val liquid: Boolean)
@@ -397,8 +392,8 @@ private const val PUSH_DIM_LIQUID = 0.6f
 
 /**
  * The edge swipe's curve. It's seeked by the gesture's progress, so near the start it has to be
- * about linear for the page to stay under the finger (EaseOutCubic ran it nearly three times
- * ahead); it eases out at the end so a release lands softly instead of stopping dead.
+ * about linear for the page to stay under the finger; it eases out at the end so a release
+ * lands softly instead of stopping dead.
  */
 private val SwipeBackEasing = CubicBezierEasing(0.4f, 0.4f, 0.65f, 1f)
 private const val SWIPE_BACK_MS = 340
@@ -444,9 +439,7 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.swipeBackOut(tabSw
 
 /**
  * The system back swipe as it happens: where the finger is, and the mock's `pd`, how far (px) the
- * page's edge is dented under it. Held, the dent deepens with the finger's speed (12 dp, plus
- * 2% of the speed up to 26 dp more) on the snappy spring; let go, it springs flat on the jelly
- * one, wobbling. Read only while drawing.
+ * page's edge is dented under it. Read only while drawing.
  */
 @Stable
 private class BackSwipe {
@@ -508,12 +501,8 @@ private class PageEdge {
 }
 
 /**
- * A page that slides like the mock's, with a soft leading edge (its `edgePath`): pushed in, the
- * edge bulges ahead by the slide's speed (1.2% of it in px/s, up to 40 dp; a pop dents it, up
- * to 30 dp) and relaxes as it lands; under a back swipe it dents where the finger holds it
- * ([BackSwipe.dent]) and springs flat with a wobble when let go. The bump is a Gaussian 150 dp
- * across. A soft shadow runs along it. Only the outline deforms (the clip is the layer's), all
- * in the draw phase. Reduce motion: none.
+ * A page with the mock's soft `edgePath` edge: bulges with push speed, dents under a back swipe.
+ * Only the layer's outline deforms, in the draw phase.
  */
 @Composable
 private fun LiquidPage(swipe: BackSwipe, content: @Composable () -> Unit) {

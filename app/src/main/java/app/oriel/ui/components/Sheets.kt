@@ -10,10 +10,7 @@ import androidx.compose.runtime.DisposableEffect
 import app.oriel.ui.glass.glassSurface
 import android.os.Build
 import android.view.WindowManager
-import androidx.compose.foundation.border
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.DialogWindowProvider
 import app.oriel.ui.theme.LocalReduceBlur
@@ -193,12 +190,8 @@ fun Modifier.sheetOrigin(corner: Dp, tint: Color? = null): Modifier {
 }
 
 /**
- * The mock's sheet morph over M3's sheet: it starts as the button that opened it (its rect,
- * radius and fill), the height leading the width (Sp.SheetH against Sp.SheetW), the sides and
- * top swelling mid-flight (blobRect: 8 to 18 dp at the sides, 18 at the top); dragged down it
- * shrinks back toward the button (by up to 42%) and fades its content; closed, it shrinks back
- * into it on Sp.SheetClose. M3's own slide is held still meanwhile (counter-translated), so
- * only the morph moves it. Without an origin it rises out of the bottom edge, swelling the same.
+ * The mock's sheet morph: grows from its button (or the bottom edge), shrinks back on drag or
+ * close. M3's own slide is counter-translated so only the morph moves it.
  */
 @Stable
 private class SheetMorph(val origin: SheetOrigin?) {
@@ -373,12 +366,11 @@ fun SheetScrimHost() {
 }
 
 /**
- * BitChord's sheet, floating: the account card's glass ([glassSurface], sampling the page from
- * this window) with a 30dp radius clear of the screen's edges, the page blurred and dimmed behind it, and iOS's grabber, a 36 x 5 capsule.
- * Every sheet in the app is one of these, and each grows out of the button that opened it, as
- * the mock's do ([SheetMorph]; the button marks itself with [sheetOrigin], or a caller passes
- * [origin]). [scrollable] wraps the content in a scroll; sheets that bring their own list
- * (chapters, comments) pass false. Reduce motion keeps M3's plain slide.
+ * BitChord's sheet, floating: the account card's glass ([glassSurface]) clear of the screen's
+ * edges, the page blurred and dimmed behind it, and iOS's grabber. With liquid motion it grows
+ * out of the button that opened it ([SheetMorph]; the button marks itself with [sheetOrigin],
+ * or a caller passes [origin]). [scrollable] wraps the content in a scroll; sheets that bring
+ * their own list (chapters, comments) pass false.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -389,7 +381,7 @@ fun OrielSheet(
     origin: SheetOrigin? = remember { SheetOrigins.take() },
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    // M3's plain slide, as before liquid motion, unless it's on.
+    // M3's plain slide, unless liquid motion is on.
     val reduce = LocalReduceAnimation.current || !LocalLiquidMotion.current
     val scope = rememberCoroutineScope()
     val dismiss by rememberUpdatedState(onDismiss)
@@ -493,7 +485,7 @@ fun OrielSheet(
 /**
  * The sheet pulled up past its top: M3's stops dead there; iOS's gives, less and less the
  * further it's pulled, and springs back on release. The finger is watched, never consumed, so
- * M3's own drag and fling-to-dismiss run as before; this only adds the stretch above the rest.
+ * M3's own drag and fling-to-dismiss still run.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 private class SheetOverdrag(private val state: androidx.compose.material3.SheetState, private val scope: kotlinx.coroutines.CoroutineScope, private val canStretch: () -> Boolean) {
@@ -834,7 +826,7 @@ fun NewPlaylistDialog(signedIn: Boolean, onDismiss: () -> Unit, onCreate: (name:
 
 // ---- iOS alerts --------------------------------------------------------------------------
 
-/** An alert's text field: a veil of the text colour, which shows on the card in both modes (the page colour vanished on light). */
+/** An alert's text field: a veil of the text colour, which shows on the card in both modes. */
 @Composable
 private fun alertFieldFill(): Color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (LocalIsDark.current) 0.10f else 0.06f)
 
@@ -866,12 +858,7 @@ internal fun AlertCard(visible: MutableTransitionState<Boolean>, onDismiss: () -
     }
 }
 
-/**
- * The liquid alert's way in: a drop at the centre that swells into the card, its width on the
- * bouncy spring and its height on a slower one so it spreads, then drops open, the sides
- * bowing out mid-flight (blobRect) and the whole a touch past full size before it settles; the
- * text comes in once it's mostly open. Out, it draws back in quickly. Draw phase only.
- */
+/** The liquid alert's way in: a drop at the centre that swells into the card; out, it draws back in. Draw phase only. */
 @Composable
 private fun Modifier.alertBloom(scope: androidx.compose.animation.AnimatedVisibilityScope, fill: Color): Modifier {
     val shown = androidx.compose.animation.EnterExitState.Visible
@@ -959,7 +946,7 @@ fun AlertHost(app: AppState) {
     }
 }
 
-/** Brief notices: a glass banner that drops in under the status bar and leaves on its own. */
+/** Brief notices: a banner that drops in under the status bar and leaves on its own. */
 @Composable
 fun NoticeHost(app: AppState, modifier: Modifier = Modifier) {
     val notice by app.notice.collectAsState()

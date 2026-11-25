@@ -36,9 +36,9 @@ class Abr(context: Context) {
 
     /**
      * Media3 adapts within one codec, and given H.264 and VP9 ladders that both stop at the
-     * screen's height it takes H.264, which has more rungs. YouTube's VP9 carries more than
-     * twice the bitrate at the same height, so where VP9 decodes in hardware it's asked for
-     * first. Above 1080p the ladder is VP9 alone, so a 1440p or 4K screen gets it either way.
+     * screen's height it takes H.264, which has more rungs. Where VP9 decodes in hardware it's
+     * asked for first ([VideoCaps.hardwareVp9]). Above 1080p the ladder is VP9 alone, so a 1440p
+     * or 4K screen gets it either way.
      */
     fun trackSelector(context: Context, preferVp9: Boolean = VideoCaps.hardwareVp9()): DefaultTrackSelector =
         DefaultTrackSelector(
@@ -72,10 +72,8 @@ class Abr(context: Context) {
         private val CELL_TYPES = intArrayOf(C.NETWORK_TYPE_5G_SA, C.NETWORK_TYPE_5G_NSA, C.NETWORK_TYPE_4G, C.NETWORK_TYPE_3G, C.NETWORK_TYPE_2G, C.NETWORK_TYPE_CELLULAR_UNKNOWN)
 
         /**
-         * Starts on a second and a half, then buffers a minute ahead, bounded by bytes as well
-         * as time: at 1440p and up, a time-only bound of two minutes was hundreds of MB of heap.
-         * After a stall, three seconds in hand before resuming. Fifteen seconds behind are kept,
-         * so a ten-second skip back plays from memory.
+         * Starts on 1.5 s, resumes after a stall on 3 s, buffers a minute ahead bounded by bytes
+         * too (1440p+ heap), keeps 15 s behind for skip-back.
          */
         fun loadControl(): LoadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(30_000, 60_000, 1_500, 3_000)

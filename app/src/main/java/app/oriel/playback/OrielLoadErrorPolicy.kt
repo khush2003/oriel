@@ -9,20 +9,9 @@ import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo
 import kotlin.math.min
 
 /**
- * When a load fails, whether to try the same request again and how soon.
- *
- * Media3's default retries nearly everything three times, a second apart and
- * then two, which is wrong both ways for Oriel. Some failures can't get
- * better by asking again: an expired or refused googlevideo URL (the resolver
- * would hand back the same one), a video that turned out to be live, a video
- * that can't be played at all. Those go straight to the player's error
- * handling, which re-resolves, switches to HLS or moves on, in a fraction of
- * the time three doomed retries take. A SABR read only belongs there when
- * the server refused it; one whose connection dropped is the network's. Everything else is the network being
- * the network (a dropped packet, a stalled tunnel, a cell handover), and
- * those retry quickly at first and keep at it for half a minute before the
- * player is told, so a choppy connection reads as a moment's buffering rather
- * than an error.
+ * Failures asking again can't fix (a refused URL or SABR session, a live or unplayable video) go
+ * straight to the player's recovery. Everything else is the network: retried quickly, then for
+ * about half a minute, before the player hears.
  */
 @OptIn(UnstableApi::class)
 class OrielLoadErrorPolicy : DefaultLoadErrorHandlingPolicy(RETRIES) {

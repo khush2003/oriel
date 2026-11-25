@@ -108,9 +108,8 @@ class WatchReporter(private val graph: AppGraph, private val clock: () -> Long =
     }
 
     /**
-     * [block] again, a couple of times with a pause, while [ok] says it didn't land: a dropped
-     * connection or a refused ping used to be lost without a trace, and with it the entry in
-     * YouTube's history that keeps a watched video out of the recommendations.
+     * [block] again, twice at most with a pause, while [ok] says it didn't land: a lost ping
+     * costs the video its place in YouTube's history.
      */
     private suspend fun <T> retrying(ok: (T) -> Boolean, block: suspend () -> T): T {
         var result = block()

@@ -8,7 +8,7 @@ import android.os.Build
 import android.util.Rational
 import androidx.media3.common.VideoSize
 
-/** Picture-in-picture parameters for the playing video's shape, clamped to what Android allows (2.39:1 to 1:2.39). */
+/** Picture-in-picture parameters for the playing video's shape. */
 fun pipParams(size: VideoSize, autoEnter: Boolean, sourceRect: Rect? = null): PictureInPictureParams {
     val w = size.width.takeIf { it > 0 } ?: 16
     val h = size.height.takeIf { it > 0 } ?: 9
