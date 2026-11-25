@@ -22,7 +22,7 @@ class AdsProbeTest {
     }
 
     @Test fun ads() = runBlocking {
-        if (System.getProperty("oriel.probe") != "true") return@runBlocking
+        assumeProbe()
         val yt = YouTube().apply { setLocale("US", "en") }
         var cont: String? = null
         repeat(4) { page ->

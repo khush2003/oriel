@@ -28,7 +28,7 @@ import kotlin.test.Test
 class ThroughputProbeTest {
     /** Resolve the same video again and again: does every resolve hand out URLs googlevideo serves? */
     @Test fun repeatedResolves() = runBlocking {
-        if (System.getProperty("oriel.live") != "true" || System.getProperty("oriel.probe") != "true") return@runBlocking
+        assumeLive(); assumeProbe()
         val debug = System.getProperty("oriel.debug") == "true"
         val logger = com.metrolist.innertubex.InnerTubeLogger { e -> if (debug || e.level != com.metrolist.innertubex.InnerTubeLogLevel.DEBUG) println("ITX ${e.level} ${e.tag}: ${e.message} ${e.details}".take(600)) }
         val yt = YouTube(logger = logger).apply { setLocale("US", "en") }
@@ -63,7 +63,7 @@ class ThroughputProbeTest {
      * whether asking early pushes the moment back.
      */
     @Test fun activationWindow() = runBlocking {
-        if (System.getProperty("oriel.live") != "true" || System.getProperty("oriel.probe") != "true") return@runBlocking
+        assumeLive(); assumeProbe()
         val answered = java.util.concurrent.atomic.AtomicLong()
         val logger = com.metrolist.innertubex.InnerTubeLogger { e ->
             if (e.message == "player response decoded" && e.details["streamingPresent"] == "true") answered.set(System.nanoTime())
@@ -97,7 +97,7 @@ class ThroughputProbeTest {
 
     /** The n solver itself: the same input through one service several times, and through fresh ones. */
     @Test fun nSolverIsDeterministic() = runBlocking {
-        if (System.getProperty("oriel.live") != "true" || System.getProperty("oriel.probe") != "true") return@runBlocking
+        assumeLive(); assumeProbe()
         val yt = YouTube().apply { setLocale("US", "en") }
         val embed = yt.http.get("https://www.youtube.com/embed/dQw4w9WgXcQ") { header("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36") }
         val html = String(embed.readRawBytes())
@@ -148,7 +148,7 @@ class ThroughputProbeTest {
      * resolver does; any difference is a URL googlevideo will refuse.
      */
     @Test fun cipherReuseIsConsistent() = runBlocking {
-        if (System.getProperty("oriel.live") != "true" || System.getProperty("oriel.probe") != "true") return@runBlocking
+        assumeLive(); assumeProbe()
         val yt = YouTube().apply { setLocale("US", "en") }
         val embed = String(yt.http.get("https://www.youtube.com/embed/dQw4w9WgXcQ") { header("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36") }.readRawBytes())
         val playerUrl = "https://www.youtube.com" + (Regex("\"jsUrl\":\"([^\"]+)\"").find(embed)?.groupValues?.get(1) ?: error("no jsUrl"))
@@ -197,7 +197,7 @@ class ThroughputProbeTest {
 
     /** What a reported video is (watch page, related, comments) and how far resolving it gets. */
     @Test fun videoProbe() = runBlocking {
-        if (System.getProperty("oriel.live") != "true" || System.getProperty("oriel.probe") != "true") return@runBlocking
+        assumeLive(); assumeProbe()
         val yt = YouTube().apply { setLocale("US", "en") }
         for (id in System.getProperty("oriel.ids")?.split(',') ?: listOf("dQw4w9WgXcQ")) {
             runCatching { yt.watch(id) }.onSuccess { page ->
@@ -228,7 +228,7 @@ class ThroughputProbeTest {
 
     /** Different videos one after another on one resolver, as the app plays them, then the first again. */
     @Test fun sequence() = runBlocking {
-        if (System.getProperty("oriel.live") != "true" || System.getProperty("oriel.probe") != "true") return@runBlocking
+        assumeLive(); assumeProbe()
         val yt = YouTube().apply { setLocale("US", "en") }
         val resolver = StreamResolver(yt)
         val ids = System.getProperty("oriel.ids")?.split(',') ?: listOf("dQw4w9WgXcQ", "fJ9rUzIMcZQ", "9bZkp7q19f0", "OPf0YbXqDm0", "hTWKbfoikeg", "dQw4w9WgXcQ")
@@ -248,7 +248,7 @@ class ThroughputProbeTest {
      * stream and from its middle, after the fresh-URL warm-up.
      */
     @Test fun rangeSizes() = runBlocking {
-        if (System.getProperty("oriel.live") != "true" || System.getProperty("oriel.probe") != "true") return@runBlocking
+        assumeLive(); assumeProbe()
         val yt = YouTube().apply { setLocale("US", "en") }
         val resolver = StreamResolver(yt).apply { protocol = StreamProtocol.CLASSIC }
         val id = System.getProperty("oriel.ids")?.split(',')?.first() ?: "dQw4w9WgXcQ"
@@ -280,7 +280,7 @@ class ThroughputProbeTest {
 
     /** [rangeSizes] for the bounded-range clients' own URLs, read straight from their player answers. */
     @Test fun boundedClientRanges() = runBlocking {
-        if (System.getProperty("oriel.live") != "true" || System.getProperty("oriel.probe") != "true") return@runBlocking
+        assumeLive(); assumeProbe()
         val yt = YouTube().apply { setLocale("US", "en") }
         val id = System.getProperty("oriel.ids")?.split(',')?.first() ?: "dQw4w9WgXcQ"
         for (client in listOf(com.metrolist.innertubex.models.YouTubeClient.ANDROID_VR_1_65_10, com.metrolist.innertubex.models.YouTubeClient.IOS)) {
@@ -312,7 +312,7 @@ class ThroughputProbeTest {
     }
 
     @Test fun probe() = runBlocking {
-        if (System.getProperty("oriel.live") != "true" || System.getProperty("oriel.probe") != "true") return@runBlocking
+        assumeLive(); assumeProbe()
         val yt = YouTube().apply { setLocale("US", "en") }
         val resolver = StreamResolver(yt)
         val ids = System.getProperty("oriel.ids")?.split(',') ?: listOf("dQw4w9WgXcQ", "kJQP7kiw5Fk")

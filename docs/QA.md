@@ -16,8 +16,8 @@ No account, API key or release keystore is needed for offline tests or debug bui
 scripts/verify.sh
 ```
 
-This runs guardrails, checks the lint baseline has not grown, runs offline core and app tests,
-runs Android Lint and builds debug APKs. It caps Gradle at 2 GB and stops the daemon on exit.
+This runs guardrails, checks that no baseline and no source file over 600 lines has grown, runs
+offline core and app tests, runs detekt and Android Lint and builds debug APKs. It caps Gradle at 2 GB and stops the daemon on exit.
 The stop command affects all daemons of this Gradle version, including other worktrees;
 run only one build at a time across the project. Individual commands remain in [../AGENTS.md](../AGENTS.md).
 Locally the baseline comparison uses the merge base with `origin/main`, including committed
@@ -25,7 +25,8 @@ branch changes. Fetch origin before starting work so that reference is current. 
 overrides it in PR CI. Without a merge base (for example a shallow checkout), it warns and
 checks only against `HEAD`. The guard covers baseline XML entries; inline suppressions and
 disabled rules still need review.
-Lint's baseline records existing debt, not approval of those findings; new warnings fail.
+The lint and detekt baselines record existing debt, not approval of those findings; new
+findings fail. `./gradlew detekt` lists them.
 `.editorconfig` guides editors but is not an automated Kotlin formatter.
 
 ## Targeted feedback
@@ -68,8 +69,6 @@ Live tests and probes are opt-in Gradle properties:
 | `-Plink=URL` | The link `LiveAppTest.sharedLink` opens. |
 | `-Pframes=true` | Runs the frame-strip captures (`LiquidMotionStripTest`, `LiquidAppStripTest`). |
 | `-Precord=true` | Replaces the reference images in `app/src/test/screenshots/`, which `ComponentsScreenshotTest` otherwise compares its renders with. |
-
-In `core`, a live test or probe that wasn't opted into returns early and is reported as passed.
 
 ## Device smoke test
 

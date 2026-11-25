@@ -7,7 +7,7 @@ import kotlin.test.assertTrue
 /** Live (-Plive=true): filters come decoded, and two combined here are both applied by YouTube. */
 class SearchFiltersLiveTest {
     @Test fun combinedFiltersApply() = runBlocking {
-        if (System.getProperty("oriel.live") != "true") return@runBlocking
+        assumeLive()
         val yt = YouTube().apply { setLocale("US", "en") }
         val plain = yt.search("lofi").filters
         val week = plain.first { it.label == "This week" }

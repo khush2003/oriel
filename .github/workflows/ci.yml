@@ -34,7 +34,7 @@ jobs:
           BASE_REF: ${{ github.event.pull_request.base.sha }}
         run: |
           scripts/check-guardrails.sh
-          python3 scripts/check-lint-baseline.py
+          python3 scripts/check-no-new-debt.py
 
   build:
     name: Build, test and lint
@@ -64,6 +64,8 @@ jobs:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
       - name: Verify
         run: scripts/verify.sh
+      - name: Release build (R8, unsigned)
+        run: ./gradlew '-Dorg.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8' :app:assembleRelease
       - name: Keep screenshots and reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

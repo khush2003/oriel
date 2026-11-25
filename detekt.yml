@@ -1,0 +1,38 @@
+complexity:
+  CyclomaticComplexMethod:
+    ignoreSimpleWhenEntries: true
+  LongMethod:
+    threshold: 150
+  LongParameterList:
+    ignoreDefaultParameters: true
+    ignoreAnnotated: ['Composable']
+  TooManyFunctions:
+    active: false
+
+empty-blocks:
+  EmptyElseBlock:
+    active: false
+
+exceptions:
+  InstanceOfCheckForException:
+    active: false
+  TooGenericExceptionCaught:
+    active: false
+
+naming:
+  FunctionNaming:
+    ignoreAnnotated: ['Composable']
+
+style:
+  LoopWithTooManyJumpStatements:
+    active: false
+  MagicNumber:
+    active: false
+  MaxLineLength:
+    maxLineLength: 200
+  ReturnCount:
+    active: false
+  ThrowsCount:
+    active: false
+  UnusedImports:
+    active: true

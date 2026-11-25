@@ -29,8 +29,8 @@ changing anything, and follow it over any conflicting habit.
   locations, and [`docs/QA.md`](docs/QA.md) for setup and phone verification. Inspect
   `git status --short` before editing; preserve staged, unstaged and untracked work outside the task.
   Check branch drift against fetched `origin/main` before building on an existing checkout.
-- **One verification command.** `scripts/verify.sh` runs guardrails, the lint-baseline check,
-  offline tests, lint and a debug build, and stops Gradle even on failure. CI uses it too.
+- **One verification command.** `scripts/verify.sh` runs guardrails, the no-new-debt check,
+  offline tests, detekt, lint and a debug build, and stops Gradle even on failure. CI uses it too.
   It requires Bash, Python 3, JDK 17 and Android SDK platform 37 (Gradle provisions test JDK 21),
   and takes about six minutes. Run it before you say you're done and report the results as they
   are. While iterating, run one test class ([`docs/QA.md`](docs/QA.md#targeted-feedback)).
@@ -49,8 +49,9 @@ changing anything, and follow it over any conflicting habit.
 - **Match the code around you**: naming, idioms, how state and effects are structured.
 - **Style and lint.** Follow `.editorconfig` and Kotlin official style: types and composables
   use PascalCase, functions and properties camelCase, constants UPPER_SNAKE_CASE. Tests end in
-  `Test`. Android Lint treats new warnings as errors; fix findings rather than adding suppressions
-  or expanding `app/lint-baseline.xml`. Do not run a whole-repository formatter.
+  `Test`. Android Lint and detekt treat new findings as errors; fix them rather than adding suppressions
+  or expanding `app/lint-baseline.xml` or `detekt-baseline.xml`. A source file over 600 lines
+  can't grow: move code into another file. Do not run a whole-repository formatter.
 
 ## Submitting agent-written changes
 

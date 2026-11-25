@@ -18,10 +18,9 @@ import kotlin.test.assertTrue
 
 /** Hits the real YouTube; runs only with -Plive=true. */
 class LiveApiTest {
-    private val live = System.getProperty("oriel.live") == "true"
     private val yt by lazy { YouTube().apply { setLocale("US", "en") } }
 
-    private fun liveTest(block: suspend () -> Unit) = runBlocking { if (live) block() }
+    private fun liveTest(block: suspend () -> Unit) = runBlocking { assumeLive(); block() }
 
     private fun Video.line() = "$title | ${channel?.name} | $viewsText | $publishedText | ${durationSec}s live=$isLive short=$isShort"
 
