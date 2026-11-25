@@ -206,6 +206,7 @@ fun HistoryScreen() {
         title = "History",
         onBack = app::back,
         width = PageWidth.List,
+        onAtTop = { remote?.readerAt(it) },
         // Clearing is this device's history only, so it's offered only while that's shown.
         actions = if (onYouTube) null else ({
             PillAction(OrielIcons.Delete, "Clear history") {
@@ -308,6 +309,7 @@ fun PlaylistsScreen() {
         onRefresh = remote?.let { r -> { r.reload(true) } },
         onNearEnd = { remote?.loadMore() },
         onShown = { atTop -> remote?.refreshIfStale(atTop) },
+        onAtTop = { remote?.readerAt(it) },
     ) {
         if (local.isNotEmpty()) {
             item(key = "local-h", contentType = "header") { SectionHeader("On this device") }

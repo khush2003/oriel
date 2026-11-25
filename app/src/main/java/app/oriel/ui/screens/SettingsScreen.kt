@@ -587,6 +587,7 @@ private val LICENCES = listOf(
     Licensed("Ktor", null, "Apache License 2.0"),
     Licensed("kotlinx.serialization, kotlinx.coroutines", null, "Apache License 2.0"),
     Licensed("OkHttp", null, "Apache License 2.0"),
+    Licensed("quickjs-kt", "With QuickJS (MIT), via InnerTubeX", "Apache License 2.0"),
     Licensed("Inter typeface", "© 2016 The Inter Project Authors", "SIL Open Font License 1.1"),
     Licensed("SponsorBlock data", null, "CC BY-NC-SA 4.0"),
 )

@@ -309,7 +309,7 @@ class WatchModel(private val graph: AppGraph, private val connection: PlayerConn
         if (track == null) return
         scope.launch {
             val cues = withContext(Dispatchers.IO) { runCatching { graph.yt.captionCues(track, translateTo) }.getOrDefault(emptyList()) }
-            if (_captions.value.selected == track) _captions.update { it.copy(cues = cues) }
+            _captions.update { if (it.selected == track && it.translateTo == translateTo) it.copy(cues = cues) else it }
         }
     }
 

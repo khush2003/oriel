@@ -432,7 +432,7 @@ fun VideoControls(
                                 ) { ActivityIndicator(size = 40.dp, color = Color.White) }
                                 else OverlayButton(
                                     when (c) { 3 -> OrielIcons.Replay; 2 -> OrielIcons.Pause; else -> OrielIcons.Play },
-                                    if (c == 2) "Pause" else "Play", size = 64.dp, iconSize = 40.dp,
+                                    when (c) { 3 -> "Replay"; 2 -> "Pause"; else -> "Play" }, size = 64.dp, iconSize = 40.dp,
                                     onClick = {
                                         haptics.play(if (playing) Haptic.Pause else Haptic.Resume)
                                         connection.togglePlay()
