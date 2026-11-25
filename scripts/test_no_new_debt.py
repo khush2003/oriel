@@ -1,4 +1,4 @@
-"""Regression checks for the lint baseline's no-new-debt policy."""
+"""Regression checks for the no-new-debt policy."""
 
 import importlib.util
 from pathlib import Path
@@ -8,7 +8,7 @@ from subprocess import CompletedProcess
 
 
 spec = importlib.util.spec_from_file_location(
-    "baseline", Path(__file__).with_name("check-lint-baseline.py")
+    "baseline", Path(__file__).with_name("check-no-new-debt.py")
 )
 baseline = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(baseline)
@@ -18,6 +18,10 @@ def document(line=1, rule="NewApi", message="Requires API 33", file="src/Example
     return (f'<issues><issue id="{rule}" message="{message}">'
             f'<location file="{file}" line="{line}" column="1"/>'
             '</issue></issues>')
+
+
+def smell(entry):
+    return f"<SmellBaseline><CurrentIssues><ID>{entry}</ID></CurrentIssues></SmellBaseline>"
 
 
 class BaselineTest(unittest.TestCase):
@@ -56,6 +60,24 @@ class BaselineTest(unittest.TestCase):
         previous = baseline.issues(document())
         doubled = document().replace("</issues>", document().replace("<issues>", ""))
         self.assertEqual(sum((baseline.issues(doubled) - previous).values()), 1)
+
+    def test_a_finding_that_moved_to_another_file_is_allowed(self):
+        previous = baseline.smells(smell("LongMethod:Player.kt$fun play()"))
+        self.assertFalse(baseline.smells(smell("LongMethod:Controls.kt$fun play()")) - previous)
+
+    def test_a_new_finding_is_rejected(self):
+        previous = baseline.smells(smell("LongMethod:Player.kt$fun play()"))
+        for entry in ("LongMethod:Player.kt$fun pause()", "ComplexCondition:Player.kt$fun play()"):
+            with self.subTest(entry=entry):
+                self.assertTrue(baseline.smells(smell(entry)) - previous)
+
+    def test_only_an_oversized_file_that_grew_fails(self):
+        limit = baseline.MAX_LINES
+        self.assertFalse(baseline.grew(limit, 0))
+        self.assertTrue(baseline.grew(limit + 1, 0))
+        self.assertFalse(baseline.grew(limit + 200, limit + 200))
+        self.assertFalse(baseline.grew(limit + 100, limit + 200))
+        self.assertTrue(baseline.grew(limit + 201, limit + 200))
 
 
 if __name__ == "__main__":

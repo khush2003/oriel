@@ -34,7 +34,7 @@ jobs:
           BASE_REF: ${{ github.event.pull_request.base.sha }}
         run: |
           scripts/check-guardrails.sh
-          python3 scripts/check-lint-baseline.py
+          python3 scripts/check-no-new-debt.py
 
   build:
     name: Build, test and lint

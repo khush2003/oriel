@@ -152,7 +152,7 @@ fun PlayerHost(app: AppState, withTabBar: Boolean, hidden: Boolean, inPip: Boole
     var zoomed by remember(video.id) { mutableStateOf(false) }
     LaunchedEffect(sheet.fullscreen) { if (!sheet.fullscreen) zoomed = false }
 
-    FullscreenEffects(app, video)
+    FullscreenEffects(app)
     BackHandler(enabled = sheet.fullscreen) { sheet.fullscreen = false }
     BackHandler(enabled = !sheet.fullscreen && sheet.expanded) { sheet.collapse() }
     LaunchedEffect(video.id) { if (app.watch.state.value.video?.id != video.id) app.watch.load(video) }

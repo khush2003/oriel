@@ -30,7 +30,7 @@ class SemVer private constructor(
     override fun toString(): String = "$major.$minor.$patch" + if (preRelease.isEmpty()) "" else preRelease.joinToString(".", prefix = "-")
 
     companion object {
-        private val NUM = "0|[1-9][0-9]*"
+        private const val NUM = "0|[1-9][0-9]*"
         private val ID = "(?:$NUM|[0-9]*[A-Za-z-][0-9A-Za-z-]*)"
         private val PATTERN = Regex("^($NUM)\\.($NUM)\\.($NUM)(?:-($ID(?:\\.$ID)*))?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$")
 
