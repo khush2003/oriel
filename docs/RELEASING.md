@@ -37,7 +37,7 @@ them. Don't rename them, and don't publish a release without them.
 ## Signing
 
 Release builds are only ever signed with the release key. Without `keystore.properties` (or
-`ORIEL_SIGNING_PROPERTIES` pointing at one), `assembleRelease` stops at packaging and says so;
+`ORIEL_SIGNING_PROPERTIES` pointing at one), `assembleRelease` warns and leaves the APKs unsigned, which Android won't install;
 debug builds, tests and lint never need it. The workflow decodes the key into the runner's temp
 directory, outside the checkout, and deletes it after the build.
 

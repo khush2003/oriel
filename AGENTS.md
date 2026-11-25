@@ -31,18 +31,19 @@ changing anything, and follow it over any conflicting habit.
   Check branch drift against fetched `origin/main` before building on an existing checkout.
 - **One verification command.** `scripts/verify.sh` runs guardrails, the lint-baseline check,
   offline tests, lint and a debug build, and stops Gradle even on failure. CI uses it too.
-  It requires Bash, Python 3, JDK 17 and Android SDK platform 37 (Gradle provisions test JDK 21).
+  It requires Bash, Python 3, JDK 17 and Android SDK platform 37 (Gradle provisions test JDK 21),
+  and takes about six minutes. Run it before you say you're done and report the results as they
+  are. While iterating, run one test class ([`docs/QA.md`](docs/QA.md#targeted-feedback)).
 - **Build gently.** The project is tuned for a 16 GB machine. Run one Gradle build at a time with
   `'-Dorg.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8'`, and stop the daemon afterwards
   (`./gradlew --stop`). This stops all daemons of that version, so coordinate across worktrees.
-- **Check your work.** Before you say you're done, run
-  `./gradlew :core:test :app:testDebugUnitTest`, `./gradlew :app:lintDebug` and
-  `scripts/check-guardrails.sh`, and report the results as they are.
 - **UI work** follows [`docs/DESIGN.md`](docs/DESIGN.md). Record screenshots with
   `-Proborazzi.test.record=true`, look at them, and attach them to the PR.
 - **Live tests** (`-Plive=true`) hit YouTube. Use them sparingly; some networks are bot-flagged by
   YouTube, and a "sign in to confirm you're not a bot" answer is the network, not the code.
-- **Comments** explain *why*, briefly, as the surrounding code does. No comments narrating the change.
+- **Add no text that isn't required.** A comment states a constraint the code can't show, in a
+  line or two. Don't narrate a change, restate the code or record how it used to work, and delete
+  a stale comment rather than rewrite it. A fact goes in one document, the one that owns it.
 - **Match the code around you**: naming, idioms, how state and effects are structured.
 - **Style and lint.** Follow `.editorconfig` and Kotlin official style: types and composables
   use PascalCase, functions and properties camelCase, constants UPPER_SNAKE_CASE. Tests end in

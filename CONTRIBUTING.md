@@ -28,10 +28,10 @@ and [the QA guide](docs/QA.md) for environment configuration and a phone smoke t
 
 - **Look and feel:** follow [`docs/DESIGN.md`](docs/DESIGN.md). Every visual change needs before and
   after screenshots, in dark and light.
-- **Style:** Kotlin official style (`kotlin.code.style=official`). Keep comments few and about *why*,
-  as the surrounding code does. Don't reformat files you aren't otherwise changing.
+- **Style:** Kotlin official style (`kotlin.code.style=official`). Add a comment only for a constraint
+  the code can't show. Don't reformat files you aren't otherwise changing.
 - **Licence headers:** keep the headers on files adapted from other projects (BitChord, Kyant0's
-  backdrop, NewPipe, Convx). New third-party code or dependencies must be GPL-3.0-compatible and
+  backdrop, Echo-Music, Convx). New third-party code or dependencies must be GPL-3.0-compatible and
   listed in [`THIRD_PARTY.md`](THIRD_PARTY.md).
 - **Privacy:** never log the sign-in cookie, request headers or signed URLs. Anything new sent off
   the phone must be documented in [`PRIVACY.md`](PRIVACY.md) and approved in the issue first.
