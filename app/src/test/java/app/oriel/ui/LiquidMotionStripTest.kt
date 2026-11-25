@@ -79,7 +79,7 @@ import javax.imageio.ImageIO
  * Frame strips of the liquid interactions, to lay beside the HTML mock's (design/liquid): each
  * one is driven with the same events at the same times as the mock, the clock
  * held and stepped a frame at a time, and caught at the same instants and crops (in dp, which
- * is the mock's px). Written to /tmp/liquid-compare/app_<name>.png. Only with -Pframes=true:
+ * is the mock's px). Written to app/build/liquid-compare/app_<name>.png. Only with -Pframes=true:
  * it's a tool for looking, not a check.
  */
 @OptIn(ExperimentalRoborazziApi::class)
@@ -241,7 +241,7 @@ class LiquidMotionStripTest {
             }
             dispose()
         }
-        val dir = File("/tmp/liquid-compare").apply { mkdirs() }
+        val dir = File("build/liquid-compare").apply { mkdirs() }
         ImageIO.write(out, "png", File(dir, "app_$name.png"))
     }
 

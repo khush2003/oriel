@@ -6,7 +6,7 @@ import kotlin.test.Test
 /** Live: a short's sound credit, and the shorts that use the sound. Opt-in (-Plive=true). */
 class ShortsSoundLiveTest {
     @Test fun sound() = runBlocking {
-        if (System.getProperty("oriel.live") != "true") return@runBlocking
+        assumeLive()
         val yt = YouTube().apply { setLocale("US", "en") }
         val ids = yt.shorts().ids.take(3)
         for (id in ids) {

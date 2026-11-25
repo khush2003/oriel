@@ -18,7 +18,7 @@ import kotlin.test.Test
  */
 class HlsProbeTest {
     @Test fun probe() = runBlocking {
-        if (System.getProperty("oriel.probe") != "true") return@runBlocking
+        assumeProbe()
         val yt = YouTube().apply { setLocale("US", "en") }
         val ids = (System.getProperty("oriel.ids") ?: "dQw4w9WgXcQ").split(",")
         val clients = mapOf("IOS" to YouTubeClient.IOS, "VISIONOS" to YouTubeClient.VISIONOS, "IPADOS" to YouTubeClient.IPADOS)

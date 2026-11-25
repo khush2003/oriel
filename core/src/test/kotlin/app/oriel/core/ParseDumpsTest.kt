@@ -8,6 +8,8 @@ import app.oriel.core.model.Video
 import app.oriel.core.parse.Pages
 import app.oriel.core.parse.Text
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -21,7 +23,11 @@ import kotlin.test.assertTrue
  */
 class ParseDumpsTest {
     private val dir = File(System.getProperty("oriel.dumps") ?: "/tmp/ytweb")
-    private fun dump(name: String) = File(dir, "$name.json").takeIf { it.isFile }?.let { Json.parseToJsonElement(it.readText()) }
+    private fun dump(name: String): JsonElement {
+        val file = File(dir, "$name.json")
+        assumeTrue(file.isFile, "no $name.json (-Pdumps=<dir>)")
+        return Json.parseToJsonElement(file.readText())
+    }
 
     @Test fun text() {
         assertEquals(820, Text.duration("13:40"))
@@ -31,7 +37,7 @@ class ParseDumpsTest {
     }
 
     @Test fun search() {
-        val root = dump("search_lofi") ?: return
+        val root = dump("search_lofi")
         val page = Pages.search(root)
         val videos = page.feed.items.filterIsInstance<Video>()
         println(page.feed.shelves.map { "${it.title}(${it.kind},${it.items.size})" })
@@ -44,7 +50,7 @@ class ParseDumpsTest {
     }
 
     @Test fun searchChannels() {
-        val root = dump("search_channels") ?: return
+        val root = dump("search_channels")
         val ch = Pages.search(root).feed.items.filterIsInstance<Channel>()
         assertTrue(ch.size >= 10)
         assertTrue(ch.first().handle?.startsWith("@") == true)
@@ -53,7 +59,7 @@ class ParseDumpsTest {
 
     @Test fun topics() {
         for (name in listOf("topic_music", "topic_news", "topic_sports", "topic_live", "topic_learning")) {
-            val root = dump(name) ?: continue
+            val root = dump(name)
             val feed = Pages.feed(root)
             println("$name: ${feed.shelves.map { "${it.title}(${it.kind},${it.items.size})" }}")
             assertTrue(feed.items.size >= 10, name)
@@ -62,7 +68,7 @@ class ParseDumpsTest {
     }
 
     @Test fun channel() {
-        val root = dump("channel_ltt") ?: return
+        val root = dump("channel_ltt")
         val page = Pages.channel("UCXuqSBlHAE6Xw-yeJA0Tunw", root)
         assertEquals("Linus Tech Tips", page.channel.title)
         assertEquals("@LinusTechTips", page.channel.handle)
@@ -74,20 +80,20 @@ class ParseDumpsTest {
         assertTrue(page.feed.items.any { it is Post })
         assertTrue(page.feed.items.any { it is Channel })
 
-        val videos = Pages.feed(dump("ch_videos") ?: return)
+        val videos = Pages.feed(dump("ch_videos"))
         assertEquals(30, videos.items.size)
         assertTrue(videos.chips.map { it.title }.containsAll(listOf("Latest", "Popular")))
         assertNotNull(videos.continuation)
-        val shorts = Pages.feed(dump("ch_shorts") ?: return)
+        val shorts = Pages.feed(dump("ch_shorts"))
         assertEquals(ShelfKind.SHORTS_GRID, shorts.shelves.single().kind)
-        val playlists = Pages.feed(dump("ch_playlists") ?: return).items
+        val playlists = Pages.feed(dump("ch_playlists")).items
         assertTrue(playlists.isNotEmpty() && playlists.all { it is Playlist })
-        val posts = Pages.feed(dump("ch_posts") ?: return).items.filterIsInstance<Post>()
+        val posts = Pages.feed(dump("ch_posts")).items.filterIsInstance<Post>()
         assertTrue(posts.isNotEmpty() && posts.any { it.images.isNotEmpty() })
     }
 
     @Test fun watch() {
-        val root = dump("next_ltt") ?: return
+        val root = dump("next_ltt")
         val page = Pages.watch("aV81SqB6HQg", root)
         assertTrue(page.video.title.isNotBlank())
         assertEquals("Linus Tech Tips", page.video.channel?.name)
@@ -100,12 +106,12 @@ class ParseDumpsTest {
         assertNotNull(page.relatedContinuation)
         assertNotNull(page.likeCount)
 
-        val short = Pages.watch("short", dump("next_short") ?: return)
+        val short = Pages.watch("short", dump("next_short"))
         assertNotNull(short.video.channel, "collaboration owner falls back to the dialog")
     }
 
     @Test fun playlist() {
-        val root = dump("playlist") ?: return
+        val root = dump("playlist")
         val page = Pages.playlist("PLT4ClbJt7VFM", root)
         assertEquals("Datacenter Tours", page.playlist.title)
         assertEquals("Linus Tech Tips", page.playlist.owner?.name)
@@ -114,7 +120,7 @@ class ParseDumpsTest {
 
     @Test fun shortsSequence() {
         // 15 entries, 5 of them ads (their endpoints carry adClientParams), which are dropped.
-        val batch = Pages.shortsSequence(dump("reel_seq2") ?: return)
+        val batch = Pages.shortsSequence(dump("reel_seq2"))
         assertEquals(10, batch.ids.size)
         assertNotNull(batch.continuation)
     }

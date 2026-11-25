@@ -78,7 +78,7 @@ import javax.imageio.ImageIO
 /**
  * Frame strips of the liquid pieces outside the player: the channel page, search's droplet, the
  * alert bloom, the large-title stretch and the first-run question's preview. Driven and caught
- * as [LiquidMotionStripTest]'s are, written to /tmp/liquid-compare2/app_<name>.png. Only with
+ * as [LiquidMotionStripTest]'s are, written to app/build/liquid-compare2/app_<name>.png. Only with
  * -Pframes=true: it's a tool for looking, not a check.
  */
 @OptIn(ExperimentalRoborazziApi::class)
@@ -231,7 +231,7 @@ class LiquidAppStripTest {
             }
             dispose()
         }
-        val dir = File("/tmp/liquid-compare2").apply { mkdirs() }
+        val dir = File("build/liquid-compare2").apply { mkdirs() }
         ImageIO.write(out, "png", File(dir, "app_$name.png"))
     }
 

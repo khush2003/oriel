@@ -22,10 +22,8 @@ import kotlin.test.assertTrue
  * from the start and from any position.
  */
 class SabrLiveTest {
-    private val live = System.getProperty("oriel.live") == "true"
-
     @Test fun sabrReadsLikeTheClassicFile() = runBlocking {
-        if (!live) return@runBlocking
+        assumeLive()
         val yt = YouTube().apply { setLocale("US", "en") }
         val resolver = StreamResolver(yt)
         val id = System.getProperty("oriel.ids")?.substringBefore(',') ?: "dQw4w9WgXcQ"
