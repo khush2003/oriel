@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import app.oriel.ui.navigation.SettingsRoute
 import app.oriel.ui.navigation.Tab
 import app.oriel.ui.theme.OrielTheme
@@ -409,7 +410,7 @@ class ScreenshotTest {
      * Opt in with -Pframes=true.
      */
     @Test fun collapseFrames() {
-        if (System.getProperty("oriel.frames") != "true") return
+        assumeTrue("frame strips (-Pframes=true)", System.getProperty("oriel.frames") == "true")
         val log = StringBuilder()
         shoot("22_collapse_start", setup = { it.sheet.progress.snapTo(1f) }, after = {
             appState!!.sheet.collapse()

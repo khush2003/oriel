@@ -13,7 +13,7 @@ import kotlin.test.Test
 /** Research probe: what a SABR extraction and its first chunks look like. Opt in with -Pprobe=true. */
 class SabrProbeTest {
     @Test fun sabr() = runBlocking {
-        if (System.getProperty("oriel.probe") != "true") return@runBlocking
+        assumeProbe()
         val yt = YouTube().apply { setLocale("US", "en") }
         val resolver = StreamResolver(yt)
         val id = System.getProperty("oriel.ids")?.substringBefore(',') ?: "dQw4w9WgXcQ"

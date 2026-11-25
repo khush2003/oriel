@@ -69,8 +69,6 @@ Live tests and probes are opt-in Gradle properties:
 | `-Plink=URL` | The link `LiveAppTest.sharedLink` opens. |
 | `-Pframes=true` | Runs the frame-strip captures (`LiquidMotionStripTest`, `LiquidAppStripTest`). |
 
-In `core`, a live test or probe that wasn't opted into returns early and is reported as passed.
-
 ## Device smoke test
 
 Use a test phone or emulator with network access. For agent-driven interaction, use the host's

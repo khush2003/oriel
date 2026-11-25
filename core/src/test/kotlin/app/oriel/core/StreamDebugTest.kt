@@ -10,7 +10,7 @@ import kotlin.test.Test
 
 class StreamDebugTest {
     @Test fun debug() = runBlocking {
-        if (System.getProperty("oriel.live") != "true") return@runBlocking
+        assumeLive()
         val logger = InnerTubeLogger { e -> if (e.level != InnerTubeLogLevel.DEBUG) println("[${e.level} ${e.tag}] ${e.message} ${e.details}") }
         val yt = YouTube(logger = logger).apply { setLocale("US", "en") }
         val resolver = StreamResolver(yt, logger = logger)

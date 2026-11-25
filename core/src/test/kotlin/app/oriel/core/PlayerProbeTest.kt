@@ -16,7 +16,7 @@ import kotlin.test.Test
  */
 class PlayerProbeTest {
     @Test fun probe() = runBlocking {
-        if (System.getProperty("oriel.probe") != "true") return@runBlocking
+        assumeProbe()
         val yt = YouTube().apply { setLocale("US", "en") }
         val ids = (System.getProperty("oriel.ids") ?: "jNQXAC9IVRw,dQw4w9WgXcQ,aqz-KE-bpKQ").split(",")
         val clients = mapOf(
