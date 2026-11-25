@@ -75,29 +75,41 @@ val GroupShape = RoundedCornerShape(GROUP_CORNER)
 private val GROUP_INSET = 16.dp
 private val ICON_SIZE = 22.dp
 private val TEXT_INSET = 52.dp
+private val GLASS_DISC = 34.dp
+private val GlassGroupShape = RoundedCornerShape(22.dp)
 
 /** A titled group card: uppercase header, the rows on surfaceVariant, an optional footer. */
 @Composable
 fun SettingsGroup(
     header: String? = null,
     footer: String? = null,
-    fill: Color = MaterialTheme.colorScheme.surfaceVariant,
+    /** The card's colour; left unset, surfaceVariant, or on a glass card (a sheet) the panes' own finish. */
+    fill: Color? = null,
     /** Space above the group; the first group in a sheet sits closer, under the drag handle. */
     top: Dp = 26.dp,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(Modifier.fillMaxWidth()) {
-        if (header != null) {
+        val glass = LocalOnGlass.current && fill == null
+        if (header != null && glass) {
+            Text(header, style = paneType(13f, 600), color = dim(), modifier = Modifier.padding(start = GROUP_INSET + 6.dp, top = top, bottom = 8.dp).semantics { heading() })
+        } else if (header != null) {
             Text(header.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = GROUP_INSET + 4.dp, top = top, bottom = 8.dp).semantics { heading() })
         } else Spacer(Modifier.height(top))
-        Column(Modifier.padding(horizontal = GROUP_INSET).fillMaxWidth().clip(GroupShape).background(fill), content = content)
+        Column(
+            Modifier.padding(horizontal = GROUP_INSET).fillMaxWidth()
+                .then(if (glass) Modifier.glassPane(GlassGroupShape) else Modifier.clip(GroupShape).background(fill ?: MaterialTheme.colorScheme.surfaceVariant)),
+            content = content,
+        )
         if (footer != null) Text(footer, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = GROUP_INSET + 4.dp).padding(top = 8.dp))
     }
 }
 
 @Composable
 fun RowDivider(inset: Boolean = true) {
-    Box(Modifier.padding(start = if (inset) TEXT_INSET else 16.dp).fillMaxWidth().height(0.5.dp).background(MaterialTheme.colorScheme.outline))
+    val glass = LocalOnGlass.current
+    val line = if (glass) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.09f) else MaterialTheme.colorScheme.outline
+    Box(Modifier.padding(start = if (!inset) 16.dp else if (glass) 16.dp + GLASS_DISC + 14.dp else TEXT_INSET, end = if (glass) 16.dp else 0.dp).fillMaxWidth().height(0.5.dp).background(line))
 }
 
 /** A row: optional leading icon, title and subtitle, a trailing value and chevron. Disabled at α0.45. */
@@ -118,7 +130,7 @@ fun SettingsRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .heightIn(min = 52.dp)
+            .heightIn(min = if (LocalOnGlass.current) 56.dp else 52.dp)
             .graphicsLayer { alpha = if (enabled) 1f else 0.45f }
             .then(
                 when {
@@ -132,7 +144,9 @@ fun SettingsRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (icon != null) {
-            Icon(icon, null, tint = if (destructive) DestructiveRed else MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(ICON_SIZE))
+            val tint = if (destructive) DestructiveRed else MaterialTheme.colorScheme.onBackground
+            // On glass, in the soft disc the account card's actions wear.
+            if (LocalOnGlass.current) GlyphDisc(icon, GLASS_DISC, tint) else Icon(icon, null, tint = tint, modifier = Modifier.size(ICON_SIZE))
             Spacer(Modifier.width(14.dp))
         }
         Column(Modifier.weight(1f)) {
@@ -144,6 +158,7 @@ fun SettingsRow(
             Spacer(Modifier.width(8.dp))
             Text(value, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.widthIn(max = 168.dp), textAlign = TextAlign.End)
         }
+        if (trailing != null && LocalOnGlass.current) Spacer(Modifier.width(10.dp))
         trailing?.invoke()
         if (chevron) {
             Spacer(Modifier.width(4.dp))
@@ -152,7 +167,7 @@ fun SettingsRow(
     }
 }
 
-/** A switch row; the track is primary (white on dark, black on light), not iOS green. */
+/** A switch row; the track fills with the accent when it's on. */
 @Composable
 fun SwitchRow(title: String, checked: Boolean, onChange: (Boolean) -> Unit, icon: ImageVector? = null, subtitle: String? = null, enabled: Boolean = true) {
     val haptics = rememberHaptics()
@@ -164,14 +179,14 @@ fun SwitchRow(title: String, checked: Boolean, onChange: (Boolean) -> Unit, icon
 
 /**
  * iOS's switch: a 51 x 31 capsule whose white knob springs across, the track filling with
- * primary as it goes. With liquid motion it's [LiquidSwitch]. The row takes the tap.
+ * the accent as it goes. With liquid motion it's [LiquidSwitch]. The row takes the tap.
  */
 @Composable
 fun IosSwitch(checked: Boolean, enabled: Boolean = true, onChange: ((Boolean) -> Unit)? = null) {
     if (LocalLiquidMotion.current) return LiquidSwitch(checked, enabled, onChange)
     val t by animateFloatAsState(if (checked) 1f else 0f, motion(GlassSpring), label = "switch")
-    val on = MaterialTheme.colorScheme.primary
-    val off = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)
+    val on = app.oriel.ui.theme.accent()
+    val off = MaterialTheme.colorScheme.onSurface.copy(alpha = if (app.oriel.ui.theme.LocalIsDark.current) 0.2f else 0.14f)
     Box(
         Modifier
             .size(51.dp, 31.dp)
@@ -182,7 +197,8 @@ fun IosSwitch(checked: Boolean, enabled: Boolean = true, onChange: ((Boolean) ->
                 val inset = 2.dp.toPx()
                 val knob = size.height - inset * 2
                 val x = inset + (size.width - knob - inset * 2) * t
-                drawCircle(Color.Black.copy(alpha = 0.14f), knob / 2 + 0.5.dp.toPx(), Offset(x + knob / 2, size.height / 2 + 1.dp.toPx()))
+                drawCircle(Color.Black.copy(alpha = 0.08f), knob / 2 + 1.dp.toPx(), Offset(x + knob / 2, size.height / 2 + 2.5.dp.toPx()))
+                drawCircle(Color.Black.copy(alpha = 0.16f), knob / 2 + 0.25.dp.toPx(), Offset(x + knob / 2, size.height / 2 + 1.dp.toPx()))
                 drawCircle(if (on == Color.White && t > 0.5f) Color.Black else Color.White, knob / 2, Offset(x + knob / 2, size.height / 2))
             },
     )
@@ -213,8 +229,8 @@ private fun LiquidSwitch(checked: Boolean, enabled: Boolean, onChange: ((Boolean
     }
     val currentChecked by rememberUpdatedState(checked)
     val currentOnChange by rememberUpdatedState(onChange)
-    val on = MaterialTheme.colorScheme.primary
-    val off = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)
+    val on = app.oriel.ui.theme.accent()
+    val off = MaterialTheme.colorScheme.onSurface.copy(alpha = if (app.oriel.ui.theme.LocalIsDark.current) 0.2f else 0.14f)
     val path = remember { Path() }
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     Box(
@@ -225,7 +241,8 @@ private fun LiquidSwitch(checked: Boolean, enabled: Boolean, onChange: ((Boolean
                 val t = fill.value.coerceIn(0f, 1f)
                 drawRoundRect(lerp(off, on, t), cornerRadius = CornerRadius(size.height / 2))
                 pill.path(path, size.height / 2f, reduce, if (rtl) size.width else Float.NaN)
-                translate(0f, 1.dp.toPx()) { drawPath(path, Color.Black.copy(alpha = 0.14f)) }
+                translate(0f, 2.5.dp.toPx()) { drawPath(path, Color.Black.copy(alpha = 0.08f)) }
+                translate(0f, 1.dp.toPx()) { drawPath(path, Color.Black.copy(alpha = 0.16f)) }
                 drawPath(path, if (on == Color.White && t > 0.5f) Color.Black else Color.White)
             }
             .then(
@@ -300,6 +317,6 @@ fun ChoiceRow(label: String, selected: Boolean, detail: String? = null, enabled:
             Text(label, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
             if (detail != null) Text(detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        if (selected) Icon(OrielIcons.Check, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(19.dp))
+        if (selected) Icon(OrielIcons.Check, null, tint = app.oriel.ui.theme.accent(), modifier = Modifier.size(19.dp))
     }
 }

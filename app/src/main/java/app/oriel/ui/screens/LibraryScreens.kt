@@ -57,6 +57,7 @@ import app.oriel.core.model.Video
 import app.oriel.playback.QueueContext
 import app.oriel.ui.AlertAction
 import app.oriel.ui.AlertSpec
+import androidx.compose.ui.graphics.vector.ImageVector
 import app.oriel.ui.LocalAppState
 import app.oriel.ui.components.ActionPill
 import app.oriel.ui.components.ROW_CORNER
@@ -89,13 +90,13 @@ import java.util.Calendar
 
 /** A plain list of videos with Play all / Shuffle, shared by Watch later and Liked. */
 @Composable
-private fun VideoListScreen(title: String, videos: List<Video>, empty: String, onRemove: ((Video) -> Unit)?) {
+private fun VideoListScreen(title: String, videos: List<Video>, empty: String, emptyIcon: ImageVector, onRemove: ((Video) -> Unit)?) {
     val app = LocalAppState.current
     val context = remember(title) { QueueContext(title = title) }
     val keys = remember(videos) { rowKeys(videos) }
     PageScaffold(title = title, onBack = app::back, width = PageWidth.List) {
         if (videos.isEmpty()) {
-            item(key = "empty", contentType = "message") { MessageState(empty) }
+            item(key = "empty", contentType = "message") { MessageState(empty, icon = emptyIcon) }
             return@PageScaffold
         }
         item(key = "play", contentType = "pills") {
@@ -130,14 +131,14 @@ private fun VideoListScreen(title: String, videos: List<Video>, empty: String, o
 fun WatchLaterScreen() {
     val app = LocalAppState.current
     val videos by app.graph.library.state.collectSlice { it.watchLater }
-    VideoListScreen("Watch later", videos, "Videos you save for later appear here.") { app.graph.actions.toggleWatchLater(it) }
+    VideoListScreen("Watch later", videos, "Videos you save for later appear here.", OrielIcons.WatchLater) { app.graph.actions.toggleWatchLater(it) }
 }
 
 @Composable
 fun LikedScreen() {
     val app = LocalAppState.current
     val videos by app.graph.library.state.collectSlice { it.liked }
-    VideoListScreen("Liked videos", videos, "Videos you like appear here.") { app.graph.actions.toggleLike(it) }
+    VideoListScreen("Liked videos", videos, "Videos you like appear here.", OrielIcons.Like) { app.graph.actions.toggleLike(it) }
 }
 
 /**

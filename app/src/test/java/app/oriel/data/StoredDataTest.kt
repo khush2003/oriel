@@ -72,6 +72,20 @@ class StoredDataTest {
         assertFalse(s.liquidMotion)
         assertFalse(s.liquidMotionAsked)
         assertTrue(s.preferOriginalAudio)
+        assertEquals(Accent.ORIEL, s.accent)
+        assertEquals(Wash.SOFT, s.wash)
+        assertTrue(s.trueBlack)
+    }
+
+    @Test
+    fun theAccentIsStoredByName() {
+        val doc = AppJson.parseToJsonElement(Settings.encode(SettingsState(accent = Accent.BLUE))).jsonObject
+        assertEquals(JsonPrimitive("BLUE"), doc["accent"])
+        assertEquals(Accent.BLUE, Settings.decode(doc).first.accent)
+        // An accent this version doesn't know (written by a later one) falls back rather than failing the read.
+        val (s, _) = Settings.decode(AppJson.parseToJsonElement("""{"accent": "ULTRAVIOLET", "theme": "LIGHT"}""").jsonObject)
+        assertEquals(Accent.ORIEL, s.accent)
+        assertEquals(ThemeMode.LIGHT, s.theme)
     }
 
     @Test

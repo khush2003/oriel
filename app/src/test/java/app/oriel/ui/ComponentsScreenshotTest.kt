@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -156,12 +157,12 @@ class ComponentsScreenshotTest {
     @Test fun componentsRtl() = shoot("components_rtl", ThemeMode.DARK, rtl = true)
     @Test fun componentsLargeFont() = shoot("components_font200", ThemeMode.LIGHT, fontScale = 2f)
 
-    /** Tabs read as tabs, the chosen one as selected, with the label as the only name. */
+    /** Tabs read as tabs, the chosen one as selected, named by their label though only the icon shows. */
     @Test fun tabBarSemantics() {
         rule.setContent { Frame(ThemeMode.DARK) { FloatingTabBar(tabs, 1, {}, searchSelected = false, onSearch = {}) } }
         val tab = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)
         assertEquals("tabs", 5, rule.onAllNodes(tab).fetchSemanticsNodes().size)
-        assertEquals("chosen", 1, rule.onAllNodes(tab.and(isSelected()).and(hasText("Shorts"))).fetchSemanticsNodes().size)
+        assertEquals("chosen", 1, rule.onAllNodes(tab.and(isSelected()).and(hasContentDescription("Shorts"))).fetchSemanticsNodes().size)
     }
 
     /** One of several is a radio button; one of a set that each toggle is a checkbox; disabled doesn't click. */

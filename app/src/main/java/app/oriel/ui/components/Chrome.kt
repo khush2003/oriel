@@ -122,6 +122,8 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.runtime.mutableIntStateOf
 import app.oriel.ui.theme.GLASS_PRESS_SCALE
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import app.oriel.ui.theme.LocalLiquidMotion
 import app.oriel.ui.theme.PressHighlight
 
@@ -130,13 +132,17 @@ import app.oriel.ui.theme.PressHighlight
 val PAGE_GUTTER = 16.dp
 val BAR_GUTTER = 16.dp
 val PILL_INSET = 6.dp
-private val TAB_VERTICAL_PADDING = 9.dp
-private val TAB_ICON_LABEL_GAP = 2.dp
+private val TAB_VERTICAL_PADDING = 13.dp
+private val TAB_ICON = 26.dp
 private val GESTURE_BAR_FLOOR = 15.dp
 val FLOATING_BAR_MAX_WIDTH = 440.dp
+/** The bar at rest: icons alone, so it stops short of spanning a wide screen. */
+private val BAR_REST_WIDTH = 388.dp
+/** How far the bar draws in while the reader scrolls on down the page; it comes back on the way up. */
+private const val BAR_COMPACT_SCALE = 0.9f
 
-/** 6 + 9 + 25 + 2 + 13 + 9 + 6: the floating tab bar's height. */
-val TAB_BAR_HEIGHT = 70.dp
+/** 6 + 13 + 26 + 13 + 6: the floating tab bar's height, at its full size. */
+val TAB_BAR_HEIGHT = 64.dp
 val MINI_PLAYER_HEIGHT = 56.dp
 val MINI_PLAYER_GAP = 8.dp
 
@@ -197,9 +203,17 @@ fun FloatingTabBar(
     onSearch: () -> Unit,
     modifier: Modifier = Modifier,
     searchField: (@Composable (Modifier) -> Unit)? = null,
+    compact: Boolean = false,
 ) {
-    if (LocalLiquidMotion.current) LiquidFloatingTabBar(tabs, selectedIndex, onTabSelected, searchSelected, onSearch, modifier, searchField)
-    else ClassicFloatingTabBar(tabs, selectedIndex, onTabSelected, searchSelected, onSearch, modifier)
+    // Scaled in its layer, toward the bottom edge: nothing is measured or recomposed as it changes size.
+    val scale = animateFloatAsState(if (compact && !searchSelected) BAR_COMPACT_SCALE else 1f, motion(GlassSpring), label = "barScale")
+    val sized = modifier.graphicsLayer {
+        transformOrigin = TransformOrigin(0.5f, 1f)
+        scaleX = scale.value
+        scaleY = scale.value
+    }
+    if (LocalLiquidMotion.current) LiquidFloatingTabBar(tabs, selectedIndex, onTabSelected, searchSelected, onSearch, sized, searchField)
+    else ClassicFloatingTabBar(tabs, selectedIndex, onTabSelected, searchSelected, onSearch, sized)
 }
 
 /** How far the indicator draws out along its travel at full stride, and how much of that its height gives back. */
@@ -260,7 +274,7 @@ private fun ClassicFloatingTabBar(
             .windowInsetsPadding(floatingBarInsets)
             .padding(horizontal = BAR_GUTTER)
             .padding(bottom = 2.dp)
-            .widthIn(max = FLOATING_BAR_MAX_WIDTH)
+            .widthIn(max = BAR_REST_WIDTH)
             .fillMaxWidth()
             .height(IntrinsicSize.Max),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -355,7 +369,7 @@ private fun ClassicFloatingTabBar(
                 contentAlignment = Alignment.Center,
             ) {
                 if (searchSelected) Box(Modifier.padding(PILL_INSET).fillMaxWidth().aspectRatio(1f).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)))
-                Icon(OrielIcons.Search, "Search", tint = searchTint, modifier = Modifier.size(26.dp))
+                Icon(OrielIcons.Search, "Search", tint = searchTint, modifier = Modifier.size(TAB_ICON))
             }
         }
     }
@@ -429,6 +443,10 @@ private fun LiquidFloatingTabBar(
     val neck = remember { Path() }
     val bridge = glassFallbackColor()
     val pressGrow = with(density) { PILL_PRESS_GROW.toPx() }
+    val give = with(density) { SEARCH_PRESS_GIVE.toPx() }
+    val backOut = remember { Animatable(0f) }
+    val currentTabSelected by rememberUpdatedState(onTabSelected)
+    val currentIndex by rememberUpdatedState(selectedIndex)
 
     // Liquid with glass, Search opens at the bottom, as the mock's does: the bar draws in to a
     // circle round the current tab (its edge on the slow spring) while the droplet's near edge
@@ -441,6 +459,7 @@ private fun LiquidFloatingTabBar(
         val to = if (expanded) 1f else 0f
         if (reduce) { barM.snapTo(to); fieldM.snapTo(to); return@LaunchedEffect }
         launch { reachIn.animateTo(0f, Sp.Jelly.px) }
+        launch { barReach.animateTo(0f, Sp.Jelly.px) }
         launch { barM.animateTo(to, (if (expanded) Sp.SlowEdge else Sp.FastEdge).unit) }
         fieldM.animateTo(to, (if (expanded) Sp.FastEdge else Sp.SlowEdge).unit)
     }
@@ -453,7 +472,8 @@ private fun LiquidFloatingTabBar(
             .windowInsetsPadding(insets)
             .padding(horizontal = BAR_GUTTER)
             .padding(bottom = 2.dp)
-            .widthIn(max = FLOATING_BAR_MAX_WIDTH)
+            // With glass it's given the width the search field opens to; the bar itself rests compact inside it.
+            .widthIn(max = if (glass) FLOATING_BAR_MAX_WIDTH else BAR_REST_WIDTH)
             .fillMaxWidth()
             .then(
                 if (!glass || reduce) Modifier else Modifier.drawBehind {
@@ -537,9 +557,16 @@ private fun LiquidFloatingTabBar(
                         .clickable(onClickLabel = back?.label?.let { "Back to $it" }) {
                             haptics.play(Haptic.Select)
                             onTabSelected(selectedIndex)
+                        }
+                        // The search droplet's drag, mirrored: pulled toward the field, the tab reaches for it and takes the bar back.
+                        .pointerInput(Unit) {
+                            searchDrag(barReach, backOut, scope, give, -sign, { currentReduce }, stretch = 90.dp) {
+                                haptics.play(Haptic.Select)
+                                currentTabSelected(currentIndex)
+                            }
                         },
                     contentAlignment = Alignment.Center,
-                ) { back?.let { Icon(it.selectedIcon, it.label, tint = tint ?: MaterialTheme.colorScheme.primary, modifier = Modifier.size(25.dp)) } }
+                ) { back?.let { Icon(it.selectedIcon, it.label, tint = tint ?: MaterialTheme.colorScheme.primary, modifier = Modifier.size(TAB_ICON)) } }
             }
         }
         if (glass) {
@@ -549,7 +576,6 @@ private fun LiquidFloatingTabBar(
                 fade(200), label = "searchTint",
             )
             val currentOnSearch by rememberUpdatedState(onSearch)
-            val give = with(density) { SEARCH_PRESS_GIVE.toPx() }
             Box(
                 Modifier
                     .graphicsLayer {
@@ -582,8 +608,8 @@ private fun LiquidFloatingTabBar(
                 // The magnifier slides from the droplet's middle to the field's start.
                 Icon(
                     OrielIcons.Search, "Search", tint = searchTint,
-                    modifier = Modifier.size(26.dp).offset {
-                        val icon = 26.dp.toPx()
+                    modifier = Modifier.size(TAB_ICON).offset {
+                        val icon = TAB_ICON.toPx()
                         val w = geo[3]
                         IntOffset(lerp((w - icon) / 2f, 14.dp.toPx(), fieldM.value.coerceIn(0f, 1f)).roundToInt(), 0)
                     },
@@ -606,17 +632,22 @@ private fun LiquidFloatingTabBar(
         }
         val gap = BAR_SEARCH_GAP.toPx()
         val h = ms[0].maxIntrinsicHeight(w)
-        val restBar = w - h - gap
+        // At rest the bar and the search circle sit together in the middle; searching, the bar
+        // draws in to the start and the field opens across the rest of the width.
+        val restBar = minOf(w.toFloat(), BAR_REST_WIDTH.toPx()) - h - gap
+        val x0 = (w - (restBar + gap + h)) / 2f
         geo[2] = restBar
-        val barRight = lerp(restBar, h.toFloat(), barM.value).coerceIn(h * 0.6f, restBar)
-        val searchLeft = lerp((w - h).toFloat(), h + gap, fieldM.value).coerceIn(0f, w - h * 0.6f)
+        val barLeft = lerp(x0, 0f, barM.value).coerceIn(0f, x0)
+        val barRight = lerp(x0 + restBar, h.toFloat(), barM.value).coerceIn(barLeft + h * 0.6f, x0 + restBar)
+        val searchLeft = lerp(x0 + restBar + gap, h + gap, fieldM.value).coerceIn(0f, w - h * 0.6f)
+        val searchRight = lerp(x0 + restBar + gap + h, w.toFloat(), fieldM.value).coerceIn(searchLeft + h * 0.6f, w.toFloat())
         geo[0] = barRight
         geo[1] = searchLeft
-        geo[3] = w - searchLeft
-        val bar = ms[0].measure(Constraints.fixed(barRight.roundToInt(), h))
-        val search = ms[1].measure(Constraints.fixed((w - searchLeft).roundToInt(), h))
+        geo[3] = searchRight - searchLeft
+        val bar = ms[0].measure(Constraints.fixed((barRight - barLeft).roundToInt(), h))
+        val search = ms[1].measure(Constraints.fixed((searchRight - searchLeft).roundToInt(), h))
         layout(w, h) {
-            bar.placeRelative(0, 0)
+            bar.placeRelative(barLeft.roundToInt(), 0)
             search.placeRelative(searchLeft.roundToInt(), 0)
         }
     }
@@ -715,6 +746,7 @@ private suspend fun PointerInputScope.searchDrag(
     give: Float,
     sign: Float,
     reduce: () -> Boolean,
+    stretch: Dp = 200.dp,
     onOpen: (velocity: Float) -> Unit,
 ) = awaitEachGesture {
     val down = awaitFirstDown(requireUnconsumed = false)
@@ -737,7 +769,7 @@ private suspend fun PointerInputScope.searchDrag(
             change.consume()
             // Toward the bar is positive.
             val toward = -dx * sign
-            val inner = if (toward > 0f) rubber(toward, 200.dp.toPx(), 0.8f) else -rubber(-toward, 50.dp.toPx()) * 0.4f
+            val inner = if (toward > 0f) rubber(toward, stretch.toPx(), 0.8f) else -rubber(-toward, 50.dp.toPx()) * 0.4f
             val outer = if (toward < 0f) rubber(-toward, 40.dp.toPx()) * 0.4f else 0f
             scope.launch { reachIn.animateTo(inner, Sp.Lead.px) }
             scope.launch { reachOut.animateTo(outer, Sp.Lead.px) }
@@ -772,9 +804,9 @@ private fun TabItem(
         if (selected) selectedTint ?: MaterialTheme.colorScheme.primary else unselectedTint ?: MaterialTheme.colorScheme.onSurfaceVariant,
         fade(200), label = "tabTint",
     )
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        // No clip: there's no ripple to bound, and a stadium clip shaves the ends off a long label.
+    // Icons alone, as iOS 26's compact bar: the tab's name is its description for TalkBack.
+    Box(
+        contentAlignment = Alignment.Center,
         modifier = modifier
             // Liquid, the blob under it answers the finger instead.
             .then(
@@ -786,29 +818,15 @@ private fun TabItem(
                     onClick()
                 },
             )
+            .semantics { contentDescription = tab.label }
             .padding(vertical = TAB_VERTICAL_PADDING, horizontal = 2.dp),
     ) {
-        // The label below names the tab; the icon would only say it twice.
         val glyph = rememberVectorPainter(if (selected) tab.selectedIcon else tab.icon)
         Box(
-            Modifier.size(25.dp)
+            Modifier.size(TAB_ICON)
                 .graphicsLayer { scaleX = scale.value; scaleY = scale.value }
                 .drawBehind { with(glyph) { draw(size, colorFilter = ColorFilter.tint(tint.value)) } },
         )
-        Spacer(Modifier.height(TAB_ICON_LABEL_GAP))
-        // The bar is a fixed TAB_BAR_HEIGHT that the mini player and page padding stand on, so its
-        // label doesn't grow past the default size, as iOS's tab bar labels don't; it can shrink.
-        val density = LocalDensity.current
-        CompositionLocalProvider(LocalDensity provides Density(density.density, density.fontScale.coerceAtMost(1f))) {
-            // Long labels ("Subscriptions") step down in size rather than truncate, as iOS tab bars do.
-            androidx.compose.foundation.text.BasicText(
-                tab.label,
-                style = MaterialTheme.typography.labelSmall,
-                color = { tint.value },
-                maxLines = 1,
-                autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = MaterialTheme.typography.labelSmall.fontSize, stepSize = 0.5.sp),
-            )
-        }
     }
 }
 

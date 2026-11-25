@@ -94,7 +94,7 @@ fun VideoThumbnail(
         // How far in: a capsule inset along the bottom, as Apple's TV app draws it.
         if (watched) {
             Box(Modifier.align(Alignment.BottomCenter).padding(horizontal = 10.dp, vertical = 8.dp).fillMaxWidth().height(4.dp).clip(RoundedCornerShape(50)).background(Color.White.copy(alpha = 0.35f))) {
-                Box(Modifier.fillMaxWidth(progress.coerceIn(0.03f, 1f)).height(4.dp).clip(RoundedCornerShape(50)).background(Color.White))
+                Box(Modifier.fillMaxWidth(progress.coerceIn(0.03f, 1f)).height(4.dp).clip(RoundedCornerShape(50)).background(app.oriel.ui.theme.accentOnMedia()))
             }
         }
         overlay()

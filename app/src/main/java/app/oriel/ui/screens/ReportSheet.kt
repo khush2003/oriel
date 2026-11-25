@@ -4,7 +4,9 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import android.os.Build
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -33,16 +35,18 @@ import app.oriel.ui.AlertSpec
 import app.oriel.ui.AppState
 import kotlinx.coroutines.launch
 import app.oriel.ui.ReportRequest
-import app.oriel.ui.components.ChoiceRow
+import app.oriel.ui.components.ActionPill
+import app.oriel.ui.components.GlassChoiceRow
+import app.oriel.ui.components.GlassPane
+import app.oriel.ui.components.GlassRow
+import app.oriel.ui.components.Glyphs
 import app.oriel.ui.components.LocalSheetClose
+import app.oriel.ui.components.PAGE_GUTTER
+import app.oriel.ui.components.PaneHeader
 import app.oriel.ui.components.OrielIcons
 import app.oriel.ui.components.OrielSheet
-import app.oriel.ui.components.RowDivider
-import app.oriel.ui.components.SettingsGroup
-import app.oriel.ui.components.SettingsRow
 import app.oriel.ui.components.SheetAction
 import app.oriel.ui.components.SheetTitle
-import app.oriel.ui.components.SwitchRow
 import app.oriel.util.CrashLog
 import app.oriel.util.CrashRecord
 import app.oriel.util.IssueLink
@@ -95,7 +99,8 @@ fun ReportSheet(app: AppState, request: ReportRequest, onDismiss: () -> Unit) {
         if (previewing) {
             SheetTitle("Preview", onBack = { previewing = false })
             val text = remember(kind, description, link, include, stored, settings, signedIn) { ProblemReport.compose(input()) }
-            SettingsGroup(top = 8.dp, footer = "This is exactly what Share sends. A GitHub issue gets the same text, split into the form's fields.") {
+            PaneHeader("Exactly what's sent", "Share: sends this text as it is.\nGitHub: gets the same text, split into the form's fields.")
+            GlassPane(dividers = false) {
                 SelectionContainer {
                     Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp))
                 }
@@ -104,46 +109,45 @@ fun ReportSheet(app: AppState, request: ReportRequest, onDismiss: () -> Unit) {
         }
 
         SheetTitle("Report a problem", trailing = { SheetAction("Cancel") { close {} } })
-        SettingsGroup(header = "What kind of problem", top = 8.dp) {
-            ReportKind.entries.forEachIndexed { i, k ->
-                if (i > 0) RowDivider(inset = false)
-                ChoiceRow(k.label, k == kind) { kind = k }
+        PaneHeader("What kind of problem")
+        GlassPane(dividers = false) {
+            Column(Modifier.padding(horizontal = 3.dp)) {
+                ReportKind.entries.forEach { k -> GlassChoiceRow(k.label, k == kind) { kind = k } }
             }
         }
-        SettingsGroup(
-            header = "What happened?",
-            footer = when (kind) {
-                ReportKind.BROKEN -> "What you did, what you saw, and what you expected instead."
-                ReportKind.PLAYBACK -> "The message on screen, if any, and what you tried: retry, another quality, signing in."
-                ReportKind.CRASH -> "What you were doing when it closed, if you remember."
-            },
-        ) {
-            ReportField(description, { description = it }, "Describe the problem", "What happened?", minLines = 4)
+        PaneHeader("What happened?")
+        GlassPane(dividers = false) {
+            // What to write is the field's own prompt, gone once there are words in it.
+            ReportField(
+                description, { description = it },
+                when (kind) {
+                    ReportKind.BROKEN -> "What you did, what you saw, and what you expected instead."
+                    ReportKind.PLAYBACK -> "The message on screen, if any, and what you tried: retry, another quality, signing in."
+                    ReportKind.CRASH -> "What you were doing when it closed, if you remember."
+                },
+                "What happened?", minLines = 4,
+            )
         }
-        SettingsGroup(
-            header = "Video link",
-            footer = if (kind == ReportKind.PLAYBACK) "The video that won't play. It's the only thing about what you watch that goes in the report." else "Optional: a video where it happens.",
-        ) {
+        PaneHeader(
+            "Video link",
+            if (kind == ReportKind.PLAYBACK) "The video that won't play. It's the only thing about what you watch that goes in the report." else "Optional: a video where it happens. It's the only thing about what you watch that goes in the report.",
+        )
+        GlassPane(dividers = false) {
             ReportField(link, { link = it }, "https://youtu.be/…", "Video link", singleLine = true)
         }
         val held = stored
-        SettingsGroup(
-            header = "Diagnostics",
-            footer = when {
-                cleared -> "Diagnostics cleared."
-                !include -> "Only what you wrote and the video link are sent."
-                else -> "App and Android version, device, a few settings (never your account), " +
-                    (held?.let { "${count(it.crashes.size, "crash", "crashes")} and ${count(it.trail.size, "recent error", "recent errors")}" } ?: "recent crashes and errors") +
-                    ". Cookies, email addresses, stream addresses and long tokens are taken out."
-            },
-        ) {
-            SwitchRow("Include diagnostics", include, { include = it }, OrielIcons.Info)
-            RowDivider()
-            SettingsRow("Preview report", OrielIcons.Report, chevron = true, onClick = { previewing = true })
+        PaneHeader(
+            if (cleared) "Diagnostics, cleared" else "Diagnostics",
+            "Included: app and Android version, device, a few settings, " +
+                (held?.let { "${count(it.crashes.size, "crash", "crashes")} and ${count(it.trail.size, "recent error", "recent errors")}" } ?: "recent crashes and errors") +
+                ".\nNever included: your account, cookies, email addresses, stream addresses and long tokens.\nSwitched off: only what you wrote and the video link are sent.",
+        )
+        GlassPane {
+            GlassRow("Include diagnostics", Glyphs.LineBug, onChange = { include = it }, checked = include)
+            GlassRow("Preview report", Glyphs.LineDoc, chevron = true, onClick = { previewing = true })
             if (held != null && !held.isEmpty) {
-                RowDivider()
                 // What's cleared can't be sent afterwards: asked first, as every other clear is.
-                SettingsRow("Clear diagnostics", OrielIcons.Delete, destructive = true, onClick = {
+                GlassRow("Clear diagnostics", Glyphs.LineTrash, destructive = true, onClick = {
                     app.alert = AlertSpec("Clear diagnostics?", "The crashes and errors kept on this phone are deleted, and can't go in a report.", listOf(
                         AlertAction("Cancel"),
                         AlertAction("Clear", destructive = true) {
@@ -156,11 +160,12 @@ fun ReportSheet(app: AppState, request: ReportRequest, onDismiss: () -> Unit) {
                 })
             }
         }
-        SettingsGroup(
-            header = "Send",
-            footer = if (!ready) "Describe what happened to send the report." else "GitHub opens in your browser with the form filled in. You'll need a GitHub account, and nothing is posted until you submit it there. Share sends the same report by email or another app.",
-        ) {
-            SettingsRow("Open a GitHub issue", OrielIcons.OpenExternal, enabled = ready, onClick = {
+        PaneHeader(
+            if (ready) "Send" else "Describe what happened to send",
+            "GitHub: opens in your browser with the form filled in. You need a GitHub account, and nothing is posted until you submit it there.\nShare: sends the same report by email or another app.",
+        )
+        Column(Modifier.padding(horizontal = PAGE_GUTTER).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            ActionPill("Open a GitHub issue", OrielIcons.OpenExternal, enabled = ready, filled = true, modifier = Modifier.fillMaxWidth(), onClick = {
                 val issue = IssueLink.build(
                     kind = kind,
                     description = description,
@@ -178,8 +183,7 @@ fun ReportSheet(app: AppState, request: ReportRequest, onDismiss: () -> Unit) {
                     app.openExternally(issue.url)
                 }
             })
-            RowDivider()
-            SettingsRow("Share…", OrielIcons.Share, subtitle = "Email or another app", enabled = ready, onClick = {
+            ActionPill("Share…", OrielIcons.Share, enabled = ready, modifier = Modifier.fillMaxWidth(), onClick = {
                 val send = Intent(Intent.ACTION_SEND)
                     .setType("text/plain")
                     .putExtra(Intent.EXTRA_SUBJECT, "Oriel problem report: ${kind.label}")
@@ -196,11 +200,11 @@ private fun count(n: Int, one: String, many: String) = when (n) {
     else -> "$n $many"
 }
 
-/** A text field drawn as a grouped row: placeholder in the secondary colour, named for TalkBack by [label]. */
+/** A text field drawn in a pane: its prompt in the secondary colour, named for TalkBack by [label]. */
 @Composable
 private fun ReportField(value: String, onChange: (String) -> Unit, placeholder: String, label: String, singleLine: Boolean = false, minLines: Int = 1) {
-    Box(Modifier.fillMaxWidth().heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 12.dp)) {
-        if (value.isEmpty()) Text(placeholder, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+    Box(Modifier.fillMaxWidth().heightIn(min = 50.dp).padding(horizontal = 16.dp, vertical = 14.dp)) {
+        if (value.isEmpty()) Text(placeholder, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f), maxLines = if (singleLine) 1 else 4)
         BasicTextField(
             value = value,
             onValueChange = onChange,
@@ -208,7 +212,7 @@ private fun ReportField(value: String, onChange: (String) -> Unit, placeholder: 
             minLines = minLines,
             maxLines = if (singleLine) 1 else 12,
             textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            cursorBrush = SolidColor(app.oriel.ui.theme.accent()),
             keyboardOptions = if (singleLine) KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false)
             else KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
             modifier = Modifier.fillMaxWidth().semantics { contentDescription = label },

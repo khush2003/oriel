@@ -36,6 +36,47 @@ internal object Glyphs {
             }
         }.build()
 
+    private fun rr(x: Float, y: Float, w: Float, h: Float, r: Float) =
+        "M${x + r} ${y}H${x + w - r}A$r $r 0 0 1 ${x + w} ${y + r}V${y + h - r}A$r $r 0 0 1 ${x + w - r} ${y + h}H${x + r}A$r $r 0 0 1 $x ${y + h - r}V${y + r}A$r $r 0 0 1 ${x + r} ${y}Z"
+    private fun circ(cx: Float, cy: Float, r: Float) = "M${cx + r} ${cy}A$r $r 0 1 1 ${cx - r} ${cy}A$r $r 0 1 1 ${cx + r} ${cy}Z"
+
+    // The control pane's glyphs: one weight, one grid, so a page of tiles reads as one set.
+    val LineVideo = glyph("video", rr(3f, 6f, 18f, 12f, 3f), "M10 9.5V14.5L14.5 12Z")
+    val LinePlay = glyph("play", "M7.5 5.2V18.8L18.8 12Z")
+    val LinePeople = glyph("people", circ(9f, 9f, 3.2f), "M3 19C3.6 15.6 6 14 9 14S14.4 15.6 15 19", "M16 6.2A3 3 0 0 1 16 11.8", "M18 14.5C19.7 15.2 20.7 16.7 21 19")
+    val LineDrop = glyph("drop", "M12 3C16 7.5 18 10.5 18 13.5A6 6 0 0 1 6 13.5C6 10.5 8 7.5 12 3Z")
+    val LineLock = glyph("lock", rr(5f, 11f, 14f, 9f, 2.5f), "M8 11V8A4 4 0 0 1 16 8V11")
+    val LineGlobe = glyph("globe", circ(12f, 12f, 9f), "M3 12H21", "M12 3C15 6.2 15 17.8 12 21", "M12 3C9 6.2 9 17.8 12 21")
+    val LineUpDown = glyph("upDown", "M8 9.5L12 5.5L16 9.5", "M8 14.5L12 18.5L16 14.5")
+    val LineInfo = glyph("info", circ(12f, 12f, 9f), "M12 11V16.5", "M12 7.6V7.7")
+    val LineHeadphones = glyph("headphones", "M4 15V12A8 8 0 0 1 20 12V15", rr(3f, 14f, 4.5f, 6f, 1.5f), rr(16.5f, 14f, 4.5f, 6f, 1.5f))
+    val LinePip = glyph("pip", rr(3f, 5f, 18f, 14f, 3f), rr(12f, 11.5f, 6.5f, 5f, 1f))
+    val LineNext = glyph("next", "M6 5.5V18.5L15.5 12Z", "M18.5 5.5V18.5")
+    val LineClock = glyph("clock", circ(12f, 12f, 9f), "M12 7V12.5L15.5 14.5")
+    val LineCaptions = glyph("captions", rr(3f, 5.5f, 18f, 13f, 3f), "M10.5 10.5A2 2 0 1 0 10.5 13.5", "M16.5 10.5A2 2 0 1 0 16.5 13.5")
+    val LineGauge = glyph("gauge", "M4 16A8 8 0 1 1 20 16", "M12 16L16 11")
+    val LineShield = glyph("shield", "M12 3L19.5 6V11.5C19.5 16 16.5 19.2 12 21C7.5 19.2 4.500 16 4.500 11.5V6Z")
+    val LineSearch = glyph("search", circ(11f, 11f, 6.5f), "M16 16L20.5 20.5")
+    val LineMoon = glyph("moon", "M20 14.5A8.5 8.5 0 0 1 9.5 4A8.5 8.5 0 1 0 20 14.5Z")
+    val LineWifi = glyph("wifi", "M3 9.5A13 13 0 0 1 21 9.5", "M6 13A8.5 8.5 0 0 1 18 13", "M9 16.500A4.200 4.200 0 0 1 15 16.500", "M12 19.6V19.7")
+    val LineTrash = glyph("trash", "M5 7H19", "M10 7V4.500H14V7", "M7 7L8 19.500H16L17 7")
+    val LineSync = glyph("sync", "M19 8A8 8 0 0 0 4.500 10", "M5 16A8 8 0 0 0 19.500 14", "M19 4V8H15", "M5 20V16H9")
+    val LineSignOut = glyph("signOut", "M14 5H7A2 2 0 0 0 5 7V17A2 2 0 0 0 7 19H14", "M11 12H20", "M17 8.500L20.500 12L17 15.500", autoMirror = true)
+    val LineSignIn = glyph("signIn", "M10 5H17A2 2 0 0 1 19 7V17A2 2 0 0 1 17 19H10", "M4 12H13", "M10 8.500L13.500 12L10 15.500", autoMirror = true)
+    val LineBug = glyph("bug", rr(8f, 8f, 8f, 11f, 4f), "M9.500 5L11 8", "M14.500 5L13 8", "M4 12H8", "M16 12H20", "M5 18L8 16.500", "M19 18L16 16.500")
+    val LineBox = glyph("box", rr(4f, 5f, 16f, 14f, 3f), "M4 10H20")
+    val LineSliders = glyph("sliders", "M4 7H11", "M15 7H20", "M4 17H8", "M12 17H20", circ(13f, 7f, 2f), circ(10f, 17f, 2f))
+    val LineQueue = glyph("queue", "M4 7H16", "M4 12H16", "M4 17H11", "M15.500 14.500V19.500L19.500 17Z")
+    val LineDataSaver = glyph("dataSaver", "M12 4V15", "M7.500 11L12 15.500L16.500 11", "M5 20H19")
+    val LineBadge = glyph("badge", "M12 3L14.200 5.200H17.300L17.300 8.300L19.500 10.500L17.300 12.700V15.800H14.200L12 18L9.800 15.800H6.700V12.700L4.500 10.500L6.700 8.300V5.200H9.800Z", "M9.300 10.600L11.200 12.500L14.800 8.900")
+    val LineMotion = glyph("motion", "M3 12C5.500 7 8 7 10.500 12S15.500 17 18 12S20.500 9 21 9")
+    val LineLayers = glyph("layers", "M12 4L20 8.500L12 13L4 8.500Z", "M4 13L12 17.500L20 13")
+    val LineBell = glyph("bell", "M6 16.5V11A6 6 0 0 1 18 11V16.5L19.5 18.5H4.5Z", "M10 20.7A2.2 2.2 0 0 0 14 20.7")
+    val LineHistory = glyph("history", "M4.5 12A7.5 7.5 0 1 0 6.9 6.5", "M4.5 4.5V8H8", "M12 8V12.2L14.8 14")
+    val LineThumb = glyph("thumb", rr(4f, 10.5f, 4f, 9f, 1f), "M8 10.5L11.4 4.6A1.9 1.9 0 0 1 14.9 5.9L14.3 9.3H18.2A1.8 1.8 0 0 1 19.95 11.5L18.65 17.9A1.9 1.9 0 0 1 16.8 19.5H8")
+    val LineDoc = glyph("doc", rr(6f, 3.5f, 12f, 17f, 2.5f), "M9.5 9H14.5", "M9.5 12.5H14.5", "M9.5 16H12.5")
+    val LineRefresh = glyph("refresh", "M13 3L5 13.500H11L10 21L18 10.500H12Z")
+
     // square.and.arrow.up
     val Share = glyph(
         "share",

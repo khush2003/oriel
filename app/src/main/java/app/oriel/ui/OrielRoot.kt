@@ -23,6 +23,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.spring
@@ -69,6 +73,7 @@ import app.oriel.ui.components.ItemActions
 import app.oriel.ui.components.ItemActionsSheet
 import app.oriel.ui.components.OrielIcons
 import app.oriel.ui.components.NoticeHost
+import app.oriel.ui.components.SheetScrimHost
 import app.oriel.ui.components.SaveToPlaylistSheet
 import app.oriel.ui.components.TextPromptDialog
 import app.oriel.ui.glass.LocalAppBackdrop
@@ -89,6 +94,8 @@ import app.oriel.ui.navigation.PlaylistRoute
 import app.oriel.ui.navigation.PlaylistsRoute
 import app.oriel.ui.navigation.SearchRoute
 import app.oriel.ui.navigation.SettingsRoute
+import app.oriel.ui.navigation.SettingsSectionRoute
+import app.oriel.ui.screens.SettingsSectionScreen
 import app.oriel.ui.navigation.ShortsRoute
 import app.oriel.ui.navigation.SubscriptionsRoute
 import app.oriel.ui.navigation.Tab
@@ -229,6 +236,27 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
         snapshotFlow { app.sheet.expanded }.collect { CrashLog.screen = if (it) "$page, watch page open" else page }
     }
 
+    // The tab bar draws in while the reader scrolls on down a page and comes back as they scroll up.
+    var barCompact by remember { mutableStateOf(false) }
+    LaunchedEffect(page) { barCompact = false }
+    val barScroll = with(LocalDensity.current) {
+        val down = 32.dp.toPx()
+        val up = 12.dp.toPx()
+        remember(down, up) {
+            object : NestedScrollConnection {
+                var run = 0f
+                override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                    val dy = consumed.y
+                    if (dy == 0f) return Offset.Zero
+                    // A change of direction starts the count again.
+                    run = if (run * dy < 0f) dy else run + dy
+                    if (run < -down) barCompact = true else if (run > up) barCompact = false
+                    return Offset.Zero
+                }
+            }
+        }
+    }
+
     CompositionLocalProvider(
         LocalAppState provides app,
         LocalAppBackdrop provides if (record) backdrop else null,
@@ -246,7 +274,7 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
             // Black behind the pages, not the page colour: the dim is the page beneath fading toward
             // it, and on light the page colour would have washed it out to white instead. Every
             // page paints its own background, and nothing fades both pages at once (see below).
-            Box(Modifier.fillMaxSize().then(if (record) Modifier.layerBackdrop(backdrop) else Modifier).background(Color.Black)) {
+            Box(Modifier.fillMaxSize().then(if (record) Modifier.layerBackdrop(backdrop) else Modifier).background(Color.Black).nestedScroll(barScroll)) {
                 NavHost(
                     navController = nav,
                     startDestination = HomeRoute,
@@ -275,6 +303,7 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
                     composable<ChannelsRoute> { LiquidPage(backSwipe) { ChannelsScreen() } }
                     composable<PlaylistsRoute> { LiquidPage(backSwipe) { PlaylistsScreen() } }
                     composable<SettingsRoute> { LiquidPage(backSwipe) { SettingsScreen() } }
+                    composable<SettingsSectionRoute> { LiquidPage(backSwipe) { SettingsSectionScreen(it.toRoute<SettingsSectionRoute>().section) } }
                     composable<LoginRoute> { LiquidPage(backSwipe) { LoginScreen(it.toRoute<LoginRoute>().reauth) } }
                     composable<NotificationsRoute> { LiquidPage(backSwipe) { NotificationsScreen() } }
                 }
@@ -293,6 +322,7 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
                             searchSelected = onSearch,
                             onSearch = { app.openSearch() },
                             searchField = app.searchField,
+                            compact = barCompact,
                             modifier = Modifier.align(Alignment.BottomCenter).graphicsLayer {
                                 // The bar sinks away as the player rises over it.
                                 val p = sheetProgress.value
@@ -315,6 +345,7 @@ fun OrielRoot(app: AppState, inPip: Boolean) {
                 onPreviewClick = { item -> app.dismissMenu(); app.openItem(item) },
             ) { item -> ItemActions(app, item, app::dismissMenu) }
             AccountSwitcher(app)
+            SheetScrimHost()
 
             app.sheetItem?.let { item -> ItemActionsSheet(app, item) { app.sheetItem = null } }
             app.saveTarget?.let { video -> SaveToPlaylistSheet(app, video) { app.saveTarget = null } }

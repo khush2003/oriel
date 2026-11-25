@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import app.oriel.ui.glass.backdrop.Backdrop
+import app.oriel.ui.glass.backdrop.backdrops.emptyBackdrop
 import app.oriel.ui.glass.backdrop.drawBackdrop
 import app.oriel.ui.glass.backdrop.effects.blur
 import app.oriel.ui.glass.backdrop.effects.colorControls
@@ -39,6 +40,8 @@ fun isGlassSupported(sdkInt: Int = Build.VERSION.SDK_INT): Boolean = sdkInt >= B
 private const val BLUR_RADIUS_DP = 8f
 private const val LENS_DP = 24f
 private const val SURFACE_OPACITY = 0.4f
+/** The tint under a panel of text: the page still colours it, and no longer competes with the words. */
+private const val PANEL_SURFACE_OPACITY = 0.72f
 
 /** The backdrop is recorded and processed at a third of the resolution; the blur hides the upscale. */
 private const val GLASS_RESOLUTION_SCALE = 0.33f
@@ -77,19 +80,22 @@ fun backdropWanted(): Boolean = LocalLiquidGlassEnabled.current || (!LocalReduce
  * theme-matched tint); with glass off, frosted glass (the page blurred deep
  * under the surface colour, no lens, no rim light); under "reduce
  * transparency", a solid surface. Always with the 0.5dp edge. [shape] must be
- * corner-based: the lens throws for anything else.
+ * corner-based: the lens throws for anything else. [panel] is glass that's read from rather
+ * than tapped, a card of rows: blurred deeper and tinted heavier than the bars,
+ * so its text holds over anything.
  */
 @Composable
-fun Modifier.glassSurface(shape: CornerBasedShape): Modifier {
+fun Modifier.glassSurface(shape: CornerBasedShape, panel: Boolean = false): Modifier {
     val backdrop = LocalAppBackdrop.current
     if (backdrop == null || (!LocalLiquidGlassEnabled.current && LocalReduceBlur.current)) {
         return clip(shape).background(glassFallbackColor(), shape).border(GLASS_EDGE_WIDTH, glassEdgeColor(), shape)
     }
     if (!LocalLiquidGlassEnabled.current) return frostedSurface(backdrop, shape)
     val density = LocalDensity.current
-    val blurPx = with(density) { BLUR_RADIUS_DP.dp.toPx() } * GLASS_RESOLUTION_SCALE
+    val blurPx = with(density) { (if (panel) FROST_BLUR_DP else BLUR_RADIUS_DP).dp.toPx() } * GLASS_RESOLUTION_SCALE
     val lensPx = with(density) { LENS_DP.dp.toPx() } * GLASS_RESOLUTION_SCALE
     val tint = if (MaterialTheme.colorScheme.surface.luminance() > 0.5f) Color(0xFFFAFAFA) else Color(0xFF121212)
+    val opacity = if (panel) PANEL_SURFACE_OPACITY else SURFACE_OPACITY
     return drawBackdrop(
         backdrop = backdrop,
         shape = { shape },
@@ -100,8 +106,27 @@ fun Modifier.glassSurface(shape: CornerBasedShape): Modifier {
         },
         highlight = { Highlight.Default },
         shadow = { Shadow.Default },
-        onDrawSurface = { drawRect(color = tint.copy(alpha = SURFACE_OPACITY), size = size) },
+        onDrawSurface = { drawRect(color = tint.copy(alpha = opacity), size = size) },
         backdropScale = GLASS_RESOLUTION_SCALE,
+    ).border(GLASS_EDGE_WIDTH, glassEdgeColor(), shape)
+}
+
+/**
+ * A pane on a page: the bars' own rim light and shadow over a light veil ([veil]), with the
+ * page's wash showing through it. Nothing is sampled or blurred: what's behind a pane is a
+ * smooth wash that bending barely changes, and a page holds a dozen of them, redrawn as it
+ * scrolls. Null with liquid glass off; the caller then draws the pane plainly.
+ */
+@Composable
+fun Modifier.paneGlass(shape: CornerBasedShape, veil: Color): Modifier? {
+    if (!LocalLiquidGlassEnabled.current) return null
+    return drawBackdrop(
+        backdrop = emptyBackdrop(),
+        shape = { shape },
+        effects = {},
+        highlight = { Highlight.Default },
+        shadow = { Shadow.Default },
+        onDrawSurface = { drawRect(color = veil, size = size) },
     ).border(GLASS_EDGE_WIDTH, glassEdgeColor(), shape)
 }
 

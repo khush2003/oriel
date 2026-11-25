@@ -20,6 +20,11 @@ import app.oriel.ui.theme.smoothstep
 import kotlinx.coroutines.launch
 import app.oriel.ui.theme.animatedBackground
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.drawBehind
+import app.oriel.ui.components.drawWash
+import app.oriel.ui.theme.accent
+import app.oriel.ui.theme.LocalWash
+import app.oriel.ui.theme.LocalIsDark
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -142,6 +147,8 @@ fun PageScaffold(
     /** Whether the list is at its top, now and each time that changes: a feed holds a background refresh back until it is. */
     onAtTop: ((Boolean) -> Unit)? = null,
     background: Color = MaterialTheme.colorScheme.background,
+    /** A soft wash of the accent behind the page, for pages made of glass panes: glass needs colour to bend. */
+    wash: Boolean = false,
     titleTrailing: (@Composable () -> Unit)? = null,
     leading: (@Composable () -> Unit)? = null,
     actions: (@Composable RowScope.() -> Unit)? = null,
@@ -260,7 +267,10 @@ fun PageScaffold(
     val pull = remember(overscroll) { { iosPullY(overscroll).coerceAtLeast(0f) } }
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     Box(Modifier.fillMaxSize().animatedBackground(background)) {
-        Box(Modifier.fillMaxSize().then(if (glass) Modifier.layerBackdrop(pageBackdrop) else Modifier).animatedBackground(background)) {
+        val washColor = accent()
+        val washStrength = if (wash) LocalWash.current else 0f
+        val washDark = LocalIsDark.current
+        Box(Modifier.fillMaxSize().then(if (glass) Modifier.layerBackdrop(pageBackdrop) else Modifier).animatedBackground(background).drawBehind { drawWash(washColor, washDark, washStrength) }) {
             val list = @Composable { listModifier: Modifier ->
                 LazyColumn(state = state, modifier = listModifier.fillMaxSize(), contentPadding = padding, overscrollEffect = overscroll) {
                     if (hasLargeTitle) item(key = "large-title", contentType = "title") {

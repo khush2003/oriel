@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import app.oriel.R
+import app.oriel.data.Accent
 import app.oriel.data.ThemeMode
 
 /*
@@ -70,6 +71,36 @@ val DestructiveRedLight = Color(0xFFD70015)
 
 /** The segmented control's raised thumb in dark mode (iOS's systemGray). */
 val SegmentThumbDark = Color(0xFF636366)
+
+/** How strong the colour wash behind a page's glass is: 0 for none. */
+val LocalWash = staticCompositionLocalOf { 1f }
+
+/** Dark, a step up from black: what "True black" off shows. */
+private val DimDarkColors = DarkColors.copy(background = Color(0xFF0E0E11), surface = Color(0xFF17171B), surfaceVariant = Color(0xFF232327))
+
+/** The accent the person picked; read its colour with [accent]. */
+val LocalAccent = staticCompositionLocalOf { Accent.ORIEL }
+
+/**
+ * The accent's colour on this theme: brighter on dark, deeper on light, so a tick or a switch
+ * drawn in it reads on either. Buttons and chips stay primary; this is for state.
+ */
+@Composable
+fun accent(): Color = accentColor(LocalAccent.current, LocalIsDark.current)
+
+/** The accent over a video frame or artwork, which is dark whatever the theme. */
+@Composable
+fun accentOnMedia(): Color = accentColor(LocalAccent.current, dark = true)
+
+fun accentColor(accent: Accent, dark: Boolean): Color = when (accent) {
+    Accent.ORIEL -> if (dark) Color(0xFFFF7A59) else Color(0xFFF0653F)
+    Accent.AMBER -> if (dark) Color(0xFFFF9F0A) else Color(0xFFE07B00)
+    Accent.GREEN -> if (dark) Color(0xFF30D158) else Color(0xFF248A3D)
+    Accent.BLUE -> if (dark) Color(0xFF0A84FF) else Color(0xFF0071E3)
+    Accent.INDIGO -> if (dark) Color(0xFF7D7AFF) else Color(0xFF5856D6)
+    Accent.PINK -> if (dark) Color(0xFFFF6482) else Color(0xFFD9336B)
+    Accent.GRAPHITE -> if (dark) Color.White else Color.Black
+}
 
 /** The "reduce animation" switch: springs snap, crossfades drop. */
 val LocalReduceAnimation = staticCompositionLocalOf { false }
@@ -141,6 +172,9 @@ fun OrielTheme(
     liquidGlass: Boolean = true,
     liquidMotion: Boolean = false,
     forceDark: Boolean = false,
+    accent: Accent = Accent.ORIEL,
+    wash: Float = 1f,
+    trueBlack: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val dark = forceDark || when (mode) {
@@ -149,9 +183,11 @@ fun OrielTheme(
         ThemeMode.LIGHT -> false
     }
     SystemBarIcons(dark)
-    MaterialTheme(colorScheme = if (dark) DarkColors else LightColors, typography = OrielTypography) {
+    MaterialTheme(colorScheme = if (!dark) LightColors else if (trueBlack) DarkColors else DimDarkColors, typography = OrielTypography) {
         CompositionLocalProvider(
             LocalIsDark provides dark,
+            LocalAccent provides accent,
+            LocalWash provides wash,
             androidx.compose.foundation.LocalIndication provides remember(dark) { PressHighlight(pressGlow(dark), strength = ROW_PRESS_STRENGTH, wash = rowWash(dark)) },
             LocalReduceAnimation provides reduceAnimation,
             // Never under Reduce motion, the app's or the system's (animations off in Developer options or Accessibility).

@@ -89,6 +89,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import app.oriel.ui.glass.LocalAppBackdrop
+import app.oriel.ui.glass.glassSurface
 import app.oriel.ui.glass.backdrop.drawPlainBackdrop
 import app.oriel.ui.glass.backdrop.effects.blur
 import app.oriel.ui.glass.isGlassSupported
@@ -290,7 +291,6 @@ fun <T : Any> HeldContextMenu(
 
     val dark = LocalIsDark.current
     val plate = (if (dark) Color.Black else Color.White).copy(alpha = if (reduceBlur) 0.85f else 0.5f)
-    val menuFill = if (dark) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (reduceBlur) 0.98f else 0.86f) else Color.White.copy(alpha = if (reduceBlur) 0.98f else 0.86f)
     val hairline = if (dark) Color.White.copy(alpha = 0.10f) else Color.Black.copy(alpha = 0.06f)
     val scrimColor = when {
         reduceBlur && dark -> Color.Black.copy(alpha = 0.62f)
@@ -299,7 +299,7 @@ fun <T : Any> HeldContextMenu(
         else -> Color.Black.copy(alpha = 0.10f)
     }
     val cardShape = RoundedCornerShape(20.dp)
-    val menuShape = RoundedCornerShape(16.dp)
+    val menuShape = RoundedCornerShape(22.dp)
     val platePadding = 8.dp
     val insets = WindowInsets.safeDrawing
     var overlayOffset by remember { mutableStateOf(Offset.Zero) }
@@ -340,9 +340,7 @@ fun <T : Any> HeldContextMenu(
             Column(
                 Modifier
                     .pointerInput(Unit) {}
-                    .clip(menuShape)
-                    .background(menuFill)
-                    .border(0.5.dp, hairline, menuShape)
+                    .glassSurface(menuShape, panel = true)
                     .verticalScroll(rememberScrollState())
                     .graphicsLayer {
                         // The rows come in as the menu grows, so it never shows as an empty slab.
