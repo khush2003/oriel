@@ -58,6 +58,18 @@ link targets, documented script entry points and the targeted test-class paths; 
 prove the prose stays accurate or that every Gradle command works. Always run `scripts/verify.sh`
 before handoff, even if a targeted test passes. None of these commands enable live tests.
 
+Live tests and probes are opt-in Gradle properties:
+
+| Property | Effect |
+| --- | --- |
+| `-Plive=true` | Runs the tests that talk to YouTube (`*LiveTest`, `LiveAppTest`, `AdaptivePlaybackTest`, `PlaybackQualityTest`, `SabrPlaybackTest`). |
+| `-Pprobe=true` | With `-Plive=true`, runs the `*ProbeTest` classes, which print measurements and assert nothing. |
+| `-Pids=a,b` | The video IDs those tests play. |
+| `-Plink=URL` | The link `LiveAppTest.sharedLink` opens. |
+| `-Pframes=true` | Runs the frame-strip captures (`LiquidMotionStripTest`, `LiquidAppStripTest`). |
+
+In `core`, a live test or probe that wasn't opted into returns early and is reported as passed.
+
 ## Device smoke test
 
 Use a test phone or emulator with network access. For agent-driven interaction, use the host's

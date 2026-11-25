@@ -2,7 +2,7 @@
 
 A design mock for a "completely liquid" Oriel: every interaction morphs, stretches, merges and
 splits like fluid, follows the finger, and settles on springs that keep the finger's speed. It is
-an experiment to judge the feel before touching the Compose code, not a spec.
+the reference for the liquid motion in `ui/theme/Liquid.kt`, where comments call it "the mock".
 
 ## Open it
 

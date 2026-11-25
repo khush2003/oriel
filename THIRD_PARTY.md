@@ -21,7 +21,7 @@ each under its own licence; full texts are in `LICENSES/` or linked.
 | Coil | Apache-2.0 |
 | Ktor, kotlinx.serialization, kotlinx.coroutines | Apache-2.0 |
 | OkHttp | Apache-2.0 |
-| quickjs-kt (unit tests only, not shipped in the app) | Apache-2.0 |
+| quickjs-kt, which InnerTubeX runs YouTube's player script with (bundles QuickJS, MIT) | Apache-2.0 |
 
 ## Fonts
 

@@ -36,7 +36,7 @@ Labels are defined in [`.github/labels.yml`](../.github/labels.yml) and synced b
 "This video doesn't play" is the most common report, and is usually YouTube refusing the client or
 the network (bot checks, region locks, age gates, music rights). Ask for:
 - the video link, the app version, and whether it plays on youtube.com from the same network;
-- the **problem report** (Settings › About › Share problem report), which holds the error without
+- the **problem report** (Settings › About › Report a problem), which holds the error without
   any URLs or cookies.
 
 If YouTube is refusing every ordinary client, label `status: upstream`. Oriel won't work around bot
