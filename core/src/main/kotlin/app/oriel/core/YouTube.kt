@@ -51,10 +51,6 @@ import io.ktor.http.HttpHeaders
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
@@ -73,19 +69,6 @@ import java.io.IOException
 import java.io.InterruptedIOException
 import java.security.MessageDigest
 import kotlin.random.Random
-
-class YTException(val status: Int, message: String) : Exception(message)
-
-/** An HLS master playlist and the user agent its playlists and segments are fetched with. */
-data class AdaptiveManifest(val url: String, val userAgent: String)
-
-/** A caption track as the player lists it; [url] serves it as YouTube's json3 timed text. */
-data class CaptionTrack(val languageCode: String, val name: String, val isAuto: Boolean, val url: String)
-
-data class Cue(val startMs: Long, val endMs: Long, val text: String)
-
-/** Where a link leads; exactly one of video, browse (channel) or playlist is the destination. */
-data class ResolvedUrl(val videoId: String? = null, val browseId: String? = null, val params: String? = null, val playlistId: String? = null)
 
 /**
  * YouTube, as the app sees it: typed pages in, typed actions out.
@@ -849,70 +832,6 @@ class YouTube(
             is Playlist -> "https://www.youtube.com/playlist?list=${item.id}"
             is app.oriel.core.model.Channel -> "https://www.youtube.com/channel/${item.id}"
             is app.oriel.core.model.Post -> "https://www.youtube.com/post/${item.id}"
-        }
-    }
-}
-
-/** YouTube's topic channels, which stand in for the signed-out home. */
-enum class Topic(val title: String, val browseId: String) {
-    MUSIC("Music", "UC-9-kyTW8ZkZNDHQJ6FgpwQ"),
-    GAMING("Gaming", "UCOpNcN46UbXVtpKMrmU4Abg"),
-    NEWS("News", "UCYfdidRxbB8Qhf0Nx7ioOYw"),
-    SPORTS("Sports", "UCEgdi0XIXXZ-qJOFPf4JSKw"),
-    LEARNING("Learning", "UCtFRv9O2AHqOZjjynzrv-xg"),
-    LIVE("Live", "UC4R8DWoMoI7CAwX8_LjQHig"),
-    FASHION("Fashion & Beauty", "UCrpQ4p1Ql_hG8rKXIKM1MOQ"),
-}
-
-/**
- * A small LRU of parsed pages with per-entry expiry and in-flight de-duplication.
- *
- * A load runs on the cache's own scope, not its first caller's: when that
- * caller goes away (its screen closed, its search superseded), the others
- * waiting on the same page still get it, and it's still kept for next time.
- */
-internal class PageCache(private val capacity: Int) {
-    private class Entry(val value: Any?, val expiresAt: Long)
-
-    private val map = object : LinkedHashMap<String, Entry>(capacity, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Entry>?) = size > capacity
-    }
-    private val lock = Any()
-    private val inflight = HashMap<String, Deferred<Any?>>()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    /** Bumped by [clear], so a load begun before it (another account, another locale) isn't kept after. */
-    private var generation = 0
-
-    @Suppress("UNCHECKED_CAST")
-    suspend fun <T> get(key: String, ttlMs: Long, load: suspend () -> T): T {
-        val deferred = synchronized(lock) {
-            map[key]?.let { if (it.expiresAt > System.currentTimeMillis()) return it.value as T else map.remove(key) }
-            inflight[key] ?: run {
-                val started = generation
-                // The lock is held until this is registered, so the load's own removal below comes after.
-                lateinit var pending: Deferred<Any?>
-                pending = scope.async(start = CoroutineStart.LAZY) {
-                    try {
-                        load().also { value ->
-                            synchronized(lock) { if (generation == started && inflight[key] === pending) map[key] = Entry(value, System.currentTimeMillis() + ttlMs) }
-                        }
-                    } finally {
-                        synchronized(lock) { if (inflight[key] === pending) inflight.remove(key) }
-                    }
-                }
-                pending.also { inflight[key] = it; it.start() }
-            }
-        }
-        return deferred.await() as T
-    }
-
-    fun remove(key: String) { synchronized(lock) { map.remove(key); inflight.remove(key) } }
-    fun removeWhere(predicate: (String) -> Boolean) { synchronized(lock) { map.keys.removeAll(predicate); inflight.keys.removeAll(predicate) } }
-    fun clear() {
-        synchronized(lock) {
-            generation++
-            map.clear()
-            inflight.clear()
         }
     }
 }

@@ -79,17 +79,6 @@
     </issue>
 
     <issue
-        id="UnsafeOptInUsageError"
-        message="This declaration is opt-in and its usage should be marked with `@androidx.media3.common.util.UnstableApi` or `@OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)`"
-        errorLine1="    androidx.compose.runtime.LaunchedEffect(Unit) { cacheBytes = withContext(Dispatchers.IO) { runCatching { graph.caches.stream.cacheSpace }.getOrNull() } }"
-        errorLine2="                                                                                                                                 ~~~~~~~~~~">
-        <location
-            file="src/main/java/app/oriel/ui/screens/SettingsScreen.kt"
-            line="425"
-            column="130"/>
-    </issue>
-
-    <issue
         id="ContextCastToActivity"
         message="LocalContext should not be cast to Activity, use LocalActivity instead"
         errorLine1="            val activity = LocalContext.current as Activity"
@@ -112,17 +101,6 @@
     </issue>
 
     <issue
-        id="ModifierParameter"
-        message="Modifier parameter should be the first optional parameter"
-        errorLine1="fun SkeletonLine(widthFraction: Float, height: Dp = 14.dp, modifier: Modifier = Modifier) {"
-        errorLine2="                                                           ~~~~~~~~">
-        <location
-            file="src/main/java/app/oriel/ui/components/Controls.kt"
-            line="959"
-            column="60"/>
-    </issue>
-
-    <issue
         id="ExportedService"
         message="Exported service does not require permission"
         errorLine1="        &lt;service"
@@ -138,61 +116,6 @@
         message="This folder configuration (`v26`) is unnecessary; `minSdkVersion` is 26. Merge all the resources in this folder into `mipmap-anydpi`.">
         <location
             file="src/main/res/mipmap-anydpi-v26"/>
-    </issue>
-
-    <issue
-        id="AutoboxingStateCreation"
-        message="Prefer `mutableFloatStateOf` instead of `mutableStateOf`"
-        errorLine1="    var scrubAt by remember { mutableStateOf(0f) }"
-        errorLine2="                              ~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/app/oriel/ui/screens/ShortsScreen.kt"
-            line="653"
-            column="31"/>
-    </issue>
-
-    <issue
-        id="AutoboxingStateCreation"
-        message="Prefer `mutableIntStateOf` instead of `mutableStateOf`"
-        errorLine1="    var attempt by remember { mutableStateOf(0) }"
-        errorLine2="                              ~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/app/oriel/ui/screens/ShortsScreen.kt"
-            line="979"
-            column="31"/>
-    </issue>
-
-    <issue
-        id="AutoboxingStateCreation"
-        message="Prefer `mutableIntStateOf` instead of `mutableStateOf`"
-        errorLine1="    var repliesAttempt by remember { mutableStateOf(0) }"
-        errorLine2="                                     ~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/app/oriel/ui/screens/ShortsScreen.kt"
-            line="980"
-            column="38"/>
-    </issue>
-
-    <issue
-        id="AutoboxingStateCreation"
-        message="Prefer `mutableIntStateOf` instead of `mutableStateOf`"
-        errorLine1="    var attempt by remember { mutableStateOf(0) }"
-        errorLine2="                              ~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/app/oriel/ui/screens/ShortsScreen.kt"
-            line="1075"
-            column="31"/>
-    </issue>
-
-    <issue
-        id="AutoboxingStateCreation"
-        message="Prefer `mutableIntStateOf` instead of `mutableStateOf`"
-        errorLine1="    var moreAttempt by remember { mutableStateOf(0) }"
-        errorLine2="                                  ~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/app/oriel/ui/screens/ShortsScreen.kt"
-            line="1078"
-            column="35"/>
     </issue>
 
     <issue

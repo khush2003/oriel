@@ -220,7 +220,7 @@ fun CollectionHeader(
 @Composable
 private fun LinePlaceholder(style: androidx.compose.ui.text.TextStyle, widthFraction: Float, modifier: Modifier = Modifier) {
     val height = with(androidx.compose.ui.platform.LocalDensity.current) { style.lineHeight.toDp() }
-    Box(modifier.height(height), contentAlignment = Alignment.Center) { SkeletonLine(widthFraction, height * 0.7f) }
+    Box(modifier.height(height), contentAlignment = Alignment.Center) { SkeletonLine(widthFraction, height = height * 0.7f) }
 }
 
 @Composable

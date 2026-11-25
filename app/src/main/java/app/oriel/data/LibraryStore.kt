@@ -6,7 +6,6 @@ import app.oriel.core.model.Video
 import app.oriel.util.AppJson
 import app.oriel.util.AtomicJson
 import app.oriel.util.Schema
-import app.oriel.util.SkipBadList
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,52 +26,14 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.serialization.EncodeDefault
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
 import java.io.File
 import java.io.IOException
-import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.cancellation.CancellationException
-
-// Library lists skip entries they can't read instead of losing the whole library over one.
-object SkipBadVideos : SkipBadList<Video>(Video.serializer(), "videos")
-object SkipBadChannels : SkipBadList<Channel>(Channel.serializer(), "channels")
-object SkipBadPlaylists : SkipBadList<Playlist>(Playlist.serializer(), "playlists")
-object SkipBadWatchEntries : SkipBadList<WatchEntry>(WatchEntry.serializer(), "history")
-object SkipBadLocalPlaylists : SkipBadList<LocalPlaylist>(LocalPlaylist.serializer(), "local playlists")
-
-@OptIn(ExperimentalSerializationApi::class)
-@Serializable
-data class LocalPlaylist(
-    // Always written: a default left out of the file would be made anew, differently, on each read.
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS) val id: String = UUID.randomUUID().toString(),
-    val name: String,
-    @Serializable(with = SkipBadVideos::class) val videos: List<Video> = emptyList(),
-    @EncodeDefault(EncodeDefault.Mode.ALWAYS) val createdAt: Long = System.currentTimeMillis(),
-)
-
-@Serializable
-data class WatchEntry(val video: Video, val watchedAt: Long)
-
-@Serializable
-data class LibraryState(
-    @Serializable(with = SkipBadVideos::class) val liked: List<Video> = emptyList(),
-    val dislikedIds: Set<String> = emptySet(),
-    @Serializable(with = SkipBadVideos::class) val watchLater: List<Video> = emptyList(),
-    @Serializable(with = SkipBadChannels::class) val subscriptions: List<Channel> = emptyList(),
-    @Serializable(with = SkipBadPlaylists::class) val savedPlaylists: List<Playlist> = emptyList(),
-    @Serializable(with = SkipBadLocalPlaylists::class) val localPlaylists: List<LocalPlaylist> = emptyList(),
-    @Serializable(with = SkipBadWatchEntries::class) val history: List<WatchEntry> = emptyList(),
-    /** Where each video was left, in ms; finished videos are dropped. */
-    val positions: Map<String, Long> = emptyMap(),
-    val searchHistory: List<String> = emptyList(),
-)
 
 /**
  * The on-device library: likes, Watch later, subscriptions, playlists,
