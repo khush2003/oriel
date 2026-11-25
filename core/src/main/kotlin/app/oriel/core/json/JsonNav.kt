@@ -36,7 +36,6 @@ fun JsonElement?.at(vararg keys: Any): JsonElement? {
     return cur
 }
 
-val JsonElement?.obj: JsonObject? get() = this as? JsonObject
 val JsonElement?.arr: List<JsonElement> get() = (this as? JsonArray) ?: emptyList()
 val JsonElement?.string: String? get() = (this as? JsonPrimitive)?.takeIf { it.isString || it.contentOrNull != null }?.contentOrNull
 val JsonElement?.int: Int? get() = (this as? JsonPrimitive)?.let { it.intOrNull ?: it.contentOrNull?.toIntOrNull() }
@@ -57,8 +56,6 @@ val JsonElement?.text: String?
         this["content"].string?.let { return it }
         return this.string
     }
-
-val JsonElement?.runs: List<JsonElement> get() = this["runs"].arr
 
 /** Depth-first search for every value stored under [key], anywhere below this node. */
 fun JsonElement.findAll(key: String, limit: Int = Int.MAX_VALUE): List<JsonElement> {

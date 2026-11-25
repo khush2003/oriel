@@ -40,7 +40,7 @@ fun isGlassSupported(sdkInt: Int = Build.VERSION.SDK_INT): Boolean = sdkInt >= B
 private const val BLUR_RADIUS_DP = 8f
 private const val LENS_DP = 24f
 private const val SURFACE_OPACITY = 0.4f
-/** The tint under a panel of text: the page still colours it, and no longer competes with the words. */
+/** The tint under a panel of text: the page still colours it without competing with the words. */
 private const val PANEL_SURFACE_OPACITY = 0.72f
 
 /** The backdrop is recorded and processed at a third of the resolution; the blur hides the upscale. */
@@ -75,14 +75,10 @@ private const val FROST_DARK_ALPHA = 0.8f
 fun backdropWanted(): Boolean = LocalLiquidGlassEnabled.current || (!LocalReduceBlur.current && isGlassSupported())
 
 /**
- * A floating surface: liquid glass sampling [LocalAppBackdrop] (vibrancy,
- * blur, and on API 33+ lens refraction with chromatic dispersion, under a
- * theme-matched tint); with glass off, frosted glass (the page blurred deep
- * under the surface colour, no lens, no rim light); under "reduce
- * transparency", a solid surface. Always with the 0.5dp edge. [shape] must be
+ * A floating surface: liquid glass sampling [LocalAppBackdrop]; with glass off, frosted glass (no
+ * lens, no rim light); under "reduce transparency", a solid surface. [shape] must be
  * corner-based: the lens throws for anything else. [panel] is glass that's read from rather
- * than tapped, a card of rows: blurred deeper and tinted heavier than the bars,
- * so its text holds over anything.
+ * than tapped: blurred deeper and tinted heavier than the bars, so its text holds over anything.
  */
 @Composable
 fun Modifier.glassSurface(shape: CornerBasedShape, panel: Boolean = false): Modifier {

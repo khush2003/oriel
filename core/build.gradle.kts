@@ -17,15 +17,14 @@ dependencies {
     api("com.squareup.okhttp3:okhttp:5.5.0")
 
     testImplementation(kotlin("test"))
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
 }
 
 tasks.test {
     useJUnitPlatform()
     // Compiles to 17 for Android, but InnerTubeX is Java 21 bytecode, so the test JVM must be 21.
     javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) })
-    // Live tests hit YouTube; opt in with -Plive so offline builds stay green.
     project.findProperty("dumps")?.let { systemProperty("oriel.dumps", it.toString()) }
+    // Live tests hit YouTube; opt in with -Plive=true so offline builds stay green.
     systemProperty("oriel.live", project.findProperty("live")?.toString() ?: "false")
     project.findProperty("streams")?.let { systemProperty("oriel.streams", it.toString()) }
     systemProperty("oriel.probe", project.findProperty("probe")?.toString() ?: "false")

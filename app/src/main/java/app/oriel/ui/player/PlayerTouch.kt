@@ -55,7 +55,7 @@ internal fun exitMotion(exit: ExitTransition): ExitTransition = if (LocalReduceA
 /**
  * Where a pointer is on the screen, for a drag on something the drag itself moves. Pointer
  * positions come in the moving node's own coordinates, so as it follows the finger each move
- * reads short, and the picture (or panel) fell behind the finger by as much as it had moved.
+ * reads short.
  */
 internal class ScreenPosition {
     internal var coordinates: LayoutCoordinates? = null

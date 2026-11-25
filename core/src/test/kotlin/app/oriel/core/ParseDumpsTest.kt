@@ -16,7 +16,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * Parses saved InnerTube responses (see /tmp/ytweb-tools), so parser changes
+ * Parses saved InnerTube responses, so parser changes
  * can be checked without the network. Skips when the dumps aren't present.
  */
 class ParseDumpsTest {

@@ -60,7 +60,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 val LocalAppState = staticCompositionLocalOf<AppState> { error("No AppState") }
 
-/** The player sheet: 0 is the mini player, 1 the full watch page. Fullscreen is landscape video only. */
+/** The player sheet: 0 is the collapsed window, 1 the full watch page. Fullscreen is landscape video only. */
 @Stable
 class PlayerSheetState(private val scope: CoroutineScope) {
     // Bounded: a hard flick lands on the dock or the top instead of carrying past it.
@@ -160,7 +160,6 @@ class AppState(
     var sheetItem by mutableStateOf<Item?>(null)
     var saveTarget by mutableStateOf<Video?>(null)
     var alert by mutableStateOf<AlertSpec?>(null)
-    var shareTarget by mutableStateOf<Item?>(null)
     var report by mutableStateOf<ReportRequest?>(null)
     /** A playlist on this device being renamed from its menu (its id is "local:…"). */
     var renameTarget by mutableStateOf<Playlist?>(null)
@@ -209,7 +208,7 @@ class AppState(
         if (expand) sheet.expand()
         if (video.title.isNotBlank()) return connection.playVideo(video, context, positionMs)
         // A bare id from a link: the stream warms up while the page fills in the title and
-        // channel, so the mini player, notification and history never show a blank video.
+        // channel, so the collapsed window, notification and history never show a blank video.
         connection.pause()
         connection.warm(video)
         scope.launch {
@@ -392,9 +391,7 @@ class AppState(
             Tab.YOU -> YouRoute
         }
         // Search sits over the tabs without being part of one: leaving it for any tab saves it on
-        // its own, under Search's destination, which is what openSearch restores. (Saved under
-        // Home's, as a tab switch saves, Home restored Search straight back: the tap seemed to do
-        // nothing; and a later switch saved over it.)
+        // its own, under Search's destination, which is what openSearch restores.
         val search = nav.currentBackStackEntry?.takeIf { it.destination.hasRoute(SearchRoute::class) }
         search?.let { nav.popBackStack(it.destination.id, inclusive = true, saveState = true) }
         if (search == null && nav.currentBackStackEntry?.tabRoot() == tab) {

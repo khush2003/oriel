@@ -52,30 +52,10 @@ import kotlin.math.min
 import kotlin.math.sign
 
 /*
- * iOS's press feedback in place of Material's ripple, in two flavours, picked by LocalLiquidMotion
- * as each press starts.
- *
- * Liquid motion off (the default), three kinds on the same springs (PressSpring in,
- * ReleaseSpring out) so every control in the app answers a finger alike:
- *  - rows wash: a flat highlight over the cell, as UITableView's ([PressHighlight.wash], the
- *    theme's LocalIndication);
- *  - cards and tiles give: they shrink a little under the finger ([CardPress], [TilePress]);
- *  - glyph and text buttons dim, as UIButton's do ([GlyphPress]).
- * A press that turns into a scroll arrives as a Cancel and springs straight back; a quick tap
- * still shows, held for at least [MIN_SHOWN_MS].
- *
- * Liquid motion on, the mock's `pressable` (design/liquid/index.html): a pressed surface dents
- * toward the finger, scaled about the touch point by up to 7% (less along the axis the finger
- * is off-centre on) and nudged 2.5 px toward it, lit by a radial glow under it; while held it
- * stretches after the finger (a rubber band, 22%) and sinks a further 5% as the long press nears; let go, it wobbles like jelly, kicked at 0.9
- * across and −0.63 down on Sp.Jelly. [PressHighlight.strength] scales it all, as the mock's does
- * per kind (cards 0.45, chips 0.7, rows 0.25, buttons 1).
- *
- * Either way a press starts with the clickable's Press, not the finger's down: in a scrolling
- * list that comes a tap-timeout late (at once outside one), so the start of a scroll never
- * squishes what it starts on. A press that becomes a scroll, or whose finger wanders past the
- * touch slop, settles back without the kick. Draw- or layer-only: pressing never recomposes
- * anything. Reduce motion dims instead.
+ * iOS press feedback instead of a ripple. Classic: rows wash, cards and tiles shrink, glyphs dim.
+ * Liquid (the mock's `pressable`): dents toward the finger, stretches after it, wobbles on release.
+ * Starts at the clickable's Press, so a scroll's first moment never squishes; a cancel settles
+ * without the kick. Draw/layer-only.
  */
 
 /** How long a tap's feedback is held at the least, so a quick tap still shows. */
@@ -420,7 +400,6 @@ private class DrawPressNode(source: InteractionSource, h: PressHighlight, cancel
         }
     }
 
-    /** Liquid motion off: the give, dim and wash, as before liquid motion. */
     private fun ContentDrawScope.drawClassic(p: Float) {
         val s = 1f + (scale - 1f) * p
         val a = 1f + (dim - 1f) * p

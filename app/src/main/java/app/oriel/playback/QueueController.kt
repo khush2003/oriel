@@ -327,7 +327,7 @@ class QueueController(
 
     /**
      * Restores the last session's queue, paused where it was left. It isn't
-     * prepared until it's played: preparing would buffer up to two minutes of
+     * prepared until it's played: preparing would buffer up to a minute of
      * the old video at launch, competing with the first screen for the network
      * and spending data on a video that may never be resumed.
      *

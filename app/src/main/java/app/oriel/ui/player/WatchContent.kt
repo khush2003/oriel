@@ -128,18 +128,18 @@ import app.oriel.core.model.SortOption
 private enum class Panel { None, Description, Comments }
 
 /**
- * The watch page under the video: title and stats, the channel, the row of
- * actions, the comments teaser, chapters, the playlist being played, and
- * what to watch next. Description and comments open as panels over it,
- * leaving the video playing above.
- */
-/**
  * The watch page's two panes on a wide landscape screen: the page lays out as the video's
  * column ([primaryWidth] wide, the picture [videoHeight] tall above its details) beside a column
  * of what to watch next.
  */
 class WatchSplit(val videoHeight: androidx.compose.ui.unit.Dp, val primaryWidth: androidx.compose.ui.unit.Dp)
 
+/**
+ * The watch page under the video: title and stats, the channel, the row of
+ * actions, the comments teaser, chapters, the playlist being played, and
+ * what to watch next. Description and comments open as panels over it,
+ * leaving the video playing above.
+ */
 @Composable
 fun WatchContent(app: AppState, palette: ArtworkPalette, modifier: Modifier = Modifier, split: WatchSplit? = null) {
     val state by app.watch.state.collectAsState()
@@ -1025,7 +1025,7 @@ internal fun CommentRow(app: AppState, comment: Comment, palette: ArtworkPalette
     val avatar = if (indent) 26.dp else 34.dp
     val start = if (indent) 52.dp else PAGE_GUTTER
     // The replies chip's 44dp target makes its line 16dp taller than the chip's 28; the space
-    // above and below it gives that back, so the row is the height it was.
+    // above and below it gives that back.
     val hasReplies = onReplies != null && comment.replyCount > 0 && comment.repliesToken != null
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(start = start, end = PAGE_GUTTER, top = 14.dp, bottom = if (hasReplies) 4.dp else 12.dp)) {

@@ -17,4 +17,4 @@
 "area: ci":
   - changed-files: [{ any-glob-to-any-file: [".github/**", "scripts/**", "gradle/**", "*.gradle.kts"] }]
 "type: docs":
-  - changed-files: [{ all-globs-to-all-files: ["**/*.md", "docs/**", "LICENSES/**"] }]
+  - changed-files: [{ any-glob-to-all-files: ["{**/*.md,docs/**,LICENSES/**}"] }]

@@ -74,7 +74,7 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          [ -n "$KEYSTORE_BASE64" ] || { echo "KEYSTORE_BASE64 is not set; refusing to publish a debug-signed release"; exit 1; }
+          [ -n "$KEYSTORE_BASE64" ] || { echo "KEYSTORE_BASE64 is not set; refusing to publish an unsigned release"; exit 1; }
           # Outside the checkout, readable only by this user, so nothing can pick it up as a build input or artifact.
           umask 077
           dir="$RUNNER_TEMP/signing"

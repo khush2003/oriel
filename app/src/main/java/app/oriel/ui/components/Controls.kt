@@ -402,7 +402,6 @@ private fun LiquidTabStrip(titles: List<String>, selected: Int, onSelect: (Int) 
         val pad = with(density) { 40.dp.toPx() }
         val gutter = with(density) { inset.toPx() }
         val view = scroll.viewportSize.toFloat()
-        // The scroll runs from the start edge: from the right, right to left.
         val content = scroll.maxValue + view
         val start = if (rtl) content - (gutter + target.left + target.width) else gutter + target.left
         when {
@@ -530,7 +529,6 @@ fun ActionPill(
     }
 }
 
-/** Subscribe: the filled inverse pill; Subscribed: the quiet veil with a bell. */
 @Composable
 fun SubscribeButton(subscribed: Boolean, onClick: () -> Unit) = SubscribePill(subscribed, onClick)
 
@@ -769,7 +767,6 @@ private fun <T> LiquidSegmentedControl(options: List<T>, selected: T, label: (T)
     val path = remember { Path() }
     // The unchosen segments' presses dim their label.
     val presses = remember(options.size) { List(options.size) { MutableInteractionSource() } }
-    // At least 34dp, and as tall as the labels at a large font size.
     Box(
         modifier.fillMaxWidth().heightIn(min = 34.dp).height(IntrinsicSize.Min).clip(RoundedCornerShape(9.dp)).background(track).padding(2.dp)
             .onSizeChanged { inner = it }
@@ -966,7 +963,7 @@ fun SkeletonLine(widthFraction: Float, height: Dp = 14.dp, modifier: Modifier = 
 // ---- notice ----------------------------------------------------------------------------------
 
 /**
- * BitChord's QueueActionNotice: a short-lived glass banner over the bars. Announced politely as
+ * BitChord's QueueActionNotice: a short-lived banner. Announced politely as
  * it arrives. On light, where the card is the page's own white, a soft shadow sets it off.
  */
 @Composable

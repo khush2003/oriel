@@ -24,12 +24,7 @@ enum class VideoQuality(val height: Int?, val label: String) {
     @SerialName("AUTO") AUTO(null, "Auto"),
     @SerialName("P144") P144(144, "144p"), @SerialName("P240") P240(240, "240p"), @SerialName("P360") P360(360, "360p"),
     @SerialName("P480") P480(480, "480p"), @SerialName("P720") P720(720, "720p"), @SerialName("P1080") P1080(1080, "1080p"),
-    @SerialName("P1440") P1440(1440, "1440p"), @SerialName("P2160") P2160(2160, "2160p (4K)");
-
-    companion object {
-        val fixed = entries.filter { it != AUTO }
-        fun of(height: Int?): VideoQuality = fixed.firstOrNull { it.height == height } ?: AUTO
-    }
+    @SerialName("P1440") P1440(1440, "1440p"), @SerialName("P2160") P2160(2160, "2160p (4K)"),
 }
 
 @Serializable
@@ -162,11 +157,8 @@ class Settings(private val context: Context) {
     }
 
     /**
-     * The height to play at on this network: the user's choice, or what Auto
-     * means for it. Auto is the screen's own resolution on Wi-Fi, as far as
-     * the hardware decoders keep up (1440p on a QHD phone, 1080p on most), on
-     * any network, and 480p with the data saver. Mobile data isn't capped by
-     * resolution: the adaptive picker already stays within what the link carries.
+     * The chosen height for this network. Auto is the screen's, as far as the decoders keep up,
+     * or 480 with the data saver; the adaptive picker handles the link's speed.
      */
     fun videoHeight(metered: Boolean): Int {
         val s = current

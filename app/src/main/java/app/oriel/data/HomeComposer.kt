@@ -126,10 +126,8 @@ class HomeComposer(private val yt: YouTube, private val library: ActiveLibrary) 
         const val WATCHED_FRACTION = 0.9f
 
         /**
-         * [feed] without the videos in [watched]: what was watched here isn't recommended again, whatever
-         * feed it comes from. A video with a progress bar partway is kept, as that is YouTube's own
-         * "continue watching"; one whose bar is at its end was watched, here or on another device, and
-         * goes like the rest (it used to be kept for having a bar at all). A shelf left empty goes.
+         * [feed] without what was watched here. A partial progress bar is YouTube's own "continue
+         * watching" and stays; one at its end goes. Emptied shelves go.
          */
         fun dropWatched(feed: Feed, watched: Set<String>): Feed = filterVideos(feed) { v ->
             val progress = v.progress
@@ -138,8 +136,7 @@ class HomeComposer(private val yt: YouTube, private val library: ActiveLibrary) 
 
         /**
          * [feed] with each video listed once, where it first appears: YouTube repeats a video across
-         * shelves and from one page of recommendations to the next, and pages were only ever compared
-         * at the seam between two.
+         * shelves and from one page of recommendations to the next.
          */
         fun dropRepeats(feed: Feed): Feed {
             val listed = HashSet<String>()

@@ -113,13 +113,13 @@ class LibraryStore(
     /** Messages for the person when the library couldn't be read as it was. */
     val problems: SharedFlow<String> = _problems.asSharedFlow()
 
+    private val lock = Any()
     /**
      * The file is read on IO, not in Application.onCreate. Until it's in,
      * changes apply to what's shown and are kept here, to be applied again on
      * top of what was read; nothing is written before then, so an early empty
      * state can never overwrite the library.
      */
-    private val lock = Any()
     private val pending = ArrayList<(LibraryState) -> LibraryState>()
     private val loaded = CompletableDeferred<Unit>()
     @Volatile
@@ -130,8 +130,8 @@ class LibraryStore(
     var readOnly = false
         private set
 
-    /** What's on disk now, so [flush] and the debounced saves skip writes that change nothing; null forces the next write. */
     private val writeLock = Any()
+    /** What's on disk now, so [flush] and the debounced saves skip writes that change nothing; null forces the next write. */
     private var savedLibrary: LibraryState? = null
     private var savedPositions: Map<String, Long>? = null
 
@@ -478,12 +478,7 @@ class LibraryStore(
         s.copy(history = history.take(MAX_HISTORY))
     }
 
-    /**
-     * Every video and short in the history, by id: the one answer to "was this watched here",
-     * for feeds, Shorts and autoplay alike. Each used to take its own cut of the history
-     * (the last 30, a copy from when a page loaded, none), and watched videos came back
-     * through whichever looked at less.
-     */
+    /** Every video and short in the history, by id: the one answer to "was this watched here". */
     fun watchedIds(): Set<String> = _state.value.history.mapTo(HashSet()) { it.video.id }
 
     fun removeHistory(videoId: String) = update { s -> s.copy(history = s.history.filterNot { it.video.id == videoId }, positions = s.positions - videoId) }

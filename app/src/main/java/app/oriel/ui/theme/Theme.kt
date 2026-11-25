@@ -59,7 +59,7 @@ private val LightColors = lightColorScheme(
     surfaceContainerHigh = Color(0xFFFFFFFF),
 )
 
-/** YouTube's red, used only where YouTube itself would: the live badge, the progress of a watched video. */
+/** YouTube's red, used only where YouTube itself would: the live badge. */
 val LiveRed = Color(0xFFFF0033)
 
 /** The creator's heart on a comment and the double-tap heart on a Short. */
@@ -102,10 +102,10 @@ fun accentColor(accent: Accent, dark: Boolean): Color = when (accent) {
     Accent.GRAPHITE -> if (dark) Color.White else Color.Black
 }
 
-/** The "reduce animation" switch: springs snap, crossfades drop. */
+/** The "Reduce motion" switch: springs snap, crossfades drop. */
 val LocalReduceAnimation = staticCompositionLocalOf { false }
 
-/** The "reduce dynamic blur" switch: glass turns solid, blurs are skipped. */
+/** The "Reduce transparency" switch: glass turns solid, blurs are skipped. */
 val LocalReduceBlur = staticCompositionLocalOf { false }
 
 /** Whether the floating bars draw liquid glass at all (API 31+ and the setting on). */

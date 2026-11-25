@@ -13,13 +13,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.ui.util.lerp
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.drawscope.clipPath
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.rememberScrollState
@@ -323,7 +316,7 @@ class SearchModel(private val graph: AppGraph, initial: String?, private val sav
 }
 
 /**
- * Search, as YouTube has it: the field pinned at the top and focused on
+ * Search, as YouTube has it: the field focused on
  * arrival, recent searches until you type, YouTube's suggestions with the
  * completion in bold while you do, then results under the result chips.
  * Topics live on Home's chips, so they aren't repeated here.
@@ -353,7 +346,6 @@ fun SearchScreen(initial: String?) {
             .collectLatest { near -> while (near) { if (resultsShown) model.loadMore(); kotlinx.coroutines.delay(1_000) } }
     }
     LaunchedEffect(listState.isScrollInProgress) { if (listState.isScrollInProgress && focused) { focusManager.clearFocus(); keyboard?.hide() } }
-    // Arriving with nothing searched yet means you're here to type, as on YouTube: the field takes focus.
     // Liquid with glass, the field is the tab bar's Search droplet at the bottom, as the mock has it.
     val bottomField = LocalLiquidMotion.current && LocalLiquidGlassEnabled.current && LocalTabBarVisible.current
     // At the bottom the field is the tab bar's, composed a frame or two after this page.
@@ -364,6 +356,7 @@ fun SearchScreen(initial: String?) {
             withFrameNanos { }
         }
     }
+    // Arriving with nothing searched yet means you're here to type, as on YouTube: the field takes focus.
     LaunchedEffect(Unit) { if (state.submitted == null) { focusField(); keyboard?.show() } }
     // Search asked for again while open: back to the top of the results, or into the field.
     val shownAt = remember { System.nanoTime() }
@@ -434,7 +427,7 @@ fun SearchScreen(initial: String?) {
         }
         // A hairline under the bar once content scrolls beneath it, as iOS bars do.
         Box(Modifier.fillMaxWidth().height(0.5.dp).background(if (scrolled) MaterialTheme.colorScheme.outlineVariant else Color.Transparent))
-        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().then(if (bottomField) Modifier.imePadding() else Modifier), contentPadding = pagePadding(LocalMiniPlayerVisible.current, top = 0.dp, withTabBar = LocalTabBarVisible.current, horizontal = layout.inset(kind))) {
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().then(if (bottomField) Modifier.imePadding() else Modifier), contentPadding = pagePadding(top = 0.dp, withTabBar = LocalTabBarVisible.current, horizontal = layout.inset(kind))) {
             when {
                 focused && state.query.isNotBlank() && state.query != state.submitted -> {
                     val typed = state.query.trim()

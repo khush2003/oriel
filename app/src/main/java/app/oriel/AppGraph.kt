@@ -78,7 +78,6 @@ class AppGraph(val context: Context) {
         .connectionPool(ConnectionPool(10, 5, TimeUnit.MINUTES))
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
-        // A dead HTTP/2 connection is noticed within seconds, not at the end of a 20 s read.
         .pingInterval(20, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         // On every hop of every request (redirects included): the session goes to YouTube and Google only.

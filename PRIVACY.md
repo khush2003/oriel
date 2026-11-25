@@ -12,8 +12,9 @@ everything it sends, and to whom.
 - If you sign in: your YouTube session cookie, in the app's private storage, encrypted
   (AES-256-GCM) with a key that stays in the Android Keystore and can't be exported. It's never
   logged, and it never leaves the phone except to YouTube's and Google's own servers.
-- With several accounts (You › Accounts), each account and the Guest keep their own copy of
-  everything above, and each account its own encrypted cookie. Only the account in use sends
+- With several accounts (You › Accounts), each account and the Guest keep their own library
+  (everything in the first item but settings, which are shared), and each account its own
+  encrypted cookie. Only the account in use sends
   requests, with its own cookie and its own visitor ID; the others send nothing. Accounts on the
   same phone still share its network address, so YouTube may be able to tell they're used on one
   device. Removing an account deletes its library and cookie from the phone; signing out deletes
@@ -25,16 +26,25 @@ everything it sends, and to whom.
   yourself, as a GitHub issue you submit in your browser or through the share sheet, and you see
   the full text first.
 
+- Caches, which Settings › Privacy & storage › Clear caches empties: thumbnails, pages you've
+  opened, and the data of videos you played (up to 1 GB unless you change it; never files you
+  can open). Also the queue you were playing, how fast your connection measured, and an update you
+  downloaded.
+
 ## Sent to YouTube (Google)
 
 Oriel talks to YouTube the way its website does: to load feeds, search and play videos,
 and, if you sign in, to read and update your account (likes, subscriptions, playlists, watch
-history). Google's [privacy policy](https://policies.google.com/privacy) applies to that.
+history). The hosts are youtube.com, googlevideo.com (video), ytimg.com, ggpht.com and
+googleusercontent.com (images), and accounts.google.com when you sign in. Signed out, YouTube
+gives the app a visitor ID, as it gives a browser, and Oriel sends it back with later requests.
+Voice search is done by your phone's speech recogniser; Oriel receives only the words.
+Google's [privacy policy](https://policies.google.com/privacy) applies to all of it.
 
 ## Sent to community services (each can be turned off in Settings)
 
 - **SponsorBlock** (sponsor.ajay.app): the first four characters of a hash of the ID of the video
-  you open, never the ID itself. The server answers with the segments of every video whose hash
+  you open, never the ID itself, and the kinds of segment you've chosen to skip. The server answers with the segments of every video whose hash
   starts the same way, and the app picks out the one it's playing.
 - **Return YouTube Dislike** (returnyoutubedislikeapi.com): the ID of the video you open, to fetch
   its dislike count.
@@ -46,7 +56,7 @@ These services see your IP address, as any server you connect to does.
 Official builds look for a newer version of Oriel once a day when the app starts, and when you
 tap Settings › Updates › Check for updates. They ask GitHub's API (api.github.com) for the list
 of Oriel's releases; if you choose to update, the app's file and its checksums are fetched from
-GitHub's download hosts (github.com and objects.githubusercontent.com). These are ordinary
+GitHub's download hosts (github.com and githubusercontent.com). These are ordinary
 requests with no cookies, no account and no identifiers: the only thing they carry about you is
 the app's version, in the User-Agent (`Oriel/1.0.0`). GitHub sees your IP address, as any server
 does. Turn off Settings › Updates › Check automatically to stop the daily check. Builds made from
@@ -69,8 +79,8 @@ analytics service that doesn't store IP addresses or use device identifiers:
 | Search made | whether it was by voice |
 | Crash | sent on the next launch after a crash: whether it was a crash, a freeze (ANR) or a native crash, and the exception's class name (like `IllegalStateException`) |
 
-Each event also carries the app version, Android version, device model, language, and a random
-session ID that changes after an hour without use.
+Each event also carries the app version and build number, Android version, device model, language
+and region, and a random session ID that changes after an hour without use.
 
 It **never** includes what you watch or search for, video or channel IDs, your account,
 stack traces, error messages or problem reports, or anything else that could identify you.

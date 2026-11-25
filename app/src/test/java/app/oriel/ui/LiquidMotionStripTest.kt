@@ -77,7 +77,7 @@ import javax.imageio.ImageIO
 
 /**
  * Frame strips of the liquid interactions, to lay beside the HTML mock's (design/liquid): each
- * one is driven with the same events at the same times as the mock's capture script, the clock
+ * one is driven with the same events at the same times as the mock, the clock
  * held and stepped a frame at a time, and caught at the same instants and crops (in dp, which
  * is the mock's px). Written to /tmp/liquid-compare/app_<name>.png. Only with -Pframes=true:
  * it's a tool for looking, not a check.
@@ -221,7 +221,7 @@ class LiquidMotionStripTest {
         }
     }
 
-    /** Laid out as the mock's stitch.py does: a title, then each frame under its time. */
+    /** A title, then each frame under its time. */
     private fun write(name: String, crop: Rect, scale: Float, shots: List<Pair<Long, BufferedImage>>) {
         val gap = 8; val lab = 22; val head = 28
         val w = gap + shots.sumOf { it.second.width + gap }
@@ -245,7 +245,7 @@ class LiquidMotionStripTest {
         ImageIO.write(out, "png", File(dir, "app_$name.png"))
     }
 
-    // --- the interactions, as the mock's run.js drives them ---
+    // --- the interactions ---
 
     private val tabBand = Rect(0f, 780f, 412f, 915f)
 
@@ -276,7 +276,6 @@ class LiquidMotionStripTest {
         strip("card_press", pad(card, 16f), 1.5f, drag(x, y, 24f, 16f, 150, 200))
     }
 
-    /** On its own: signed out, Home's chip row doesn't show the chosen topic (HomeScreen passes a token where a topic name is wanted). */
     /**
      * The same press with the finger kept inside the touch slop: the mock's (24, 16) drag is
      * taken by Home's list here (a vertical scrollable claims any vertical move past the slop),
@@ -380,12 +379,6 @@ class LiquidMotionStripTest {
     @Test fun collapseDrag() {
         start(setup = { it.sheet.progress.snapTo(1f) })
         strip("collapse_drag", full, 0.5f, drag(206f, 116f, 0f, 420f, 200))
-    }
-
-    /** The player's settings, from its overlay button, as the mock opens chapters from its button. */
-    private fun showControls() {
-        rule.onRoot().performTouchInput { click(Offset(width * 0.5f, 116f * density)) }
-        settle(4)
     }
 
     /**

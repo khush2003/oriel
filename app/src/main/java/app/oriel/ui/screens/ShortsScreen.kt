@@ -193,12 +193,9 @@ class ShortsModel(private val graph: AppGraph, startId: String?, queue: List<Str
     }
 
     /**
-     * The next batch, without the shorts already watched here: the sequence starts over with each
-     * visit, and only remembered what this visit had listed, so the same shorts came round again.
-     * One that's all shorts already listed asks again, and one that fails with shorts showing
-     * waits for the network and tries again: either used to end the feed for good, with nothing
-     * to say so. Batches that are all watched are passed over, [SEEN_BATCHES] of them at most:
-     * past that, shorts seen before are better than none.
+     * The next batch, minus shorts watched here. An all-listed batch asks again; a failure with
+     * shorts showing waits for the network. After [SEEN_BATCHES] all-watched batches, seen shorts
+     * are allowed.
      */
     fun loadMore() {
         if (loading || exhausted) return
@@ -268,11 +265,9 @@ class ShortsModel(private val graph: AppGraph, startId: String?, queue: List<Str
  * The Shorts player: its own ExoPlayer over Oriel's pipeline, looping one short at a time,
  * with a preload manager readying its neighbours.
  *
- * Shorts play from YouTube's HLS ladder, as Auto does on the watch page: its segments start at
- * once, where a fresh progressive URL refuses reads for its first seconds, which was a slow
- * first short and later ones stalling a few seconds in, once their precached head ran out.
- * The next short is loaded two seconds deep, so a swipe starts it at once, and the one after
- * has its ladder and tracks ready. One the ladder refuses falls back to a fixed-quality stream.
+ * Plays YouTube's HLS ladder, since fresh progressive URLs refuse reads for their first
+ * seconds; a short the ladder refuses falls back to progressive. Next short: two seconds
+ * loaded; the one after: tracks selected.
  */
 @OptIn(UnstableApi::class)
 private class ShortsPlayback(context: android.content.Context, private val graph: AppGraph, private var maxHeight: Int) {
@@ -401,13 +396,12 @@ private class ShortsPlayback(context: android.content.Context, private val graph
 
     private fun item(id: String) = items.getOrPut(id) { MediaItems.build(Video(id, "", isShort = true), maxHeight, adaptive = true) }
 
-    /** Plays page [index], [id], from its preloaded source when there is one, and readies its neighbours. */
+    /** Plays page [index] from its preloaded source when there is one, and readies its neighbours. */
     fun show(ids: List<String>, index: Int) {
         val id = ids.getOrNull(index) ?: return
         current = index
         // Newly listed shorts join the manager, ranked by their place in the pager: only the ones
-        // the control readies. Every short listed ahead used to join, and the manager walked them
-        // all on the main thread at each swipe.
+        // the control readies.
         for (i in (index - 1).coerceAtLeast(0)..minOf(index + 2, ids.lastIndex)) {
             val other = ids[i]
             if (other !in ranked) { ranked[other] = i; preload.add(item(other), i) }
@@ -610,7 +604,7 @@ fun ShortsScreen(startId: String?, queue: List<String> = emptyList()) {
                         if (page != pager.settledPage) return@graphicsLayer
                         val q = landing.value
                         if (q == 0f) return@graphicsLayer
-                        // Squashed along the swipe and widened a little, against the edge it came in by.
+                        // Squashed along the swipe and widened a little.
                         val k = (kotlin.math.abs(q) * 0.4f).coerceAtMost(0.05f)
                         scaleY = 1f - k
                         scaleX = 1f + k * 0.5f
@@ -659,8 +653,8 @@ private fun ShortPage(app: AppState, id: String, info: ShortInfo?, playback: Sho
     var scrubAt by remember { mutableStateOf(0f) }
     val overlay by animateFloatAsState(if (scrubbing) 0f else 1f, motion(tween(160)), label = "shortOverlay")
     // Polled ten times a second, glided between: the line moves on every frame, not in steps.
-    // (A loop back to the start jumps rather than running backwards across the bar.) Only the
-    // bar's drawing reads it, so the page doesn't recompose with each poll.
+    // (A loop back to the start jumps rather than running backwards across the bar.) Read
+    // outside composition, so the page doesn't recompose with each poll.
     val shownProgress = remember { Animatable(0f) }
     LaunchedEffect(active) {
         paused = playback.held && active
@@ -979,12 +973,10 @@ private fun ShortCommentsSheet(app: AppState, info: ShortInfo, onDismiss: () -> 
     var moreFailed by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(true) }
-    // Replies open in place, under their comment, as the watch page's panel does.
     var thread by remember { mutableStateOf<Comment?>(null) }
     var replies by remember { mutableStateOf<List<Comment>?>(null) }
     var repliesFailed by remember { mutableStateOf(false) }
     var repliesMore by remember { mutableStateOf<String?>(null) }
-    // Separate tries: retrying a thread's replies used to reload the whole list under it too.
     var attempt by remember { mutableStateOf(0) }
     var repliesAttempt by remember { mutableStateOf(0) }
     var sortToken by remember { mutableStateOf<String?>(null) }
@@ -1132,7 +1124,7 @@ private fun SoundSheet(app: AppState, sound: ShortSound, onDismiss: () -> Unit) 
                     loadingMore = true
                     scope.launch {
                         val next = withContext(Dispatchers.IO) { runCatching { app.graph.yt.soundPage(cont) }.getOrNull() }
-                        // A failed page says so at the end of the grid, with Try again; it used to just stop.
+                        // A failed page says so at the end of the grid, with Try again.
                         if (next != null) page = p.copy(shorts = (p.shorts + next.shorts).distinctBy { it.id }, continuation = next.continuation)
                         else moreFailed = true
                         loadingMore = false

@@ -12,6 +12,9 @@ Oriel is an Android client, not a hosted service. Start with [SCOPE.md](SCOPE.md
 | Dependency wiring and shared HTTP client | [AppGraph.kt](../app/src/main/java/app/oriel/AppGraph.kt) | [security tests](../app/src/test/java/app/oriel/security/), [CredentialGuardTest.kt](../core/src/test/kotlin/app/oriel/core/net/CredentialGuardTest.kt) |
 | Playback and queue | [PlaybackService.kt](../app/src/main/java/app/oriel/playback/PlaybackService.kt), [PlayerConnection.kt](../app/src/main/java/app/oriel/playback/PlayerConnection.kt), [QueueController.kt](../app/src/main/java/app/oriel/playback/QueueController.kt) | [playback tests](../app/src/test/java/app/oriel/playback/) |
 | UI and feed state | [OrielRoot.kt](../app/src/main/java/app/oriel/ui/OrielRoot.kt), [AppState.kt](../app/src/main/java/app/oriel/ui/AppState.kt), [FeedModel.kt](../app/src/main/java/app/oriel/ui/screens/FeedModel.kt) | [UI tests](../app/src/test/java/app/oriel/ui/) |
+| Player sheet and watch page | [PlayerHost.kt](../app/src/main/java/app/oriel/ui/player/PlayerHost.kt) (sheet, floating window, gestures), [VideoPlayer.kt](../app/src/main/java/app/oriel/ui/player/VideoPlayer.kt) (controls), [WatchContent.kt](../app/src/main/java/app/oriel/ui/player/WatchContent.kt), [WatchModel.kt](../app/src/main/java/app/oriel/ui/player/WatchModel.kt) | PlayerGestureTest, ScreenshotTest |
+| Shared UI | [components](../app/src/main/java/app/oriel/ui/components/) (bars in Chrome.kt, sheets, cards, controls), [screens/Scaffold.kt](../app/src/main/java/app/oriel/ui/screens/Scaffold.kt) (page chrome), [theme](../app/src/main/java/app/oriel/ui/theme/), [glass](../app/src/main/java/app/oriel/ui/glass/) (`backdrop/` is vendored), [Adaptive.kt](../app/src/main/java/app/oriel/ui/Adaptive.kt) (tablet layout), [Routes.kt](../app/src/main/java/app/oriel/ui/navigation/Routes.kt) | screenshot tests in [UI tests](../app/src/test/java/app/oriel/ui/) |
+| Media sources | [StreamDataSources.kt](../app/src/main/java/app/oriel/playback/StreamDataSources.kt), [AdaptiveSources.kt](../app/src/main/java/app/oriel/playback/AdaptiveSources.kt) (Auto's HLS ladder), [SabrDataSource.kt](../app/src/main/java/app/oriel/playback/SabrDataSource.kt), [Abr.kt](../app/src/main/java/app/oriel/playback/Abr.kt) (bandwidth, buffering), [WatchReporter.kt](../app/src/main/java/app/oriel/playback/WatchReporter.kt) (history pings) | [playback tests](../app/src/test/java/app/oriel/playback/) |
 | Persistence and account storage | [data](../app/src/main/java/app/oriel/data/), [Stored.kt](../app/src/main/java/app/oriel/util/Stored.kt), [AtomicJson.kt](../app/src/main/java/app/oriel/util/AtomicJson.kt) | [data tests](../app/src/test/java/app/oriel/data/), [invented storage fixtures](../app/src/test/resources/stored/) |
 | Diagnostics | [CrashLog.kt](../app/src/main/java/app/oriel/util/CrashLog.kt), [Scrubber.kt](../app/src/main/java/app/oriel/util/Scrubber.kt), [ProblemReport.kt](../app/src/main/java/app/oriel/util/ProblemReport.kt) | [util tests](../app/src/test/java/app/oriel/util/) |
 | Verified app updates | [update](../app/src/main/java/app/oriel/update/) | [update tests](../app/src/test/java/app/oriel/update/) |
@@ -39,6 +42,15 @@ has migration rules in CONTRIBUTING; disposable cached pages use a cache version
 Network credentials must stay behind the credential guard. Diagnostics pass through the
 existing scrubber before writing; do not add raw HTTP logging to debug a failure. Crash reports
 stay local unless the user shares them. Read PRIVACY before changing any outbound reporting.
+
+## Terms
+
+- **Ladder, rung:** the HLS variants YouTube offers for a video, and one of them. Auto quality plays the ladder.
+- **SABR:** YouTube's server-driven streaming protocol, the alternative to classic googlevideo URLs.
+- **Warm-up:** the first seconds in which a freshly issued stream URL answers 403.
+- **Liquid glass, liquid motion:** the backdrop-sampling material in `ui/glass`, and the stretch-and-settle
+  animation in `ui/theme/Liquid.kt`. Each has its own setting.
+- **The mock:** [design/liquid/index.html](../design/liquid/index.html), which the liquid motion code follows.
 
 ## Choosing verification
 

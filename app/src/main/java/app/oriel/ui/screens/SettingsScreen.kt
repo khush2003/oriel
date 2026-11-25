@@ -38,10 +38,8 @@ import app.oriel.ui.components.Avatar
 import app.oriel.ui.components.OrielIcons
 import app.oriel.ui.components.OrielSheet
 import app.oriel.ui.components.PAGE_GUTTER
-import app.oriel.ui.components.SegmentedControl
 import app.oriel.ui.navigation.LoginRoute
 import app.oriel.ui.navigation.SettingsSectionRoute
-import app.oriel.ui.components.GroupShape
 import app.oriel.ui.haptics.Haptic
 import app.oriel.ui.haptics.rememberHaptics
 import app.oriel.ui.theme.accent
@@ -80,14 +78,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.Icon
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
-import app.oriel.ui.player.speedLabel
 import app.oriel.update.Updates
 import app.oriel.util.CrashLog
 import app.oriel.util.Format
@@ -220,7 +216,7 @@ fun SettingsSectionScreen(name: String) {
 
     @Suppress("UNCHECKED_CAST")
     (picker as Picker<Any?>?)?.let { p ->
-        // Long lists (countries, languages) are lazy and searchable: built whole, they stuttered on open.
+        // Long lists (countries) are lazy and searchable: built whole, they stutter on open.
         if (p.options.size > 30) return@let LongPickerSheet(p) { picker = null }
         OrielSheet({ picker = null }) {
             val close = LocalSheetClose.current
@@ -471,7 +467,7 @@ private fun RegionSettings(p: SettingsPage) {
     PaneHeader("What YouTube shows you", info = "What YouTube treats as your country and language, for trending, topics and search.")
     GlassPane {
         PickerRow("Content country", Glyphs.LineGlobe, listOf(s.country), s.country, { it?.let(::countryName) ?: "Automatic" }, onLong = {
-            // Each name worked out once: sorting by a fresh Locale per comparison stalled the tap.
+            // Each name worked out once: sorting by a fresh Locale per comparison stalls the tap.
             val names = Locale.getISOCountries().associateWith(::countryName)
             val countries = listOf<String?>(null) + names.keys.sortedBy { names[it] }
             p.pick(Picker("Content country", countries, s.country, { it?.let { c -> names[c] } ?: "Automatic" }) { v -> p.set { it.copy(country = v) }; p.graph.applyLocale() })

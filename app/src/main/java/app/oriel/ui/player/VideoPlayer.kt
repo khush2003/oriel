@@ -40,7 +40,6 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -134,7 +133,7 @@ fun rememberPosition(connection: PlayerConnection, intervalMs: Long = 200): Muta
 
 /**
  * The picture: the service's own player drawn into a TextureView, so the
- * frame can be clipped to the mini player's rounded corners and fly between
+ * frame can be clipped to the floating window's rounded corners and fly between
  * the two without a black flash. The thumbnail stands in until the first frame.
  */
 @OptIn(UnstableApi::class)
@@ -254,7 +253,6 @@ fun VideoControls(
     Box(
         modifier
             .fillMaxSize()
-            // Not keyed on anything that changes mid-video: a restart would cancel a hold at 2x.
             .semantics {
                 onClick(label = "Show controls") { visible = true; scheduleHide(); true }
                 // The double-tap seeks, for TalkBack, where a double tap is the activation.
@@ -263,6 +261,7 @@ fun VideoControls(
                     CustomAccessibilityAction("Forward $step seconds") { connection.seekBy(step * 1000L); true },
                 )
             }
+            // Not keyed on anything that changes mid-video: a restart would cancel a hold at 2x.
             .pointerInput(step) {
                 fun seek(side: Int, at: Offset) {
                     haptics.play(Haptic.Tick)
@@ -337,7 +336,7 @@ fun VideoControls(
                             val second = withTimeoutOrNull(viewConfiguration.doubleTapTimeoutMillis) { awaitFirstDown() }
                             if (second == null) toggleControls()
                             else {
-                                // A second touch that turns into a drag (down to the mini player, out
+                                // A second touch that turns into a drag (down to the window, out
                                 // of fullscreen) is that drag's, not a seek.
                                 val secondUp = awaitTapUp(second)
                                 if (secondUp != null) {
@@ -369,7 +368,6 @@ fun VideoControls(
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.32f))) {
                 val insets = if (mode == ControlsMode.Fullscreen) Modifier.windowInsetsPadding(WindowInsets.safeDrawing) else Modifier
                 Box(Modifier.fillMaxSize().then(insets)) {
-                    // Top row
                     // 8dp, not 10: the buttons' 44dp targets reach 2dp past their 40dp discs.
                     Row(Modifier.align(Alignment.TopStart).fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         OverlayButton(OrielIcons.Collapse, if (mode == ControlsMode.Fullscreen) "Exit full screen" else "Minimise", onClick = { if (mode == ControlsMode.Fullscreen) onFullscreen() else onCollapse() })
@@ -447,7 +445,6 @@ fun VideoControls(
                             haptics.play(Haptic.SkipNext); connection.next(); scheduleHide()
                         })
                     }
-                    // Bottom: time, chapter, fullscreen, then the scrubber
                     Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 12.dp).padding(bottom = if (mode == ControlsMode.Fullscreen) 10.dp else 0.dp)) {
                         if (scrubbing && !isLive) {
                             // The preview rides above the thumb, kept inside the frame at the ends. The
@@ -544,8 +541,7 @@ fun VideoControls(
 
 /**
  * The finger's lift, as a tap's, or null once it isn't one: another gesture took it, it strayed
- * past the touch slop, or a second finger joined it. A slow drag nothing claims (sideways on the
- * picture) used to sit out the long-press timeout and turn into the 2x hold.
+ * past the touch slop, or a second finger joined it.
  */
 private suspend fun AwaitPointerEventScope.awaitTapUp(down: PointerInputChange): PointerInputChange? {
     while (true) {

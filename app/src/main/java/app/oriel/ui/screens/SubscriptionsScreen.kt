@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -49,7 +48,6 @@ import app.oriel.ui.components.Avatar
 import app.oriel.ui.components.OrielIcons
 import app.oriel.ui.components.MessageState
 import app.oriel.ui.components.PAGE_GUTTER
-import app.oriel.ui.components.TextAction
 import app.oriel.ui.components.feedShelves
 import app.oriel.ui.components.cardSkeletons
 import app.oriel.ui.LocalWindowLayout
@@ -101,8 +99,7 @@ fun SubscriptionsScreen() {
         channels.distinctBy { it.id }.sortedBy { order[it.id] ?: Int.MAX_VALUE }.take(40)
     }
     // Signed out the feed is made from the channels followed here: following or dropping one remakes it.
-    // Kept on the model, which outlives the tab: a channel followed from elsewhere while this
-    // tab was away used to go unnoticed, and so did following one and dropping another.
+    // Kept on the model, which outlives the tab.
     val followedIds = remember(channels) { channels.map { it.id }.toSet() }
     LaunchedEffect(followedIds) {
         val before = model.builtFrom
@@ -129,7 +126,6 @@ fun SubscriptionsScreen() {
                         Text(ch.title, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
                     }
                 }
-                // Every channel, as the strip's last bubble.
                 item(key = "all", contentType = "all") {
                     Column(Modifier.width(64.dp).clip(RoundedCornerShape(12.dp)).clickable { haptics.play(Haptic.Tap); app.navigate(ChannelsRoute) }, horizontalAlignment = Alignment.CenterHorizontally) {
                         Box(Modifier.size(58.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {

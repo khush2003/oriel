@@ -25,8 +25,8 @@ enum class PageWidth {
 }
 
 /**
- * The window's size, which every wide-screen decision comes from. Phones keep the layout they
- * always had, in any orientation (the window of a phone turned sideways is wide but short, and it
+ * The window's size, which every wide-screen decision comes from. Phones keep their layout
+ * in any orientation (the window of a phone turned sideways is wide but short, and it
  * isn't a tablet); a tablet's layout follows the width of the window the app is in, so split screen
  * and a narrow window fall back to the phone layout without a separate code path.
  */

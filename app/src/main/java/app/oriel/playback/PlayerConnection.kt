@@ -287,15 +287,9 @@ class PlayerConnection(private val context: Context, private val graph: AppGraph
     private var lastQuietWarm = 0L
 
     /**
-     * Resolves [video]'s stream ahead of a tap, so playback starts on a URL
-     * already in hand rather than a second's extraction. [pressed] is a finger
-     * on the card: warm it whatever the connection. Otherwise it's a card that
-     * has sat on screen, which warms only on an unmetered connection with
-     * prefetching on, at most one every eight seconds, and not while the
-     * video playing is still filling its buffer, so browsing never turns into
-     * a stream of player requests competing with what's on screen. Resolves
-     * are cached until their URLs expire, so a card warmed twice costs nothing
-     * the second time.
+     * Resolves [video] ahead of a tap. [pressed] is a finger on the card: always. Otherwise only
+     * unmetered, with prefetching on, at most every eight seconds, and never while the playing
+     * video is still filling its buffer.
      */
     fun warmAhead(video: Video, pressed: Boolean) {
         if (video.isLive || video.isUpcoming || video.isShort || video.id.isBlank()) return
@@ -378,7 +372,6 @@ class PlayerConnection(private val context: Context, private val graph: AppGraph
     fun undoSkip() = withService { it.undoSkip() }
     fun retry() = withService { it.retry() }
 
-    /** Video is decoded only while the picture is on screen; in the background only sound plays. */
     private var videoVisible = true
 
     /** Whether video frames are wanted at all. Only a preference: it never starts the service. */

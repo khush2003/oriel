@@ -27,9 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -89,7 +87,7 @@ fun HomeScreen() {
             listState.requestScrollToItem(0)
         }
     }
-    // Another account signing in after this one reuses the signed-in model: its feed goes.
+    // Another account signing in to this profile reuses its model: its feed goes.
     val owner = accountOwner(account)
     LaunchedEffect(model, owner) {
         if (owner == null || model.owner == owner) return@LaunchedEffect

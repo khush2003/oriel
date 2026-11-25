@@ -38,10 +38,9 @@ import org.robolectric.annotation.GraphicsMode
 import org.robolectric.shadows.ShadowLooper
 
 /**
- * The floating window's gestures, as YouTube's: moved anywhere and landed in a corner, put away
- * only by an explicit throw off a side or a release more than half past one, a swipe up or a tap
- * to open the watch page. Driven through the whole app with real touch events and the clock run
- * by hand. Liquid motion off unless a test says otherwise: the rules are the same either way.
+ * The floating window's gestures, as YouTube's. Driven through the whole app with real touch
+ * events and the clock run by hand. Liquid motion off unless a test says otherwise: the rules
+ * are the same either way.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -120,7 +119,6 @@ class PlayerGestureTest {
         }
     }
 
-    /** Render each return frame: an upward release from zero used to give the clip a negative radius. */
     private fun returnFrames(count: Int = 60) = repeat(count) {
         ShadowLooper.idleMainLooper()
         rule.mainClock.advanceTimeByFrame()
@@ -162,10 +160,7 @@ class PlayerGestureTest {
         assertEquals("watch page stays open", 1f, state.sheet.progress.value, 0.001f)
     }
 
-    /**
-     * Dragged across to the other side at a fair pace and let go there, it lands in that corner.
-     * (It used to be put away: a sideways throw whose aim crossed the edge counted as one.)
-     */
+    /** Dragged across to the other side at a fair pace and let go there, it lands in that corner. */
     @Test fun throwAcrossLandsInTheFarCorner() {
         start()
         val w = window()
@@ -190,7 +185,7 @@ class PlayerGestureTest {
         assertTrue("on screen: $r", r.left >= 0f && r.right <= screenW)
     }
 
-    /** A short, slow nudge toward the side it's on just lands it back. (It used to put it away.) */
+    /** A short, slow nudge toward the side it's on just lands it back. */
     @Test fun nudgeTowardTheEdgeLands() {
         start()
         val w = window()
@@ -229,7 +224,7 @@ class PlayerGestureTest {
         assertEquals("still the window", 0f, state.sheet.progress.value, 0.01f)
     }
 
-    /** A swipe up on it opens the watch page. (It used to only move the window up a corner.) */
+    /** A swipe up on it opens the watch page. */
     @Test fun swipeUpExpands() {
         start()
         val w = window()
