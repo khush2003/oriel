@@ -92,6 +92,12 @@ class ScrubberTest {
         assertEquals("""{"visitorData":"[removed]"}""", scrub("""{"visitorData":"CgtShortFake"}"""))
         assertEquals("dataSyncId=[removed] next", scrub("dataSyncId=fake12345 next"))
         assertEquals("from [ip] via [ip]", scrub("from 203.0.113.9 via 198.51.100.200"))
+        assertEquals(
+            "failed to connect to /[ip] (port 443) from /[ip] (port 45678)",
+            scrub("failed to connect to /2001:db8:1c5a:12:abcd:ef01:2345:6789 (port 443) from /2001:db8::6789 (port 45678)"),
+        )
+        assertEquals("[ip] [ip]%wlan0 [[ip]]:443", scrub("::1 fe80::1%wlan0 [2001:db8::1]:443"))
+        assertEquals("09:00:00 Foo::bar (Foo.kt:1)", scrub("09:00:00 Foo::bar (Foo.kt:1)"))
         assertEquals("NID=[removed]; SMSV=[removed]", scrub("NID=fake; SMSV=fake"))
         // Versions aren't addresses.
         assertEquals("Oriel 1.0.0-beta.3, WEB 2.20260708.05.00", scrub("Oriel 1.0.0-beta.3, WEB 2.20260708.05.00"))

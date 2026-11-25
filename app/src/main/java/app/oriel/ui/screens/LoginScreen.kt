@@ -5,6 +5,7 @@ import android.net.Uri
 import android.net.http.SslError
 import android.view.WindowManager
 import android.webkit.CookieManager
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.SslErrorHandler
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
@@ -23,6 +24,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -65,6 +68,7 @@ fun LoginScreen(reauth: String? = null) {
     var webView by remember { mutableStateOf<WebView?>(null) }
     var failed by remember { mutableStateOf(false) }
     var canGoBack by remember { mutableStateOf(false) }
+    var generation by remember { mutableIntStateOf(0) }
     // System back walks the sign-in pages back first, as the bar's chevron does.
     BackHandler(enabled = canGoBack && !finishing) { webView?.goBack() }
     // Once the cookie is in, the sign-in is finishing on its own: leaving now would only confuse it.
@@ -84,12 +88,6 @@ fun LoginScreen(reauth: String? = null) {
 
     DisposableEffect(Unit) {
         onDispose {
-            webView?.apply {
-                clearHistory()
-                clearCache(true)
-                clearFormData()
-                destroy()
-            }
             // Nothing from the sign-in pages outlives them: the session lives in the app's own
             // storage, not in the WebView's cookies, local storage or cache.
             WebStorage.getInstance().deleteAllData()
@@ -98,109 +96,119 @@ fun LoginScreen(reauth: String? = null) {
     }
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        AndroidView(
-            modifier = Modifier.fillMaxSize().padding(top = topBarContentPadding()),
-            factory = { context ->
-                CookieManager.getInstance().removeAllCookies(null)
-                WebView(context).apply {
-                    webView = this
-                    settings.javaScriptEnabled = true
-                    settings.domStorageEnabled = true
-                    settings.allowContentAccess = false
-                    settings.allowFileAccess = false
-                    @Suppress("DEPRECATION")
-                    settings.allowFileAccessFromFileURLs = false
-                    @Suppress("DEPRECATION")
-                    settings.allowUniversalAccessFromFileURLs = false
-                    settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-                    settings.safeBrowsingEnabled = true
-                    settings.setGeolocationEnabled(false)
-                    // window.open loads in this WebView, through the same host check, never a new one.
-                    settings.setSupportMultipleWindows(false)
-                    settings.javaScriptCanOpenWindowsAutomatically = false
-                    // An overlay from another app mustn't be able to steer taps on the sign-in page.
-                    filterTouchesWhenObscured = true
-                    // Google refuses sign-in in WebViews it recognises; "; wv" is the marker it looks for.
-                    settings.userAgentString = settings.userAgentString.replace("; wv", "")
-                    CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-                    webViewClient = object : WebViewClient() {
-                        // Only Google's sign-in and YouTube load here; any other link opens in the browser.
-                        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
-                            when (loginNavigation(request.url, request.isForMainFrame)) {
-                                LoginNavigation.LOAD -> false
-                                LoginNavigation.EXTERNAL -> { app.openExternally(request.url.toString()); true }
-                                LoginNavigation.BLOCK -> true
+        key(generation) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize().padding(top = topBarContentPadding()),
+                onRelease = { it.clearHistory(); it.clearCache(true); it.clearFormData(); it.destroy() },
+                factory = { context ->
+                    CookieManager.getInstance().removeAllCookies(null)
+                    WebView(context).apply {
+                        webView = this
+                        settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
+                        settings.allowContentAccess = false
+                        settings.allowFileAccess = false
+                        @Suppress("DEPRECATION")
+                        settings.allowFileAccessFromFileURLs = false
+                        @Suppress("DEPRECATION")
+                        settings.allowUniversalAccessFromFileURLs = false
+                        settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                        settings.safeBrowsingEnabled = true
+                        settings.setGeolocationEnabled(false)
+                        // window.open loads in this WebView, through the same host check, never a new one.
+                        settings.setSupportMultipleWindows(false)
+                        settings.javaScriptCanOpenWindowsAutomatically = false
+                        // An overlay from another app mustn't be able to steer taps on the sign-in page.
+                        filterTouchesWhenObscured = true
+                        // Google refuses sign-in in WebViews it recognises; "; wv" is the marker it looks for.
+                        settings.userAgentString = settings.userAgentString.replace("; wv", "")
+                        CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+                        webViewClient = object : WebViewClient() {
+                            // Only Google's sign-in and YouTube load here; any other link opens in the browser.
+                            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
+                                when (loginNavigation(request.url, request.isForMainFrame)) {
+                                    LoginNavigation.LOAD -> false
+                                    LoginNavigation.EXTERNAL -> { app.openExternally(request.url.toString()); true }
+                                    LoginNavigation.BLOCK -> true
+                                }
+
+                            // A certificate that doesn't check out is never clicked through: the page fails.
+                            @SuppressLint("WebViewClientOnReceivedSslError")
+                            override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
+                                handler.cancel()
+                                failed = true
+                                loading = false
                             }
 
-                        // A certificate that doesn't check out is never clicked through: the page fails.
-                        @SuppressLint("WebViewClientOnReceivedSslError")
-                        override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
-                            handler.cancel()
-                            failed = true
-                            loading = false
-                        }
+                            // Unhandled, a renderer that dies takes the app with it. Its WebView is finished: Try again makes another.
+                            override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                                webView = null
+                                canGoBack = false; failed = true; loading = false
+                                return true
+                            }
 
-                        override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
-                            loading = true
-                        }
+                            override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
+                                loading = true
+                            }
 
-                        override fun onReceivedError(view: WebView, request: WebResourceRequest, error: android.webkit.WebResourceError) {
-                            // Only the page itself failing counts, not one of its images or scripts.
-                            if (request.isForMainFrame) { failed = true; loading = false }
-                        }
+                            override fun onReceivedError(view: WebView, request: WebResourceRequest, error: android.webkit.WebResourceError) {
+                                // Only the page itself failing counts, not one of its images or scripts.
+                                if (request.isForMainFrame) { failed = true; loading = false }
+                            }
 
-                        override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
-                            canGoBack = view.canGoBack()
-                        }
+                            override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
+                                canGoBack = view.canGoBack()
+                            }
 
-                        override fun onPageFinished(view: WebView, url: String) {
-                            loading = false
-                            canGoBack = view.canGoBack()
-                            val page = url.toUri()
-                            if (finishing || page.scheme != "https" || page.host !in YOUTUBE_PAGES) return
-                            val cookie = CookieManager.getInstance().getCookie("https://www.youtube.com") ?: return
-                            if ("SAPISID" !in cookie) return
-                            finishing = true
-                            view.evaluateJavascript("(function(){try{return ytcfg.get('DATASYNC_ID')}catch(e){return null}})()") { raw ->
-                                val dataSyncId = raw?.trim('"')?.takeUnless { it == "null" || it.isBlank() }
-                                // In the app's scope, not this screen's: it must finish (or fail) as a whole, whatever the screen does.
-                                app.graph.scope.launch(Dispatchers.Main.immediate) {
-                                    val before = app.graph.account.active.value.id
-                                    val result = try {
-                                        app.graph.account.signIn(cookie, dataSyncId, reauth)
-                                    } finally {
-                                        CookieManager.getInstance().removeAllCookies(null)
-                                    }
-                                    val done = when (result) {
-                                        AccountManager.SignInResult.ADDED, AccountManager.SignInResult.SIGNED_IN_AGAIN -> "Signed in"
-                                        // Signed in to another account than the one that expired: that one's in use now.
-                                        AccountManager.SignInResult.SWITCHED_TO_EXISTING -> "Signed in to another account on this device"
-                                        AccountManager.SignInResult.TOO_MANY -> "Remove an account before adding another"
-                                        AccountManager.SignInResult.FAILED -> null
-                                    }
-                                    if (done != null) {
-                                        app.notice(done)
-                                        // Another profile is in use now: back to the tab's first page, as a switch from Accounts goes.
-                                        if (app.graph.account.active.value.id != before) app.backToTabRoot()
-                                        else if (app.nav.currentBackStackEntry?.destination?.hasRoute(LoginRoute::class) == true) app.back()
-                                    } else {
-                                        finishing = false
-                                        app.notice("Sign-in didn't complete. Try again.")
+                            override fun onPageFinished(view: WebView, url: String) {
+                                loading = false
+                                canGoBack = view.canGoBack()
+                                val page = url.toUri()
+                                if (finishing || page.scheme != "https" || page.host !in YOUTUBE_PAGES) return
+                                val cookie = CookieManager.getInstance().getCookie("https://www.youtube.com") ?: return
+                                if ("SAPISID" !in cookie) return
+                                finishing = true
+                                view.evaluateJavascript("(function(){try{return ytcfg.get('DATASYNC_ID')}catch(e){return null}})()") { raw ->
+                                    val dataSyncId = raw?.trim('"')?.takeUnless { it == "null" || it.isBlank() }
+                                    // In the app's scope, not this screen's: it must finish (or fail) as a whole, whatever the screen does.
+                                    app.graph.scope.launch(Dispatchers.Main.immediate) {
+                                        val before = app.graph.account.active.value.id
+                                        val result = try {
+                                            app.graph.account.signIn(cookie, dataSyncId, reauth)
+                                        } finally {
+                                            CookieManager.getInstance().removeAllCookies(null)
+                                        }
+                                        val done = when (result) {
+                                            AccountManager.SignInResult.ADDED, AccountManager.SignInResult.SIGNED_IN_AGAIN -> "Signed in"
+                                            // Signed in to another account than the one that expired: that one's in use now.
+                                            AccountManager.SignInResult.SWITCHED_TO_EXISTING -> "Signed in to another account on this device"
+                                            AccountManager.SignInResult.TOO_MANY -> "Remove an account before adding another"
+                                            AccountManager.SignInResult.FAILED -> null
+                                        }
+                                        if (done != null) {
+                                            app.notice(done)
+                                            // Another profile is in use now: back to the tab's first page, as a switch from Accounts goes.
+                                            if (app.graph.account.active.value.id != before) app.backToTabRoot()
+                                            else if (app.nav.currentBackStackEntry?.destination?.hasRoute(LoginRoute::class) == true) app.back()
+                                        } else {
+                                            finishing = false
+                                            app.notice("Sign-in didn't complete. Try again.")
+                                        }
                                     }
                                 }
                             }
                         }
+                        loadUrl(AccountManager.LOGIN_URL)
                     }
-                    loadUrl(AccountManager.LOGIN_URL)
-                }
-            },
-        )
+                },
+            )
+        }
         if (failed) {
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(top = topBarContentPadding()), contentAlignment = Alignment.Center) {
                 MessageState(
                     "Couldn't reach Google's sign-in page. Check your connection and try again.",
                     icon = OrielIcons.Offline, action = "Try again",
-                    onAction = { failed = false; loading = true; webView?.reload() },
+                    onAction = { failed = false; loading = true; webView?.reload() ?: run { generation++ } },
                 )
             }
         } else if (loading || finishing) {

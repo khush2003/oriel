@@ -976,6 +976,7 @@ private fun ShortCommentsSheet(app: AppState, info: ShortInfo, onDismiss: () -> 
     var thread by remember { mutableStateOf<Comment?>(null) }
     var replies by remember { mutableStateOf<List<Comment>?>(null) }
     var repliesFailed by remember { mutableStateOf(false) }
+    var repliesMore by remember { mutableStateOf<String?>(null) }
     var attempt by remember { mutableStateOf(0) }
     var repliesAttempt by remember { mutableStateOf(0) }
     var sortToken by remember { mutableStateOf<String?>(null) }
@@ -996,10 +997,10 @@ private fun ShortCommentsSheet(app: AppState, info: ShortInfo, onDismiss: () -> 
         }
     }
     LaunchedEffect(thread, repliesAttempt) {
-        replies = null; repliesFailed = false
+        replies = null; repliesFailed = false; repliesMore = null
         val token = thread?.repliesToken ?: return@LaunchedEffect
         val r = withContext(Dispatchers.IO) { runCatching { app.graph.yt.comments(token) }.getOrNull() }
-        if (r == null) repliesFailed = true else replies = r.comments
+        if (r == null) repliesFailed = true else { replies = r.comments; repliesMore = r.continuation }
     }
     fun loadMore() {
         val cont = page?.continuation ?: return
@@ -1039,6 +1040,15 @@ private fun ShortCommentsSheet(app: AppState, info: ShortInfo, onDismiss: () -> 
                     repliesFailed -> item(key = "replies-failed") { MessageState("Replies couldn't be loaded.", action = "Try again", onAction = { repliesAttempt++ }) }
                     r == null -> item(key = "replies-loading") { LoadingRow() }
                     else -> items(r.distinctBy { it.id }, key = { "r" + it.id }) { CommentRow(app, it, palette, onReplies = null, indent = true) }
+                }
+                val more = repliesMore
+                if (r != null && more != null) item(key = "replies-more") {
+                    LaunchedEffect(more) {
+                        val next = withContext(Dispatchers.IO) { runCatching { app.graph.yt.comments(more) }.getOrNull() }
+                        replies = replies.orEmpty() + next?.comments.orEmpty()
+                        repliesMore = next?.continuation
+                    }
+                    LoadingRow()
                 }
                 return@LazyColumn
             }

@@ -47,6 +47,7 @@ class WatchReporter(private val graph: AppGraph, private val clock: () -> Long =
             begin(videoId, positionMs, short)
             return
         }
+        if (graph.settings.current.pauseHistory) { viewing = null; return }
         current.report.observe(positionMs / 1000.0, playing = true)
         if (current.report.due()) send(current, final = false)
     }

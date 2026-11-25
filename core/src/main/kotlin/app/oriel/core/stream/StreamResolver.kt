@@ -418,7 +418,7 @@ class StreamResolver(
                     attempt(sabr = false)
                 } catch (e: StreamResolveException) {
                     if (e.isUnreachable) throw e
-                    runCatching { attempt(sabr = true) }.getOrNull() ?: throw e
+                    runCatching { attempt(sabr = true) }.onFailure { if (it is CancellationException) throw it }.getOrNull() ?: throw e
                 }
                 val usable = classic != null && (!wantVideo || classic.videoUrl != null || classic.mimeType == "application/x-mpegURL")
                 if (usable) classic else runCatching { attempt(sabr = true) }.getOrNull() ?: classic

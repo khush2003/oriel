@@ -527,6 +527,7 @@ class ScreenshotTest {
         assertTrue(share("https://www.youtube.com/hashtag/cats."))
         settle(8)
         assertEquals(SearchRoute("#cats"), top().toRoute<SearchRoute>())
+        assertTrue(share("https://YOUTU.BE/dQw4w9WgXcQ"))
     }
 
     /** A swipe up on the watch page's picture goes fullscreen, the picture growing with the finger. */

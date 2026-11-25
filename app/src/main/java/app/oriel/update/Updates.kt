@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -136,7 +137,10 @@ class Updates private constructor(context: Context, private val inspector: Packa
         val apk = s.apk ?: return
         if (job?.isActive == true) return
         if (verified?.let { it.version == release.version && it.file.exists() } == true) { job = scope.launch { install() }; return }
+        val previous = job
         job = scope.launch {
+            // A cancelled download deletes [dir] as it ends: after this one starts would take its file.
+            previous?.join()
             try {
                 dir.deleteRecursively()
                 if (!dir.mkdirs() && !dir.isDirectory) throw IOException("No cache directory")
@@ -162,6 +166,7 @@ class Updates private constructor(context: Context, private val inspector: Packa
                 throw e
             } catch (e: Exception) {
                 dir.deleteRecursively()
+                ensureActive()
                 setStep(UpdateStep.Failed(if (e is UpdateCheckException) "GitHub didn't send the update. Try again later." else "The download didn't finish. Check your connection and try again."))
             }
         }
@@ -174,7 +179,6 @@ class Updates private constructor(context: Context, private val inspector: Packa
 
     fun cancel() {
         job?.cancel()
-        job = null
         _state.update { if (it.step is UpdateStep.Downloading || it.step == UpdateStep.Verifying) it.copy(step = UpdateStep.Offer) else it }
     }
 
