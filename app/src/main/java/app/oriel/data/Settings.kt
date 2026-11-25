@@ -118,7 +118,9 @@ data class SettingsState(
     val signInBannerDismissed: Boolean = false,
     // Privacy: anonymous usage counts; null until asked, off unless the person says yes.
     val telemetry: Boolean? = null,
-)
+) {
+    val prefetching: Boolean get() = prefetchNext && !dataSaver
+}
 
 /**
  * App settings, one JSON document in SharedPreferences.

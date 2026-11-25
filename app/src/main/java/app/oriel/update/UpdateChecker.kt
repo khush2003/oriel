@@ -4,14 +4,17 @@ import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
-/** GitHub answered, but not with releases: rate-limited, or down. Quietly retried at the next check. */
+/** GitHub answered, but not with what was asked for: rate-limited, or down. */
 class UpdateCheckException(message: String) : IOException(message)
 
 /**
@@ -27,7 +30,7 @@ class UpdateChecker(private val userAgent: String, base: OkHttpClient = OkHttpCl
         .addNetworkInterceptor(GitHubOnly)
         .build()
 
-    /** Release downloads go through objects.githubusercontent.com; anything else is refused. */
+    /** Refuses every host but GitHub's ([Releases.isAllowedHost]). */
     object GitHubOnly : Interceptor {
         override fun intercept(chain: Interceptor.Chain) = chain.request().let { r ->
             if (!Releases.isAllowedHost(r.url)) throw IOException("Refused to fetch an update from ${r.url.host}")
@@ -59,12 +62,12 @@ class UpdateChecker(private val userAgent: String, base: OkHttpClient = OkHttpCl
      * deletes the part written) past [MAX_APK_BYTES] or past the size the release lists, or when
      * the coroutine is cancelled.
      */
-    suspend fun download(asset: ReleaseAsset, into: File, onProgress: (read: Long, total: Long) -> Unit): String {
+    suspend fun download(asset: ReleaseAsset, into: File, onProgress: (read: Long, total: Long) -> Unit): String = coroutineScope {
         val limit = minOf(MAX_APK_BYTES, asset.size.takeIf { it > 0 } ?: MAX_APK_BYTES)
         val digest = MessageDigest.getInstance("SHA-256")
         val call = http.newCall(request(asset.url, "application/octet-stream"))
-        // Cancelling the coroutine also breaks a read that's blocked waiting on the network.
-        val cancel = currentCoroutineContext()[Job]?.invokeOnCompletion { if (it != null) call.cancel() }
+        // A read blocked on the network can't see the cancellation; this child can, and ends the call.
+        val watcher = launch(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) { try { awaitCancellation() } finally { call.cancel() } }
         try {
             call.execute().use { r ->
                 if (!r.isSuccessful) throw UpdateCheckException("Download answered ${r.code}")
@@ -76,7 +79,7 @@ class UpdateChecker(private val userAgent: String, base: OkHttpClient = OkHttpCl
                         val buf = ByteArray(64 * 1024)
                         var read = 0L
                         while (true) {
-                            currentCoroutineContext().ensureActive()
+                            ensureActive()
                             val n = input.read(buf)
                             if (n < 0) break
                             read += n
@@ -92,11 +95,12 @@ class UpdateChecker(private val userAgent: String, base: OkHttpClient = OkHttpCl
             }
         } catch (t: Throwable) {
             into.delete()
+            ensureActive()
             throw t
         } finally {
-            cancel?.dispose()
+            watcher.cancel()
         }
-        return digest.digest().joinToString("") { "%02x".format(it) }
+        digest.digest().joinToString("") { "%02x".format(it) }
     }
 
     private fun readCapped(input: java.io.InputStream, max: Int): ByteArray = input.use {

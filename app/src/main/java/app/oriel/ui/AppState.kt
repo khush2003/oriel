@@ -570,7 +570,7 @@ class AppState(
         const val MAX_START_S = 365L * 24 * 3600
 
         fun isYouTubeUrl(url: String): Boolean {
-            val host = url.toUri().host?.removePrefix("www.")?.removePrefix("m.") ?: return false
+            val host = url.toUri().host?.lowercase()?.removePrefix("www.")?.removePrefix("m.") ?: return false
             return host == "youtu.be" || isYouTubeHost(host)
         }
     }

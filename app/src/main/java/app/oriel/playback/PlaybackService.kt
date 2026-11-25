@@ -528,7 +528,7 @@ class PlaybackService : MediaLibraryService() {
         val graph = applicationContext.graph
         precacheJob?.cancel()
         prefetchWaiting = false
-        if (!graph.settings.current.prefetchNext || player.mediaItemCount == 0) return
+        if (!graph.settings.current.prefetching || player.mediaItemCount == 0) return
         prefetchWaiting = true
         precacheJob = scope.launch {
             while (!hasLead()) delay(1_000)

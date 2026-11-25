@@ -3,13 +3,23 @@ package app.oriel.update
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.Response
+import okhttp3.ResponseBody.Companion.asResponseBody
 import okhttp3.ResponseBody.Companion.toResponseBody
+import okio.Buffer
+import okio.Source
+import okio.Timeout
+import okio.buffer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -72,6 +82,28 @@ class UpdateCheckerTest {
             checker(body = ByteArray(4_000)).download(apk, file) { _, _ -> }
             fail()
         } catch (e: IOException) { /* expected */ }
+        assertFalse(file.exists())
+    }
+
+    @Test fun cancellingEndsAReadThatIsWaitingOnTheNetwork() = runBlocking {
+        val reading = CountDownLatch(1)
+        val stalled = UpdateChecker("Oriel/9.0.0", OkHttpClient.Builder().addInterceptor(Interceptor { chain ->
+            val body = object : Source {
+                override fun read(sink: Buffer, byteCount: Long): Long {
+                    reading.countDown()
+                    repeat(500) { if (chain.call().isCanceled()) throw IOException("Canceled"); Thread.sleep(10) }
+                    return -1
+                }
+                override fun timeout() = Timeout.NONE
+                override fun close() {}
+            }
+            Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(200).message("x").body(body.buffer().asResponseBody(null, 5_000)).build()
+        }).build())
+        val file = File(tmp.root, "update.apk")
+        val download = launch(Dispatchers.IO) { stalled.download(apk, file) { _, _ -> } }
+        assertTrue(reading.await(5, TimeUnit.SECONDS))
+        download.cancel()
+        withTimeout(2_000) { download.join() }
         assertFalse(file.exists())
     }
 

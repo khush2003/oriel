@@ -31,6 +31,10 @@ object Scrubber {
     // nothing a report needs runs that long without a dot or a space.
     private val BLOB = Regex("""[A-Za-z0-9+/_%-]{61,}=*""")
     private val IPV4 = Regex("""\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b""")
+    // All eight groups, or any run with a "::" in it: a clock time has neither.
+    private val IPV6 = Regex(
+        """(?<![0-9A-Za-z:])(?:(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}|(?:[0-9A-Fa-f]{1,4}:){1,7}:(?:[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){0,6})?|::[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){0,6})(?![0-9A-Za-z])""",
+    )
 
     fun scrub(text: String): String {
         var t = HEADER.replace(text) { "${it.groupValues[1]}${it.groupValues[2]}[removed]" }
@@ -50,6 +54,7 @@ object Scrubber {
         t = BLOB.replace(t, "[token]")
         t = KEYED.replace(t) { "${it.groupValues[1]}${it.groupValues[2]}[removed]" }
         t = IPV4.replace(t, "[ip]")
+        t = IPV6.replace(t, "[ip]")
         return t
     }
 }

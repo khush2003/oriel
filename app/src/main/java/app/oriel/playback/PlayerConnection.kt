@@ -301,8 +301,7 @@ class PlayerConnection(private val context: Context, private val graph: AppGraph
         if (video.isLive || video.isUpcoming || video.isShort || video.id.isBlank()) return
         val metered = graph.network.metered.value
         if (!pressed) {
-            val settings = graph.settings.current
-            if (metered || !settings.prefetchNext || settings.dataSaver) return
+            if (metered || !graph.settings.current.prefetching) return
             val now = android.os.SystemClock.elapsedRealtime()
             if (now - lastQuietWarm < QUIET_WARM_INTERVAL_MS) return
             val playing = PlaybackService.instance.value?.exoPlayer

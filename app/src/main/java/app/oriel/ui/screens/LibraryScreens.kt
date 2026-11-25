@@ -157,17 +157,18 @@ class HistoryModel(graph: AppGraph, private val saved: SavedStateHandle) : ViewM
             .mapLatest { (history, q) -> withContext(Dispatchers.Default) { group(history, q) } }
             .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    private companion object {
-        const val KEY_QUERY = "query"
+    companion object {
+        private const val KEY_QUERY = "query"
 
         // One calendar and one formatter for the lot: a few thousand entries made one of each apiece.
-        fun group(history: List<WatchEntry>, q: String): List<Pair<String, List<WatchEntry>>> {
-            val c = Calendar.getInstance()
+        internal fun group(history: List<WatchEntry>, q: String, now: Long = System.currentTimeMillis()): List<Pair<String, List<WatchEntry>>> {
+            val c = Calendar.getInstance().apply { timeInMillis = now }
             val today = startOfDay(c)
             val month = java.text.SimpleDateFormat("MMMM yyyy", java.util.Locale.getDefault())
             fun label(ms: Long): String {
                 c.timeInMillis = ms
-                val days = ((today - startOfDay(c)) / 86_400_000L).toInt()
+                // Rounded: a day the clocks change on is 23 or 25 hours long.
+                val days = ((today - startOfDay(c) + 43_200_000L) / 86_400_000L).toInt()
                 return when {
                     days <= 0 -> "Today"
                     days == 1 -> "Yesterday"
